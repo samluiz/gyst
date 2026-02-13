@@ -14,14 +14,11 @@ on:
 permissions:
   contents: write
 
-concurrency:
-  group: enterprise-release-${{ github.ref }}
-  cancel-in-progress: false
-
 jobs:
-  verify:
-    name: Verify Shared
+  quality_gate:
+    name: Quality Gate
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -36,13 +33,23 @@ jobs:
       - name: Validate wrapper
         uses: gradle/actions/wrapper-validation@v3
 
-      - name: Shared tests
-        run: ./gradlew :shared:desktopTest
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Run release quality checks
+        run: |
+          chmod +x gradlew
+          ./gradlew \
+            :shared:compileKotlinDesktop \
+            :shared:desktopTest \
+            :androidApp:lintDebug \
+            :androidApp:testDebugUnitTest \
+            --no-daemon
 
   android_release:
     name: Build Android APK
     runs-on: ubuntu-latest
-    needs: verify
+    needs: quality_gate
     env:
       APP_VERSION: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag || github.ref_name }}
     steps:
@@ -98,7 +105,7 @@ jobs:
   windows_desktop:
     name: Build Windows Desktop
     runs-on: windows-latest
-    needs: verify
+    needs: quality_gate
     env:
       APP_VERSION: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag || github.ref_name }}
     steps:

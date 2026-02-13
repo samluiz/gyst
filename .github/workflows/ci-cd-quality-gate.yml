@@ -9,10 +9,6 @@ on:
 permissions:
   contents: read
 
-concurrency:
-  group: enterprise-quality-gate-${{ github.ref }}
-  cancel-in-progress: false
-
 env:
   GRADLE_OPTS: "-Djava.net.preferIPv4Stack=true"
 
