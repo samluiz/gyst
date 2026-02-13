@@ -3,18 +3,286 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Gyst Legal</title>
+  <title>Gyst</title>
+  <meta name="description" content="Gyst is an offline-first personal finance app built for strict monthly control and long-term planning." />
   <style>
-    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; margin: 40px auto; max-width: 760px; padding: 0 16px; line-height: 1.5; color: #1a1a1a; }
-    a { color: #0f62fe; text-decoration: none; }
-    a:hover { text-decoration: underline; }
+    @font-face {
+      font-family: "OpenSpaceRegular";
+      src: url("./assets/fonts/OpenspaceRegular.otf") format("opentype");
+      font-display: swap;
+    }
+
+    :root {
+      --bg: #050607;
+      --bg-soft: #0a0c0f;
+      --surface: #101317;
+      --surface-2: #151a20;
+      --text: #f8fbff;
+      --muted: #b2bfcc;
+      --accent: #c1d4ea;
+      --line: rgba(255, 255, 255, 0.12);
+      --radius: 14px;
+      --radius-sm: 10px;
+      --shadow-top: -8px -8px 16px rgba(255, 255, 255, 0.02);
+      --shadow-bottom: 10px 10px 24px rgba(0, 0, 0, 0.62);
+      --ease: cubic-bezier(.2, .8, .2, 1);
+    }
+
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text); }
+
+    body {
+      min-height: 100dvh;
+      display: grid;
+      place-items: center;
+      font-family: Inter, "Segoe UI", system-ui, sans-serif;
+      background:
+        radial-gradient(1200px 680px at 15% -10%, rgba(145,165,188,0.11), transparent 55%),
+        radial-gradient(900px 560px at 115% 8%, rgba(255,255,255,0.03), transparent 52%),
+        linear-gradient(180deg, var(--bg-soft), var(--bg));
+      padding: 12px;
+    }
+
+    .card-shell {
+      width: min(1120px, 96vw);
+      border-radius: var(--radius);
+      border: 1px solid var(--line);
+      background: linear-gradient(145deg, var(--surface-2), var(--surface));
+      box-shadow: var(--shadow-top), var(--shadow-bottom);
+      overflow: hidden;
+      position: relative;
+    }
+
+    .card-shell::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      background:
+        radial-gradient(460px 280px at 18% 8%, rgba(193,212,234,0.09), transparent 70%),
+        radial-gradient(340px 220px at 86% 90%, rgba(255,255,255,0.04), transparent 70%);
+    }
+
+    .inner {
+      position: relative;
+      z-index: 1;
+      padding: clamp(24px, 3.2vw, 42px);
+      display: grid;
+      gap: 28px;
+    }
+
+    .top {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 12px;
+      align-items: center;
+      padding-bottom: 2px;
+    }
+
+    .logo {
+      margin: 0;
+      font-family: "OpenSpaceRegular", Inter, sans-serif;
+      font-size: clamp(1.85rem, 4.6vw, 2.95rem);
+      letter-spacing: 0.08em;
+      line-height: .9;
+      text-transform: uppercase;
+      color: #edf5ff;
+    }
+
+    .lang {
+      display: inline-flex;
+      gap: 6px;
+      padding: 4px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: rgba(255,255,255,0.02);
+    }
+
+    .lang button {
+      border: 0;
+      border-radius: 999px;
+      background: transparent;
+      color: var(--muted);
+      padding: 6px 12px;
+      font-size: .8rem;
+      cursor: pointer;
+      transition: background .16s var(--ease), color .16s var(--ease);
+    }
+
+    .lang button[aria-pressed="true"] {
+      color: var(--text);
+      background: rgba(255,255,255,0.09);
+    }
+
+    .hero {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 28px;
+      align-items: start;
+    }
+
+    .eyebrow {
+      display: inline-block;
+      font-size: .75rem;
+      text-transform: uppercase;
+      letter-spacing: .06em;
+      color: #dce8f6;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 7px 11px;
+      background: rgba(255,255,255,0.03);
+      margin-bottom: 18px;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: clamp(2.1rem, 5.3vw, 4.4rem);
+      line-height: .94;
+      letter-spacing: -0.03em;
+      max-width: 11ch;
+      text-wrap: balance;
+    }
+
+    .lead {
+      margin: 22px 0 0;
+      max-width: 62ch;
+      color: var(--muted);
+      font-size: clamp(.95rem, 1.3vw, 1.05rem);
+      line-height: 1.52;
+    }
+
+    .meta { display: none; }
+
+    .pill {
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 7px 11px;
+      font-size: .77rem;
+      color: #dce7f2;
+      background: rgba(255,255,255,0.03);
+    }
+
+    .links {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      align-content: start;
+      padding-top: 10px;
+    }
+
+    .btn {
+      text-decoration: none;
+      color: var(--text);
+      border: 1px solid var(--line);
+      border-radius: var(--radius-sm);
+      background: rgba(255,255,255,0.03);
+      padding: 11px 13px;
+      font-size: .84rem;
+      transition: transform .16s var(--ease), border-color .16s var(--ease), background .16s var(--ease);
+    }
+
+    .btn:hover {
+      transform: translateY(-1px);
+      border-color: rgba(193,212,234,0.5);
+      background: rgba(255,255,255,0.05);
+    }
+
+    .divider {
+      height: 1px;
+      background: linear-gradient(90deg, transparent, rgba(255,255,255,0.16), transparent);
+    }
+
+    .bottom {
+      display: flex;
+      justify-content: space-between;
+      gap: 14px;
+      align-items: center;
+      color: #a8b6c4;
+      font-size: .78rem;
+      padding-top: 8px;
+    }
+
+    [data-lang] { display: none; }
+    [data-lang].active { display: block; }
+
+    @media (max-width: 900px) {
+      .hero { grid-template-columns: 1fr; }
+    }
+
+    @media (max-width: 620px) {
+      .links { display: grid; grid-template-columns: 1fr; }
+      .bottom { flex-direction: column; align-items: flex-start; }
+    }
+
+    .lang button:focus-visible,
+    .btn:focus-visible {
+      outline: 2px solid #d4e3f3;
+      outline-offset: 2px;
+    }
   </style>
 </head>
 <body>
-  <h1>Gyst Legal Documents</h1>
-  <ul>
-    <li><a href="./legal/privacy-policy.html">Privacy Policy</a></li>
-    <li><a href="./legal/terms-of-service.html">Terms of Service</a></li>
-  </ul>
+  <main class="card-shell" aria-label="Gyst landing page">
+    <div class="inner">
+      <header class="top">
+        <p class="logo">GYST</p>
+        <div class="lang" role="group" aria-label="Language selector">
+          <button type="button" data-set-lang="en" aria-pressed="true">EN</button>
+          <button type="button" data-set-lang="pt" aria-pressed="false">PT-BR</button>
+        </div>
+      </header>
+
+      <section class="hero">
+        <article>
+          <span class="eyebrow">Personal Finance OS</span>
+          <div data-lang="en" class="active">
+            <h1>Clarity for every month.</h1>
+            <p class="lead">Gyst is an offline-first finance app for disciplined people. Budget, expenses, subscriptions, installments and long-term projection in one clean flow.</p>
+          </div>
+          <div data-lang="pt">
+            <h1>Clareza para cada mês.</h1>
+            <p class="lead">Gyst é um app de finanças offline-first para quem quer disciplina. Orçamento, despesas, assinaturas, parcelamentos e projeção de longo prazo em um fluxo limpo.</p>
+          </div>
+          <nav class="links" aria-label="Quick links">
+            <a class="btn" href="./legal/privacy-policy.html">Privacy / Privacidade</a>
+            <a class="btn" href="./legal/terms-of-service.html">Terms / Termos</a>
+            <a class="btn" href="https://github.com/samluiz/gyst" target="_blank" rel="noopener noreferrer">GitHub</a>
+          </nav>
+        </article>
+      </section>
+
+      <div class="divider" role="presentation"></div>
+
+      <footer class="bottom">
+        <div>
+          <span data-lang="en" class="active">Built for disciplined financial control.</span>
+          <span data-lang="pt">Feito para controle financeiro disciplinado.</span>
+        </div>
+        <div>Gyst • <span id="year"></span></div>
+      </footer>
+    </div>
+  </main>
+
+  <script>
+    (function () {
+      const buttons = document.querySelectorAll("[data-set-lang]");
+      const blocks = document.querySelectorAll("[data-lang]");
+
+      function setLang(lang) {
+        buttons.forEach((btn) => {
+          btn.setAttribute("aria-pressed", String(btn.dataset.setLang === lang));
+        });
+        blocks.forEach((el) => {
+          el.classList.toggle("active", el.dataset.lang === lang);
+        });
+        document.documentElement.lang = lang === "pt" ? "pt-BR" : "en";
+      }
+
+      buttons.forEach((btn) => btn.addEventListener("click", () => setLang(btn.dataset.setLang)));
+
+      const year = document.getElementById("year");
+      if (year) year.textContent = String(new Date().getFullYear());
+    })();
+  </script>
 </body>
 </html>
