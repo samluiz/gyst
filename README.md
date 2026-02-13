@@ -126,13 +126,13 @@ Write is dialog-based:
 
 - Workflows:
   - `.github/workflows/ci-cd-quality-gate.yml` (`main` pushes)
-  - `.github/workflows/ci-cd-release.yml` (tags `v*`)
+  - `.github/workflows/ci-cd-release-android.yml` (manual Android release)
+  - `.github/workflows/ci-cd-release-windows.yml` (manual Windows release)
 - Trigger:
-  - push tags matching `v*` (example: `v1.4.0`)
-  - manual `workflow_dispatch` with tag input
+  - manual `workflow_dispatch` only (required `tag` input, example: `v1.4.0`)
 - Outputs published to GitHub Release:
-  - Android release APK (`androidApp`)
-  - Windows desktop artifacts (`.msi` + portable zip from Compose distributable)
+  - Android workflow: release APK (`androidApp`)
+  - Windows workflow: desktop artifacts (`.msi` + portable zip)
 
 ### Version propagation
 

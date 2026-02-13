@@ -39,7 +39,8 @@
 - Cover business rules (validation, rollover, forecast, guards) before UI details.
 - CI workflows:
   - `CI/CD Quality Gate` on pushes to `main`
-  - `CI/CD Release` on tags `v*`, and it waits for release quality checks before publishing artifacts
+  - `CI/CD Release Android` (manual dispatch with `tag`)
+  - `CI/CD Release Windows` (manual dispatch with `tag`)
 
 ## Commit & Pull Request Guidelines
 - No established commit history yet; use Conventional Commits:
