@@ -59,20 +59,33 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Decode release keystore
-        if: ${{ secrets.GYST_KEYSTORE_B64 != '' }}
+      - name: Decode release keystore (if provided)
         shell: bash
+        env:
+          GYST_KEYSTORE_B64: ${{ secrets.GYST_KEYSTORE_B64 }}
         run: |
-          echo "${{ secrets.GYST_KEYSTORE_B64 }}" | base64 --decode > "$RUNNER_TEMP/gyst-release.jks"
+          if [ -n "$GYST_KEYSTORE_B64" ]; then
+            echo "$GYST_KEYSTORE_B64" | base64 --decode > "$RUNNER_TEMP/gyst-release.jks"
+          else
+            echo "No keystore secret provided. Building unsigned release artifact."
+          fi
 
       - name: Build release APK
         env:
-          GYST_KEYSTORE_PATH: ${{ runner.temp }}/gyst-release.jks
           GYST_KEYSTORE_PASSWORD: ${{ secrets.GYST_KEYSTORE_PASSWORD }}
           GYST_KEY_ALIAS: ${{ secrets.GYST_KEY_ALIAS }}
           GYST_KEY_PASSWORD: ${{ secrets.GYST_KEY_PASSWORD }}
+          GYST_KEYSTORE_PATH_DEFAULT: ${{ runner.temp }}/gyst-release.jks
         run: |
           chmod +x gradlew
+          if [ -f "$GYST_KEYSTORE_PATH_DEFAULT" ]; then
+            export GYST_KEYSTORE_PATH="$GYST_KEYSTORE_PATH_DEFAULT"
+          else
+            unset GYST_KEYSTORE_PATH
+            unset GYST_KEYSTORE_PASSWORD
+            unset GYST_KEY_ALIAS
+            unset GYST_KEY_PASSWORD
+          fi
           ./gradlew :androidApp:assembleRelease -Papp.version=$APP_VERSION
 
       - name: Upload APK artifact
