@@ -18,3 +18,4 @@ captures
 **/xcshareddata/WorkspaceSettings.xcsettings
 node_modules/
 *.jks
+**/google-services.json
