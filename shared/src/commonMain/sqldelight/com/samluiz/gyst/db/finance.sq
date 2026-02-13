@@ -1,0 +1,214 @@
+CREATE TABLE category (
+    id TEXT NOT NULL PRIMARY KEY,
+    name TEXT NOT NULL,
+    type TEXT NOT NULL,
+    color TEXT,
+    icon TEXT
+);
+
+CREATE TABLE budget_month (
+    id TEXT NOT NULL PRIMARY KEY,
+    year_month TEXT NOT NULL,
+    total_income_cents INTEGER NOT NULL,
+    created_at TEXT NOT NULL
+);
+
+CREATE TABLE budget_allocation (
+    id TEXT NOT NULL PRIMARY KEY,
+    budget_month_id TEXT NOT NULL,
+    category_id TEXT NOT NULL,
+    planned_cents INTEGER NOT NULL,
+    UNIQUE(budget_month_id, category_id)
+);
+
+CREATE TABLE expense (
+    id TEXT NOT NULL PRIMARY KEY,
+    occurred_at TEXT NOT NULL,
+    amount_cents INTEGER NOT NULL,
+    category_id TEXT NOT NULL,
+    note TEXT,
+    merchant TEXT,
+    payment_method TEXT NOT NULL,
+    recurrence_type TEXT NOT NULL DEFAULT 'ONE_TIME',
+    created_at TEXT NOT NULL,
+    schedule_item_id TEXT
+);
+
+CREATE TABLE subscription (
+    id TEXT NOT NULL PRIMARY KEY,
+    name TEXT NOT NULL,
+    amount_cents INTEGER NOT NULL,
+    billing_day INTEGER NOT NULL,
+    category_id TEXT NOT NULL,
+    active INTEGER NOT NULL,
+    renewal_policy TEXT NOT NULL,
+    next_due_date TEXT NOT NULL
+);
+
+CREATE TABLE installment_plan (
+    id TEXT NOT NULL PRIMARY KEY,
+    name TEXT NOT NULL,
+    total_installments INTEGER NOT NULL,
+    monthly_amount_cents INTEGER NOT NULL,
+    start_year_month TEXT NOT NULL,
+    end_year_month TEXT NOT NULL,
+    category_id TEXT NOT NULL,
+    active INTEGER NOT NULL
+);
+
+CREATE TABLE payment_schedule_item (
+    id TEXT NOT NULL PRIMARY KEY,
+    kind TEXT NOT NULL,
+    ref_id TEXT NOT NULL,
+    due_date TEXT NOT NULL,
+    amount_cents INTEGER NOT NULL,
+    status TEXT NOT NULL,
+    paid_at TEXT
+);
+
+CREATE TABLE safety_guard (
+    id TEXT NOT NULL PRIMARY KEY,
+    no_new_installments INTEGER NOT NULL,
+    discretionary_cap_cents INTEGER,
+    alert70_enabled INTEGER NOT NULL,
+    alert90_enabled INTEGER NOT NULL,
+    alert100_enabled INTEGER NOT NULL
+);
+
+CREATE TABLE app_setting (
+    key TEXT NOT NULL PRIMARY KEY,
+    value TEXT NOT NULL
+);
+
+selectAllCategories:
+SELECT * FROM category ORDER BY name;
+
+upsertCategory:
+INSERT OR REPLACE INTO category(id, name, type, color, icon)
+VALUES (?, ?, ?, ?, ?);
+
+deleteCategory:
+DELETE FROM category WHERE id = ?;
+
+upsertBudgetMonth:
+INSERT OR REPLACE INTO budget_month(id, year_month, total_income_cents, created_at)
+VALUES (?, ?, ?, ?);
+
+findBudgetMonthByYearMonth:
+SELECT * FROM budget_month WHERE year_month = ? LIMIT 1;
+
+selectBudgetMonths:
+SELECT year_month AS yearMonth FROM budget_month ORDER BY year_month DESC;
+
+selectBudgetAllocationsByMonth:
+SELECT ba.*, c.name AS category_name, c.type AS category_type
+FROM budget_allocation ba
+JOIN category c ON c.id = ba.category_id
+WHERE ba.budget_month_id = ?
+ORDER BY c.name;
+
+upsertBudgetAllocation:
+INSERT OR REPLACE INTO budget_allocation(id, budget_month_id, category_id, planned_cents)
+VALUES (?, ?, ?, ?);
+
+deleteBudgetAllocationsByMonth:
+DELETE FROM budget_allocation WHERE budget_month_id = ?;
+
+upsertExpense:
+INSERT OR REPLACE INTO expense(
+    id, occurred_at, amount_cents, category_id, note, merchant, payment_method, recurrence_type, created_at, schedule_item_id
+)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+deleteExpense:
+DELETE FROM expense WHERE id = ?;
+
+selectExpenseById:
+SELECT * FROM expense WHERE id = ? LIMIT 1;
+
+selectExpensesByMonth:
+SELECT * FROM expense WHERE occurred_at >= :fromDate AND occurred_at <= :toDate ORDER BY occurred_at DESC;
+
+searchExpenses:
+SELECT * FROM expense
+WHERE occurred_at >= :fromDate AND occurred_at <= :toDate
+  AND (:categoryId IS NULL OR category_id = :categoryId)
+  AND (:query IS NULL OR note LIKE '%' || :query || '%' OR merchant LIKE '%' || :query || '%')
+ORDER BY occurred_at DESC;
+
+sumExpensesByMonth:
+SELECT COALESCE(SUM(amount_cents), 0) FROM expense WHERE occurred_at >= :fromDate AND occurred_at <= :toDate;
+
+sumRecurringExpensesByMonth:
+SELECT COALESCE(SUM(amount_cents), 0)
+FROM expense
+WHERE occurred_at >= :fromDate AND occurred_at <= :toDate
+  AND recurrence_type = 'MONTHLY'
+  AND schedule_item_id IS NULL;
+
+sumExpensesByMonthAndCategory:
+SELECT category_id, COALESCE(SUM(amount_cents), 0) AS total
+FROM expense
+WHERE occurred_at >= :fromDate AND occurred_at <= :toDate
+GROUP BY category_id;
+
+upsertSubscription:
+INSERT OR REPLACE INTO subscription(id, name, amount_cents, billing_day, category_id, active, renewal_policy, next_due_date)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+
+selectSubscriptions:
+SELECT * FROM subscription ORDER BY active DESC, amount_cents DESC;
+
+selectActiveSubscriptions:
+SELECT * FROM subscription WHERE active = 1 ORDER BY amount_cents DESC;
+
+upsertInstallmentPlan:
+INSERT OR REPLACE INTO installment_plan(
+    id, name, total_installments, monthly_amount_cents, start_year_month, end_year_month, category_id, active
+)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+
+selectInstallmentPlans:
+SELECT * FROM installment_plan ORDER BY active DESC, end_year_month ASC;
+
+selectActiveInstallments:
+SELECT * FROM installment_plan WHERE active = 1 ORDER BY end_year_month ASC;
+
+upsertScheduleItem:
+INSERT OR REPLACE INTO payment_schedule_item(id, kind, ref_id, due_date, amount_cents, status, paid_at)
+VALUES (?, ?, ?, ?, ?, ?, ?);
+
+selectScheduleByDateRange:
+SELECT * FROM payment_schedule_item WHERE due_date >= :fromDate AND due_date <= :toDate ORDER BY due_date ASC;
+
+selectDueScheduleItemsByRefAndDate:
+SELECT * FROM payment_schedule_item WHERE ref_id = :refId AND due_date = :dueDate LIMIT 1;
+
+selectScheduleItemById:
+SELECT * FROM payment_schedule_item WHERE id = ? LIMIT 1;
+
+updateScheduleStatus:
+UPDATE payment_schedule_item SET status = ?, paid_at = ? WHERE id = ?;
+
+sumDueByMonthAndKinds:
+SELECT COALESCE(SUM(amount_cents), 0)
+FROM payment_schedule_item
+WHERE due_date >= :fromDate AND due_date <= :toDate
+  AND kind IN (:firstKind, :secondKind)
+  AND status != 'SKIPPED';
+
+upsertSafetyGuard:
+INSERT OR REPLACE INTO safety_guard(
+    id, no_new_installments, discretionary_cap_cents, alert70_enabled, alert90_enabled, alert100_enabled
+)
+VALUES (?, ?, ?, ?, ?, ?);
+
+getSafetyGuard:
+SELECT * FROM safety_guard LIMIT 1;
+
+upsertAppSetting:
+INSERT OR REPLACE INTO app_setting(key, value)
+VALUES (?, ?);
+
+getAppSetting:
+SELECT value FROM app_setting WHERE key = ? LIMIT 1;
