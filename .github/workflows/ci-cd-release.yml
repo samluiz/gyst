@@ -144,7 +144,7 @@ jobs:
       - name: Build MSI and distributable
         shell: pwsh
         run: |
-          .\gradlew :desktopApp:packageReleaseMsi :desktopApp:createDistributable -Papp.version=$env:APP_VERSION
+          .\gradlew :desktopApp:packageReleaseMsi :desktopApp:createDistributable "--project-prop=app.version=$env:APP_VERSION"
 
       - name: Zip portable Windows app
         shell: pwsh
