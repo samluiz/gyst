@@ -22,7 +22,10 @@ interface ExpenseRepository {
     suspend fun delete(id: String)
     suspend fun getById(id: String): Expense?
     suspend fun byMonth(yearMonth: YearMonth): List<Expense>
+    suspend fun byMonthPaged(yearMonth: YearMonth, limit: Long, offset: Long): List<Expense>
     suspend fun search(yearMonth: YearMonth, categoryId: String?, query: String?): List<Expense>
+    suspend fun deleteFutureRecurringByTemplate(fromDateExclusive: LocalDate, template: Expense)
+    suspend fun updateFutureRecurringByTemplate(fromDateExclusive: LocalDate, oldTemplate: Expense, newTemplate: Expense)
     suspend fun monthlySpentByCategory(yearMonth: YearMonth): Map<String, Long>
     suspend fun monthlyTotal(yearMonth: YearMonth): Long
     suspend fun monthlyRecurringTotal(yearMonth: YearMonth): Long
@@ -30,12 +33,14 @@ interface ExpenseRepository {
 
 interface SubscriptionRepository {
     suspend fun upsert(subscription: Subscription)
+    suspend fun delete(id: String)
     suspend fun list(): List<Subscription>
     suspend fun listActive(): List<Subscription>
 }
 
 interface InstallmentRepository {
     suspend fun upsert(plan: InstallmentPlan)
+    suspend fun delete(id: String)
     suspend fun list(): List<InstallmentPlan>
     suspend fun listActive(): List<InstallmentPlan>
 }
@@ -45,6 +50,8 @@ interface ScheduleRepository {
     suspend fun byDateRange(from: LocalDate, to: LocalDate): List<PaymentScheduleItem>
     suspend fun findByRefAndDate(refId: String, dueDate: LocalDate): PaymentScheduleItem?
     suspend fun findById(id: String): PaymentScheduleItem?
+    suspend fun deleteByRefAndKind(refId: String, kind: ScheduleKind)
+    suspend fun deleteByRefAndKindFromDate(refId: String, kind: ScheduleKind, fromDateInclusive: LocalDate)
     suspend fun markStatus(id: String, status: ScheduleStatus, paidAtIso: String?)
     suspend fun commitmentsForMonth(yearMonth: YearMonth): Long
 }

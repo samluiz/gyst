@@ -1,0 +1,38 @@
+-- Data safety hardening migration: dedupe, index, and trigger guards.
+
+DELETE FROM budget_month
+WHERE rowid NOT IN (
+  SELECT MAX(rowid) FROM budget_month GROUP BY year_month
+);
+
+DELETE FROM payment_schedule_item
+WHERE rowid NOT IN (
+  SELECT MIN(rowid) FROM payment_schedule_item GROUP BY ref_id, kind, due_date
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_budget_month_year_month_unique
+ON budget_month(year_month);
+
+CREATE INDEX IF NOT EXISTS idx_budget_allocation_budget_month
+ON budget_allocation(budget_month_id);
+
+CREATE INDEX IF NOT EXISTS idx_expense_occurred_at
+ON expense(occurred_at);
+
+CREATE INDEX IF NOT EXISTS idx_expense_category_occurred
+ON expense(category_id, occurred_at);
+
+CREATE INDEX IF NOT EXISTS idx_expense_recurring_lookup
+ON expense(recurrence_type, schedule_item_id, occurred_at);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_schedule_unique_ref_kind_due
+ON payment_schedule_item(ref_id, kind, due_date);
+
+CREATE INDEX IF NOT EXISTS idx_schedule_due_date
+ON payment_schedule_item(due_date);
+
+CREATE INDEX IF NOT EXISTS idx_subscription_active
+ON subscription(active, amount_cents);
+
+CREATE INDEX IF NOT EXISTS idx_installment_active_end
+ON installment_plan(active, end_year_month);

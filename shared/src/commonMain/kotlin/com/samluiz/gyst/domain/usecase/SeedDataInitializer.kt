@@ -28,7 +28,6 @@ class SeedDataInitializer(
         settingsRepository.upsertSafetyGuard(
             SafetyGuard(
                 id = id("guard"),
-                noNewInstallments = true,
                 discretionaryCapCents = 100_000,
             )
         )

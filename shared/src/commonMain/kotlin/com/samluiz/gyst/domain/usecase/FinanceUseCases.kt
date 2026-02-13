@@ -74,14 +74,26 @@ class ComputeCashFlowForecastUseCase(
     suspend operator fun invoke(fromDate: LocalDate, monthsAhead: Int): List<ForecastMonth> {
         val start = YearMonth.fromDate(fromDate)
         val baselineRecurring = expenseRepository.monthlyRecurringTotal(start)
+        var carryIncome = budgetRepository.findByYearMonth(start)?.totalIncomeCents ?: 0L
+        var carryPlanned = budgetRepository.findByYearMonth(start)
+            ?.let { budgetRepository.allocationsByBudgetMonth(it.id).sumOf { alloc -> alloc.plannedCents } }
+            ?: 0L
         return (0 until monthsAhead).map { offset ->
             val ym = start.plusMonths(offset)
             val budget = budgetRepository.findByYearMonth(ym)
             val allocations = budget?.let { budgetRepository.allocationsByBudgetMonth(it.id) }.orEmpty()
-            val planned = allocations.sumOf { it.plannedCents }
+            val planned = when {
+                budget == null -> carryPlanned
+                allocations.isEmpty() -> carryPlanned
+                else -> allocations.sumOf { it.plannedCents }
+            }
             val commitments = scheduleRepository.commitmentsForMonth(ym)
             val recurring = expenseRepository.monthlyRecurringTotal(ym).takeIf { it > 0L } ?: baselineRecurring
-            val income = budget?.totalIncomeCents ?: 0L
+            val income = budget?.totalIncomeCents ?: carryIncome
+            if (budget != null) {
+                carryIncome = income
+                if (allocations.isNotEmpty()) carryPlanned = allocations.sumOf { it.plannedCents }
+            }
             val expectedSpend = commitments + recurring
             ForecastMonth(
                 yearMonth = ym,
@@ -129,12 +141,9 @@ class UpsertSubscriptionUseCase(
 class CreateInstallmentPlanUseCase(
     private val installmentRepository: InstallmentRepository,
     private val scheduleRepository: ScheduleRepository,
-    private val settingsRepository: SettingsRepository,
 ) {
     suspend operator fun invoke(plan: InstallmentPlan) {
         requireNonNegative(plan.monthlyAmountCents)
-        val guard = settingsRepository.getSafetyGuard()
-        if (guard?.noNewInstallments == true) throw FinanceError.GuardBlockedInstallments()
 
         installmentRepository.upsert(plan)
 
@@ -208,7 +217,7 @@ class HandleMonthRolloverUseCase(
                     it.recurrenceType == RecurrenceType.MONTHLY
             }
             if (!alreadyCopied) {
-                val newDay = source.occurredAt.dayOfMonth.coerceAtMost(monthBounds(targetMonth).second.dayOfMonth)
+                val newDay = source.occurredAt.day.coerceAtMost(monthBounds(targetMonth).second.day)
                 expenseRepository.upsert(
                     source.copy(
                         id = id("exp-rec"),

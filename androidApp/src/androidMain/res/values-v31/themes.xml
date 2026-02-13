@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.Gyst" parent="@android:style/Theme.Material.Light.NoActionBar" />
+
+    <style name="Theme.Gyst.Splash" parent="@style/Theme.Gyst">
+        <item name="windowSplashScreenBackground">@color/splash_background</item>
+        <item name="windowSplashScreenAnimatedIcon">@mipmap/ic_launcher_foreground</item>
+        <item name="windowSplashScreenAnimationDuration">250</item>
+        <item name="postSplashScreenTheme">@style/Theme.Gyst</item>
+    </style>
+</resources>

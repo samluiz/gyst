@@ -118,6 +118,41 @@ Write is dialog-based:
   - Sign in/out with Google
   - Drive sync action (uploads encrypted-transport backup file to app-private Drive space)
   - account/sync status and latest sync timestamp
+- **Release info**:
+  - app version (tag-propagated)
+  - open-source libraries/licenses dialog
+
+## Release CI/CD (Tag-based)
+
+- Workflow: `.github/workflows/release.yml`
+- Trigger:
+  - push tags matching `v*` (example: `v1.4.0`)
+  - manual `workflow_dispatch` with tag input
+- Outputs published to GitHub Release:
+  - Android release APK (`androidApp`)
+  - Windows desktop artifacts (`.msi` + portable zip from Compose distributable)
+
+### Version propagation
+
+- Version source priority:
+  1. `-Papp.version=...`
+  2. `APP_VERSION` env var
+  3. GitHub tag (`GITHUB_REF_NAME`)
+  4. fallback `1.0.0`
+- Android:
+  - `versionName` = resolved version
+  - `versionCode` derived from SemVer (`1.2.3 -> 10203`) unless `-Papp.versionCode` is provided
+- Desktop:
+  - `nativeDistributions.packageVersion` = resolved version (without `v` prefix)
+- Runtime/Profile:
+  - `shared` generates `BuildInfo.VERSION_NAME` and `BuildInfo.VERSION_CODE` used in UI
+
+### Required GitHub Secrets (for signed Android release)
+
+- `GYST_KEYSTORE_B64` (base64 of `.jks`)
+- `GYST_KEYSTORE_PASSWORD`
+- `GYST_KEY_ALIAS`
+- `GYST_KEY_PASSWORD`
 
 ## Internationalization
 

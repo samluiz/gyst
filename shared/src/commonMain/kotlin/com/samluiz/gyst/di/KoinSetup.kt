@@ -5,7 +5,6 @@ import com.samluiz.gyst.data.repository.*
 import com.samluiz.gyst.domain.repository.*
 import com.samluiz.gyst.domain.usecase.*
 import com.samluiz.gyst.presentation.MainStore
-import org.koin.core.context.GlobalContext
 import org.koin.core.context.startKoin
 import org.koin.core.module.Module
 import org.koin.dsl.module
@@ -30,16 +29,19 @@ private val sharedModule = module {
     single { ComputeCashFlowForecastUseCase(get(), get(), get()) }
     single { HandleMonthRolloverUseCase(get(), get(), get()) }
     single { UpsertSubscriptionUseCase(get(), get()) }
-    single { CreateInstallmentPlanUseCase(get(), get(), get()) }
+    single { CreateInstallmentPlanUseCase(get(), get()) }
     single { MarkSchedulePaidUseCase(get()) }
 
     single { SeedDataInitializer(get(), get(), get()) }
     single { MainStore(get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get()) }
 }
 
+private var koinStarted = false
+
 fun initKoin(platformModule: Module) {
-    if (GlobalContext.getOrNull() != null) return
+    if (koinStarted) return
     startKoin {
         modules(sharedModule, platformModule)
     }
+    koinStarted = true
 }

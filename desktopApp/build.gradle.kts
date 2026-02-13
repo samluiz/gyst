@@ -6,6 +6,8 @@ plugins {
     alias(libs.plugins.composeCompiler)
 }
 
+val appVersionName = rootProject.extra["appVersionName"].toString().removePrefix("v")
+
 kotlin {
     jvm("desktop")
 
@@ -26,7 +28,7 @@ compose.desktop {
         nativeDistributions {
             targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb)
             packageName = "gyst"
-            packageVersion = "1.0.0"
+            packageVersion = appVersionName
         }
     }
 }

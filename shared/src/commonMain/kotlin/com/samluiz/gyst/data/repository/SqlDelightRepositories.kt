@@ -7,9 +7,9 @@ import com.samluiz.gyst.domain.repository.*
 import com.samluiz.gyst.domain.usecase.id
 import com.samluiz.gyst.domain.usecase.monthBounds
 import com.samluiz.gyst.domain.usecase.nowInstantUtc
-import kotlinx.datetime.Instant
 import kotlinx.datetime.LocalDate
 import kotlin.time.Clock
+import kotlin.time.Instant
 
 class DatabaseHolder(driver: SqlDriver) {
     val db: GystDatabase = GystDatabase(driver)
@@ -149,6 +149,29 @@ class SqlExpenseRepository(private val holder: DatabaseHolder) : ExpenseReposito
         }
     }
 
+    override suspend fun byMonthPaged(yearMonth: YearMonth, limit: Long, offset: Long): List<Expense> {
+        val (from, to) = monthBounds(yearMonth)
+        return q.selectExpensesByMonthPaged(
+            fromDate = from.toString(),
+            toDate = to.toString(),
+            limit = limit,
+            offset = offset,
+        ).executeAsList().map {
+            Expense(
+                id = it.id,
+                occurredAt = LocalDate.parse(it.occurred_at),
+                amountCents = it.amount_cents,
+                categoryId = it.category_id,
+                note = it.note,
+                merchant = it.merchant,
+                paymentMethod = PaymentMethod.valueOf(it.payment_method),
+                recurrenceType = RecurrenceType.valueOf(it.recurrence_type),
+                createdAt = Instant.parse(it.created_at),
+                scheduleItemId = it.schedule_item_id,
+            )
+        }
+    }
+
     override suspend fun search(yearMonth: YearMonth, categoryId: String?, query: String?): List<Expense> {
         val (from, to) = monthBounds(yearMonth)
         return q.searchExpenses(
@@ -170,6 +193,33 @@ class SqlExpenseRepository(private val holder: DatabaseHolder) : ExpenseReposito
                 scheduleItemId = it.schedule_item_id,
             )
         }
+    }
+
+    override suspend fun deleteFutureRecurringByTemplate(fromDateExclusive: LocalDate, template: Expense) {
+        q.deleteFutureRecurringByTemplate(
+            fromDate = fromDateExclusive.toString(),
+            categoryId = template.categoryId,
+            amountCents = template.amountCents,
+            paymentMethod = template.paymentMethod.name,
+            note = template.note,
+            merchant = template.merchant,
+        )
+    }
+
+    override suspend fun updateFutureRecurringByTemplate(fromDateExclusive: LocalDate, oldTemplate: Expense, newTemplate: Expense) {
+        q.updateFutureRecurringByTemplate(
+            fromDate = fromDateExclusive.toString(),
+            oldCategoryId = oldTemplate.categoryId,
+            oldAmountCents = oldTemplate.amountCents,
+            oldPaymentMethod = oldTemplate.paymentMethod.name,
+            oldNote = oldTemplate.note,
+            oldMerchant = oldTemplate.merchant,
+            newCategoryId = newTemplate.categoryId,
+            newAmountCents = newTemplate.amountCents,
+            newPaymentMethod = newTemplate.paymentMethod.name,
+            newNote = newTemplate.note,
+            newMerchant = newTemplate.merchant,
+        )
     }
 
     override suspend fun monthlySpentByCategory(yearMonth: YearMonth): Map<String, Long> {
@@ -231,6 +281,10 @@ class SqlSubscriptionRepository(private val holder: DatabaseHolder) : Subscripti
             nextDueDate = LocalDate.parse(it.next_due_date),
         )
     }
+
+    override suspend fun delete(id: String) {
+        q.deleteSubscription(id)
+    }
 }
 
 class SqlInstallmentRepository(private val holder: DatabaseHolder) : InstallmentRepository {
@@ -273,6 +327,10 @@ class SqlInstallmentRepository(private val holder: DatabaseHolder) : Installment
             categoryId = it.category_id,
             active = it.active == 1L,
         )
+    }
+
+    override suspend fun delete(id: String) {
+        q.deleteInstallmentPlan(id)
     }
 }
 
@@ -333,6 +391,18 @@ class SqlScheduleRepository(private val holder: DatabaseHolder) : ScheduleReposi
         }
     }
 
+    override suspend fun deleteByRefAndKind(refId: String, kind: ScheduleKind) {
+        q.deleteScheduleItemsByRefAndKind(refId, kind.name)
+    }
+
+    override suspend fun deleteByRefAndKindFromDate(refId: String, kind: ScheduleKind, fromDateInclusive: LocalDate) {
+        q.deleteScheduleItemsByRefAndKindFromDate(
+            refId = refId,
+            kind = kind.name,
+            fromDate = fromDateInclusive.toString(),
+        )
+    }
+
     override suspend fun markStatus(id: String, status: ScheduleStatus, paidAtIso: String?) {
         q.updateScheduleStatus(status.name, paidAtIso, id)
     }
@@ -356,7 +426,6 @@ class SqlSettingsRepository(private val holder: DatabaseHolder) : SettingsReposi
         return q.getSafetyGuard().executeAsOneOrNull()?.let {
             SafetyGuard(
                 id = it.id,
-                noNewInstallments = it.no_new_installments == 1L,
                 discretionaryCapCents = it.discretionary_cap_cents,
                 alert70Enabled = it.alert70_enabled == 1L,
                 alert90Enabled = it.alert90_enabled == 1L,
@@ -368,7 +437,7 @@ class SqlSettingsRepository(private val holder: DatabaseHolder) : SettingsReposi
     override suspend fun upsertSafetyGuard(guard: SafetyGuard) {
         q.upsertSafetyGuard(
             id = guard.id,
-            no_new_installments = if (guard.noNewInstallments) 1 else 0,
+            no_new_installments = 0,
             discretionary_cap_cents = guard.discretionaryCapCents,
             alert70_enabled = if (guard.alert70Enabled) 1 else 0,
             alert90_enabled = if (guard.alert90Enabled) 1 else 0,

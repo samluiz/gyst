@@ -1,0 +1,82 @@
+name: CI/CD Quality Gate
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: enterprise-quality-gate-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  android_shared_quality:
+    name: Android + Shared Lint and Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Validate wrapper
+        uses: gradle/actions/wrapper-validation@v3
+
+      - name: Run lint and tests
+        run: |
+          chmod +x gradlew
+          ./gradlew \
+            :shared:compileKotlinDesktop \
+            :shared:desktopTest \
+            :androidApp:lintDebug \
+            :androidApp:testDebugUnitTest
+
+  desktop_windows_quality:
+    name: Desktop Windows Validation
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+
+      - name: Run desktop tests
+        shell: pwsh
+        run: |
+          .\gradlew :desktopApp:desktopTest :shared:desktopTest
+
+  ios_compile_quality:
+    name: iOS Shared Compile Validation
+    runs-on: macos-14
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+
+      - name: Validate iOS shared compilation
+        run: |
+          chmod +x gradlew
+          ./gradlew :shared:compileKotlinIosSimulatorArm64

@@ -20,7 +20,7 @@ internal fun nowInstantUtc() = Clock.System.now()
 
 internal fun clampBillingDay(yearMonth: YearMonth, billingDay: Int): Int {
     val (_, last) = monthBounds(yearMonth)
-    val maxDay = last.dayOfMonth
+    val maxDay = last.day
     return billingDay.coerceIn(1, maxDay)
 }
 

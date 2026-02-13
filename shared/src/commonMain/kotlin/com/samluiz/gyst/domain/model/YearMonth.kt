@@ -11,7 +11,11 @@ data class YearMonth(val year: Int, val month: Int) : Comparable<YearMonth> {
         return if (year != other.year) year.compareTo(other.year) else month.compareTo(other.month)
     }
 
-    override fun toString(): String = "%04d-%02d".format(year, month)
+    override fun toString(): String {
+        val y = year.toString().padStart(4, '0')
+        val m = month.toString().padStart(2, '0')
+        return "$y-$m"
+    }
 
     fun atDay(day: Int): LocalDate = LocalDate(year, month, day)
 
@@ -29,6 +33,6 @@ data class YearMonth(val year: Int, val month: Int) : Comparable<YearMonth> {
             return YearMonth(parts[0].toInt(), parts[1].toInt())
         }
 
-        fun fromDate(date: LocalDate): YearMonth = YearMonth(date.year, date.monthNumber)
+        fun fromDate(date: LocalDate): YearMonth = YearMonth(date.year, date.month.ordinal + 1)
     }
 }

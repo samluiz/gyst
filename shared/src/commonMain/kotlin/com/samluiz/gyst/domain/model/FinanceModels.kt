@@ -1,7 +1,7 @@
 package com.samluiz.gyst.domain.model
 
-import kotlinx.datetime.Instant
 import kotlinx.datetime.LocalDate
+import kotlin.time.Instant
 
 enum class CategoryType { ESSENTIAL, FIXED, VARIABLE, GOAL, RESERVE }
 
@@ -83,7 +83,6 @@ data class PaymentScheduleItem(
 
 data class SafetyGuard(
     val id: String,
-    val noNewInstallments: Boolean = true,
     val discretionaryCapCents: Long? = null,
     val alert70Enabled: Boolean = true,
     val alert90Enabled: Boolean = true,

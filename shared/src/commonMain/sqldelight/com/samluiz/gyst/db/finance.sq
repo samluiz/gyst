@@ -9,7 +9,7 @@ CREATE TABLE category (
 CREATE TABLE budget_month (
     id TEXT NOT NULL PRIMARY KEY,
     year_month TEXT NOT NULL,
-    total_income_cents INTEGER NOT NULL,
+    total_income_cents INTEGER NOT NULL CHECK(total_income_cents >= 0),
     created_at TEXT NOT NULL
 );
 
@@ -17,14 +17,14 @@ CREATE TABLE budget_allocation (
     id TEXT NOT NULL PRIMARY KEY,
     budget_month_id TEXT NOT NULL,
     category_id TEXT NOT NULL,
-    planned_cents INTEGER NOT NULL,
+    planned_cents INTEGER NOT NULL CHECK(planned_cents >= 0),
     UNIQUE(budget_month_id, category_id)
 );
 
 CREATE TABLE expense (
     id TEXT NOT NULL PRIMARY KEY,
     occurred_at TEXT NOT NULL,
-    amount_cents INTEGER NOT NULL,
+    amount_cents INTEGER NOT NULL CHECK(amount_cents >= 0),
     category_id TEXT NOT NULL,
     note TEXT,
     merchant TEXT,
@@ -37,8 +37,8 @@ CREATE TABLE expense (
 CREATE TABLE subscription (
     id TEXT NOT NULL PRIMARY KEY,
     name TEXT NOT NULL,
-    amount_cents INTEGER NOT NULL,
-    billing_day INTEGER NOT NULL,
+    amount_cents INTEGER NOT NULL CHECK(amount_cents >= 0),
+    billing_day INTEGER NOT NULL CHECK(billing_day >= 1 AND billing_day <= 31),
     category_id TEXT NOT NULL,
     active INTEGER NOT NULL,
     renewal_policy TEXT NOT NULL,
@@ -48,12 +48,13 @@ CREATE TABLE subscription (
 CREATE TABLE installment_plan (
     id TEXT NOT NULL PRIMARY KEY,
     name TEXT NOT NULL,
-    total_installments INTEGER NOT NULL,
-    monthly_amount_cents INTEGER NOT NULL,
+    total_installments INTEGER NOT NULL CHECK(total_installments >= 1),
+    monthly_amount_cents INTEGER NOT NULL CHECK(monthly_amount_cents >= 0),
     start_year_month TEXT NOT NULL,
     end_year_month TEXT NOT NULL,
     category_id TEXT NOT NULL,
-    active INTEGER NOT NULL
+    active INTEGER NOT NULL,
+    CHECK(end_year_month >= start_year_month)
 );
 
 CREATE TABLE payment_schedule_item (
@@ -79,6 +80,33 @@ CREATE TABLE app_setting (
     key TEXT NOT NULL PRIMARY KEY,
     value TEXT NOT NULL
 );
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_budget_month_year_month_unique
+ON budget_month(year_month);
+
+CREATE INDEX IF NOT EXISTS idx_budget_allocation_budget_month
+ON budget_allocation(budget_month_id);
+
+CREATE INDEX IF NOT EXISTS idx_expense_occurred_at
+ON expense(occurred_at);
+
+CREATE INDEX IF NOT EXISTS idx_expense_category_occurred
+ON expense(category_id, occurred_at);
+
+CREATE INDEX IF NOT EXISTS idx_expense_recurring_lookup
+ON expense(recurrence_type, schedule_item_id, occurred_at);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_schedule_unique_ref_kind_due
+ON payment_schedule_item(ref_id, kind, due_date);
+
+CREATE INDEX IF NOT EXISTS idx_schedule_due_date
+ON payment_schedule_item(due_date);
+
+CREATE INDEX IF NOT EXISTS idx_subscription_active
+ON subscription(active, amount_cents);
+
+CREATE INDEX IF NOT EXISTS idx_installment_active_end
+ON installment_plan(active, end_year_month);
 
 selectAllCategories:
 SELECT * FROM category ORDER BY name;
@@ -123,11 +151,45 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 deleteExpense:
 DELETE FROM expense WHERE id = ?;
 
+deleteFutureRecurringByTemplate:
+DELETE FROM expense
+WHERE occurred_at > :fromDate
+  AND recurrence_type = 'MONTHLY'
+  AND schedule_item_id IS NULL
+  AND category_id = :categoryId
+  AND amount_cents = :amountCents
+  AND payment_method = :paymentMethod
+  AND ((:note IS NULL AND note IS NULL) OR note = :note)
+  AND ((:merchant IS NULL AND merchant IS NULL) OR merchant = :merchant);
+
+updateFutureRecurringByTemplate:
+UPDATE expense
+SET category_id = :newCategoryId,
+    amount_cents = :newAmountCents,
+    note = :newNote,
+    merchant = :newMerchant,
+    payment_method = :newPaymentMethod
+WHERE occurred_at > :fromDate
+  AND recurrence_type = 'MONTHLY'
+  AND schedule_item_id IS NULL
+  AND category_id = :oldCategoryId
+  AND amount_cents = :oldAmountCents
+  AND payment_method = :oldPaymentMethod
+  AND ((:oldNote IS NULL AND note IS NULL) OR note = :oldNote)
+  AND ((:oldMerchant IS NULL AND merchant IS NULL) OR merchant = :oldMerchant);
+
 selectExpenseById:
 SELECT * FROM expense WHERE id = ? LIMIT 1;
 
 selectExpensesByMonth:
 SELECT * FROM expense WHERE occurred_at >= :fromDate AND occurred_at <= :toDate ORDER BY occurred_at DESC;
+
+selectExpensesByMonthPaged:
+SELECT *
+FROM expense
+WHERE occurred_at >= :fromDate AND occurred_at <= :toDate
+ORDER BY occurred_at DESC, created_at DESC
+LIMIT :limit OFFSET :offset;
 
 searchExpenses:
 SELECT * FROM expense
@@ -162,6 +224,9 @@ SELECT * FROM subscription ORDER BY active DESC, amount_cents DESC;
 selectActiveSubscriptions:
 SELECT * FROM subscription WHERE active = 1 ORDER BY amount_cents DESC;
 
+deleteSubscription:
+DELETE FROM subscription WHERE id = ?;
+
 upsertInstallmentPlan:
 INSERT OR REPLACE INTO installment_plan(
     id, name, total_installments, monthly_amount_cents, start_year_month, end_year_month, category_id, active
@@ -173,6 +238,9 @@ SELECT * FROM installment_plan ORDER BY active DESC, end_year_month ASC;
 
 selectActiveInstallments:
 SELECT * FROM installment_plan WHERE active = 1 ORDER BY end_year_month ASC;
+
+deleteInstallmentPlan:
+DELETE FROM installment_plan WHERE id = ?;
 
 upsertScheduleItem:
 INSERT OR REPLACE INTO payment_schedule_item(id, kind, ref_id, due_date, amount_cents, status, paid_at)
@@ -186,6 +254,15 @@ SELECT * FROM payment_schedule_item WHERE ref_id = :refId AND due_date = :dueDat
 
 selectScheduleItemById:
 SELECT * FROM payment_schedule_item WHERE id = ? LIMIT 1;
+
+deleteScheduleItemsByRefAndKind:
+DELETE FROM payment_schedule_item WHERE ref_id = ? AND kind = ?;
+
+deleteScheduleItemsByRefAndKindFromDate:
+DELETE FROM payment_schedule_item
+WHERE ref_id = :refId
+  AND kind = :kind
+  AND due_date >= :fromDate;
 
 updateScheduleStatus:
 UPDATE payment_schedule_item SET status = ?, paid_at = ? WHERE id = ?;

@@ -1,8 +1,10 @@
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+import org.jetbrains.kotlin.gradle.plugin.KotlinPlatformType
+import java.io.File
 
 plugins {
     alias(libs.plugins.kotlinMultiplatform)
-    alias(libs.plugins.androidLibrary)
+    alias(libs.plugins.androidKmpLibrary)
     alias(libs.plugins.composeMultiplatform)
     alias(libs.plugins.composeCompiler)
     alias(libs.plugins.kotlinSerialization)
@@ -10,7 +12,12 @@ plugins {
 }
 
 kotlin {
-    androidTarget {
+    jvmToolchain(17)
+
+    androidLibrary {
+        namespace = "com.samluiz.gyst.shared"
+        compileSdk = libs.versions.android.compileSdk.get().toInt()
+        minSdk = libs.versions.android.minSdk.get().toInt()
         compilerOptions {
             jvmTarget.set(JvmTarget.JVM_11)
         }
@@ -60,17 +67,47 @@ kotlin {
     }
 }
 
-android {
-    namespace = "com.samluiz.gyst.shared"
-    compileSdk = libs.versions.android.compileSdk.get().toInt()
-    defaultConfig {
-        minSdk = libs.versions.android.minSdk.get().toInt()
-    }
-    compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_11
-        targetCompatibility = JavaVersion.VERSION_11
+val generatedBuildInfoDir = layout.buildDirectory.dir("generated/source/buildInfo/kotlin")
+run {
+    val outputDir = generatedBuildInfoDir.get().asFile
+    val versionName = rootProject.extra["appVersionName"].toString()
+    val versionCode = rootProject.extra["appVersionCode"].toString().toInt()
+    val packageDir = File(outputDir, "com/samluiz/gyst/app")
+    val outputFile = File(packageDir, "BuildInfo.kt")
+    val content = """
+        package com.samluiz.gyst.app
+
+        object BuildInfo {
+            const val VERSION_NAME: String = "$versionName"
+            const val VERSION_CODE: Int = $versionCode
+        }
+        """.trimIndent()
+    packageDir.mkdirs()
+    if (!outputFile.exists() || outputFile.readText() != content) {
+        outputFile.writeText(content)
     }
 }
+
+kotlin.sourceSets.named("commonMain") {
+    kotlin.srcDir(generatedBuildInfoDir)
+}
+
+configurations
+    .matching { config ->
+        config.name.contains("desktop", ignoreCase = true) &&
+            config.name.contains("CompileClasspath")
+    }
+    .configureEach {
+        attributes {
+            attribute(
+                org.gradle.api.attributes.Attribute.of(
+                    "org.jetbrains.kotlin.platform.type",
+                    KotlinPlatformType::class.java,
+                ),
+                KotlinPlatformType.jvm,
+            )
+        }
+    }
 
 sqldelight {
     databases {
