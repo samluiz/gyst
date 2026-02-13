@@ -19,6 +19,8 @@
   Installs Android debug build on connected device/emulator.
 - `./gradlew :shared:desktopTest`  
   Runs shared tests without requiring Android SDK test tasks.
+- `./gradlew :androidApp:assembleRelease -Papp.version=v1.2.3`  
+  Builds Android release artifact with tag-style version.
 
 ## Coding Style & Naming Conventions
 - Language: Kotlin (KMP + Compose). Use 4-space indentation.
@@ -35,6 +37,9 @@
 - Put tests under `shared/src/commonTest/kotlin/...`.
 - Test naming: behavior-focused (e.g., `forecastShowsFreedCashAfterCommitmentEnds`).
 - Cover business rules (validation, rollover, forecast, guards) before UI details.
+- CI workflows:
+  - `CI/CD Quality Gate` on pushes to `main`
+  - `CI/CD Release` on tags `v*`, and it waits for release quality checks before publishing artifacts
 
 ## Commit & Pull Request Guidelines
 - No established commit history yet; use Conventional Commits:
@@ -49,3 +54,11 @@
 - App is offline-first; avoid introducing external data sync by default.
 - Do not commit secrets, keystores, or machine-specific SDK paths.
 - For Android local setup, keep SDK path in `local.properties` only.
+- Never commit `google-services.json` or release keystore files.
+- GitHub Actions secrets expected for releases:
+  - `GOOGLE_SERVICES_JSON_B64`
+  - `GYST_KEYSTORE_B64`
+  - `GYST_KEYSTORE_PASSWORD`
+  - `GYST_KEY_ALIAS`
+  - `GYST_KEY_PASSWORD`
+- If a secret file is ever committed, rotate credentials and rewrite history before release.

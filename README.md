@@ -124,7 +124,9 @@ Write is dialog-based:
 
 ## Release CI/CD (Tag-based)
 
-- Workflow: `.github/workflows/release.yml`
+- Workflows:
+  - `.github/workflows/ci-cd-quality-gate.yml` (`main` pushes)
+  - `.github/workflows/ci-cd-release.yml` (tags `v*`)
 - Trigger:
   - push tags matching `v*` (example: `v1.4.0`)
   - manual `workflow_dispatch` with tag input
@@ -149,10 +151,13 @@ Write is dialog-based:
 
 ### Required GitHub Secrets (for signed Android release)
 
+- `GOOGLE_SERVICES_JSON_B64` (base64 of `google-services.json`)
 - `GYST_KEYSTORE_B64` (base64 of `.jks`)
 - `GYST_KEYSTORE_PASSWORD`
 - `GYST_KEY_ALIAS`
 - `GYST_KEY_PASSWORD`
+
+`google-services.json` is injected at workflow runtime. Do not commit this file.
 
 ## Internationalization
 
@@ -218,6 +223,10 @@ Note: `:shared:allTests` may require valid Android SDK configuration in your env
 - Local-only storage (offline-first).
 - Seed data is initialized on first launch (`SeedDataInitializer`).
 - If Android build fails with SDK path issues, set `local.properties` (`sdk.dir=...`) or `ANDROID_HOME`.
+- Secrets policy:
+  - never commit `google-services.json` or `.jks`
+  - keep `**/google-services.json` in `.gitignore`
+  - use GitHub Actions Secrets for CI/CD injection
 
 ## Known Follow-ups
 
