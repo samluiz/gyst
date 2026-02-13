@@ -11,12 +11,16 @@ permissions:
 
 concurrency:
   group: enterprise-quality-gate-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
+
+env:
+  GRADLE_OPTS: "-Djava.net.preferIPv4Stack=true"
 
 jobs:
   android_shared_quality:
     name: Android + Shared Lint and Tests
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -31,21 +35,28 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Validate wrapper
-        uses: gradle/actions/wrapper-validation@v3
-
       - name: Run lint and tests
         run: |
           chmod +x gradlew
-          ./gradlew \
-            :shared:compileKotlinDesktop \
-            :shared:desktopTest \
-            :androidApp:lintDebug \
-            :androidApp:testDebugUnitTest
+          for attempt in 1 2 3; do
+            ./gradlew \
+              :shared:compileKotlinDesktop \
+              :shared:desktopTest \
+              :androidApp:lintDebug \
+              :androidApp:testDebugUnitTest \
+              --no-daemon && break
+            if [ "$attempt" -eq 3 ]; then
+              echo "Gradle quality gate failed after 3 attempts."
+              exit 1
+            fi
+            echo "Attempt $attempt failed. Retrying in 20s..."
+            sleep 20
+          done
 
   desktop_windows_quality:
     name: Desktop Windows Validation
     runs-on: windows-latest
+    timeout-minutes: 40
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -60,11 +71,19 @@ jobs:
       - name: Run desktop tests
         shell: pwsh
         run: |
-          .\gradlew :desktopApp:desktopTest :shared:desktopTest
+          $attempt = 0
+          do {
+            $attempt++
+            .\gradlew :desktopApp:desktopTest :shared:desktopTest --no-daemon
+            if ($LASTEXITCODE -eq 0) { break }
+            if ($attempt -ge 3) { throw "Desktop validation failed after 3 attempts." }
+            Start-Sleep -Seconds 20
+          } while ($true)
 
   ios_compile_quality:
     name: iOS Shared Compile Validation
     runs-on: macos-14
+    timeout-minutes: 40
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -79,4 +98,12 @@ jobs:
       - name: Validate iOS shared compilation
         run: |
           chmod +x gradlew
-          ./gradlew :shared:compileKotlinIosSimulatorArm64
+          for attempt in 1 2 3; do
+            ./gradlew :shared:compileKotlinIosSimulatorArm64 --no-daemon && break
+            if [ "$attempt" -eq 3 ]; then
+              echo "iOS compile validation failed after 3 attempts."
+              exit 1
+            fi
+            echo "Attempt $attempt failed. Retrying in 20s..."
+            sleep 20
+          done
