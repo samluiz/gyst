@@ -118,11 +118,23 @@ jobs:
           fi
           ./gradlew :androidApp:assembleRelease -Papp.version=$APP_VERSION --no-daemon
 
+      - name: Normalize Android artifact name
+        shell: bash
+        run: |
+          VERSION_LABEL="${APP_VERSION#v}"
+          mkdir -p release-dist
+          APK_PATH="$(ls -1 androidApp/build/outputs/apk/release/*.apk | head -n 1)"
+          if [ -z "$APK_PATH" ]; then
+            echo "No APK produced."
+            exit 1
+          fi
+          cp "$APK_PATH" "release-dist/gyst-${VERSION_LABEL}.apk"
+
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: android-apk
-          path: androidApp/build/outputs/apk/release/*.apk
+          path: release-dist/gyst-*.apk
           if-no-files-found: error
 
   publish_github_release_android:

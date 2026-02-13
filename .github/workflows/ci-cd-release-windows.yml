@@ -61,18 +61,27 @@ jobs:
       - name: Zip portable Windows app
         shell: pwsh
         run: |
+          $version = $env:APP_VERSION.TrimStart("v")
+          New-Item -ItemType Directory -Path "release-dist" -Force | Out-Null
           $source = "desktopApp\build\compose\binaries\main\app"
           if (-not (Test-Path $source)) { $source = "desktopApp\build\compose\binaries\main-release\app" }
           if (-not (Test-Path $source)) { throw "Desktop distributable folder not found." }
-          Compress-Archive -Path "$source\*" -DestinationPath "desktopApp\build\compose\binaries\gyst-windows-portable.zip" -Force
+          Compress-Archive -Path "$source\*" -DestinationPath "release-dist\gyst-$version-windows-portable.zip" -Force
+
+          $msi = Get-ChildItem "desktopApp\build\compose\binaries" -Recurse -Filter *.msi | Select-Object -First 1
+          if (-not $msi) { throw "MSI artifact not found." }
+          Copy-Item $msi.FullName "release-dist\gyst-$version.msi" -Force
+
+          $exe = Get-ChildItem $source -Recurse -Filter *.exe | Where-Object { $_.Name -notmatch "unins|setup" } | Select-Object -First 1
+          if ($exe) {
+            Copy-Item $exe.FullName "release-dist\gyst-$version.exe" -Force
+          }
 
       - name: Upload Windows artifacts
         uses: actions/upload-artifact@v4
         with:
           name: windows-desktop
-          path: |
-            desktopApp/build/compose/binaries/**/*.msi
-            desktopApp/build/compose/binaries/gyst-windows-portable.zip
+          path: release-dist/*
           if-no-files-found: error
 
   publish_github_release_windows:
@@ -92,4 +101,5 @@ jobs:
           generate_release_notes: true
           files: |
             release-assets/**/*.msi
+            release-assets/**/*.exe
             release-assets/**/*.zip
