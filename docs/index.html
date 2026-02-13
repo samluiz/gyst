@@ -4,7 +4,47 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Gyst</title>
-  <meta name="description" content="Gyst is an offline-first personal finance app built for strict monthly control and long-term planning." />
+  <meta name="description" content="Gyst is an offline-first personal finance app for strict monthly budgeting, expense control, subscription visibility, and long-term planning." />
+  <meta name="robots" content="index,follow,max-image-preview:large" />
+  <meta name="author" content="Gyst" />
+  <meta name="keywords" content="personal finance app, budget app, envelope budgeting, subscription tracker, installment tracker, offline finance, Kotlin Multiplatform" />
+  <link rel="canonical" href="https://samluiz.github.io/gyst/" />
+  <link rel="alternate" hreflang="en" href="https://samluiz.github.io/gyst/" />
+  <link rel="alternate" hreflang="pt-BR" href="https://samluiz.github.io/gyst/" />
+  <link rel="alternate" hreflang="x-default" href="https://samluiz.github.io/gyst/" />
+
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="Gyst" />
+  <meta property="og:title" content="Gyst - Offline-First Personal Finance Control" />
+  <meta property="og:description" content="Control monthly budget, expenses, subscriptions, and installments with long-term planning in one clean flow." />
+  <meta property="og:url" content="https://samluiz.github.io/gyst/" />
+  <meta property="og:image" content="https://samluiz.github.io/gyst/assets/favicon/favicon-512x512.png" />
+  <meta property="og:image:alt" content="Gyst app logo" />
+
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="Gyst - Offline-First Personal Finance Control" />
+  <meta name="twitter:description" content="Monthly clarity for budget, expenses, subscriptions and long-term planning." />
+  <meta name="twitter:image" content="https://samluiz.github.io/gyst/assets/favicon/favicon-512x512.png" />
+
+  <link rel="icon" type="image/x-icon" href="./assets/favicon/favicon.ico" />
+  <link rel="icon" type="image/png" sizes="32x32" href="./assets/favicon/favicon-32x32.png" />
+  <link rel="icon" type="image/png" sizes="16x16" href="./assets/favicon/favicon-16x16.png" />
+  <link rel="apple-touch-icon" sizes="180x180" href="./assets/favicon/apple-touch-icon.png" />
+  <link rel="manifest" href="./assets/favicon/site.webmanifest" />
+  <meta name="theme-color" content="#050607" />
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "Gyst",
+    "applicationCategory": "FinanceApplication",
+    "operatingSystem": "Android, Windows, macOS, Linux",
+    "description": "Offline-first personal finance app for monthly budget control, subscriptions, installments, and long-term planning.",
+    "url": "https://samluiz.github.io/gyst/",
+    "image": "https://samluiz.github.io/gyst/assets/favicon/favicon-512x512.png",
+    "downloadUrl": "https://github.com/samluiz/gyst/releases/latest"
+  }
+  </script>
   <style>
     @font-face {
       font-family: "OpenSpaceRegular";
@@ -121,19 +161,6 @@
       align-items: start;
     }
 
-    .eyebrow {
-      display: inline-block;
-      font-size: .75rem;
-      text-transform: uppercase;
-      letter-spacing: .06em;
-      color: #dce8f6;
-      border: 1px solid var(--line);
-      border-radius: 999px;
-      padding: 7px 11px;
-      background: rgba(255,255,255,0.03);
-      margin-bottom: 18px;
-    }
-
     h1 {
       margin: 0;
       font-size: clamp(2.1rem, 5.3vw, 4.4rem);
@@ -151,23 +178,19 @@
       line-height: 1.52;
     }
 
-    .meta { display: none; }
-
-    .pill {
-      border: 1px solid var(--line);
-      border-radius: 999px;
-      padding: 7px 11px;
-      font-size: .77rem;
-      color: #dce7f2;
-      background: rgba(255,255,255,0.03);
-    }
-
     .links {
       display: flex;
       flex-wrap: wrap;
       gap: 12px;
       align-content: start;
       padding-top: 10px;
+    }
+
+    .footer-links {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      justify-content: flex-end;
     }
 
     .btn {
@@ -185,6 +208,65 @@
       transform: translateY(-1px);
       border-color: rgba(193,212,234,0.5);
       background: rgba(255,255,255,0.05);
+    }
+
+    .btn[aria-disabled="true"] {
+      opacity: .55;
+      pointer-events: none;
+    }
+
+    .downloads {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    .download-grid {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: flex-start;
+    }
+
+    .download-btn {
+      display: grid;
+      gap: 2px;
+      text-decoration: none;
+      color: var(--text);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: rgba(255,255,255,0.03);
+      padding: 7px 9px;
+      width: fit-content;
+      max-width: 250px;
+      transition: transform .16s var(--ease), border-color .16s var(--ease), background .16s var(--ease);
+    }
+
+    .download-btn:hover {
+      transform: translateY(-1px);
+      border-color: rgba(193,212,234,0.5);
+      background: rgba(255,255,255,0.05);
+    }
+
+    .download-title {
+      font-size: .78rem;
+      font-weight: 600;
+      line-height: 1.2;
+    }
+
+    .download-sub {
+      font-size: .69rem;
+      color: var(--muted);
+      line-height: 1.2;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .download-btn:focus-visible {
+      outline: 2px solid #d4e3f3;
+      outline-offset: 2px;
     }
 
     .divider {
@@ -205,13 +287,29 @@
     [data-lang] { display: none; }
     [data-lang].active { display: block; }
 
+    .page-foot {
+      position: fixed;
+      left: 50%;
+      bottom: 8px;
+      transform: translateX(-50%);
+      color: #8f9cac;
+      font-size: .76rem;
+      letter-spacing: .02em;
+      text-align: center;
+      pointer-events: none;
+    }
+
     @media (max-width: 900px) {
       .hero { grid-template-columns: 1fr; }
+      .download-grid { display: flex; }
     }
 
     @media (max-width: 620px) {
       .links { display: grid; grid-template-columns: 1fr; }
+      .download-grid { display: flex; }
       .bottom { flex-direction: column; align-items: flex-start; }
+      .footer-links { justify-content: flex-start; }
+      .page-foot { position: static; transform: none; margin-top: 8px; }
     }
 
     .lang button:focus-visible,
@@ -234,7 +332,6 @@
 
       <section class="hero">
         <article>
-          <span class="eyebrow">Personal Finance OS</span>
           <div data-lang="en" class="active">
             <h1>Clarity for every month.</h1>
             <p class="lead">Gyst is an offline-first finance app for disciplined people. Budget, expenses, subscriptions, installments and long-term projection in one clean flow.</p>
@@ -243,12 +340,11 @@
             <h1>Clareza para cada mês.</h1>
             <p class="lead">Gyst é um app de finanças offline-first para quem quer disciplina. Orçamento, despesas, assinaturas, parcelamentos e projeção de longo prazo em um fluxo limpo.</p>
           </div>
-          <nav class="links" aria-label="Quick links">
-            <a class="btn" href="./legal/privacy-policy.html">Privacy / Privacidade</a>
-            <a class="btn" href="./legal/terms-of-service.html">Terms / Termos</a>
-            <a class="btn" href="https://github.com/samluiz/gyst" target="_blank" rel="noopener noreferrer">GitHub</a>
-          </nav>
         </article>
+      </section>
+
+      <section class="downloads" aria-label="Downloads" aria-live="polite">
+        <div id="download-grid" class="download-grid"></div>
       </section>
 
       <div class="divider" role="presentation"></div>
@@ -258,10 +354,16 @@
           <span data-lang="en" class="active">Built for disciplined financial control.</span>
           <span data-lang="pt">Feito para controle financeiro disciplinado.</span>
         </div>
-        <div>Gyst • <span id="year"></span></div>
+        <div class="footer-links">
+          <a class="btn" href="./legal/privacy-policy.html">Privacy / Privacidade</a>
+          <a class="btn" href="./legal/terms-of-service.html">Terms / Termos</a>
+          <a class="btn" href="https://github.com/samluiz/gyst" target="_blank" rel="noopener noreferrer">GitHub</a>
+        </div>
       </footer>
     </div>
   </main>
+
+  <p class="page-foot">Gyst • <span id="year"></span></p>
 
   <script>
     (function () {
@@ -278,10 +380,57 @@
         document.documentElement.lang = lang === "pt" ? "pt-BR" : "en";
       }
 
+      function platformLabel(kind, name) {
+        if (kind === "android") return "Android APK";
+        if (kind === "windows-exe") return "Windows EXE";
+        if (kind === "windows-msi") return "Windows MSI";
+        if (kind === "macos") return "macOS DMG";
+        if (kind === "linux") return "Linux DEB";
+        if (kind === "portable") return "Portable ZIP";
+        return name;
+      }
+
       buttons.forEach((btn) => btn.addEventListener("click", () => setLang(btn.dataset.setLang)));
 
       const year = document.getElementById("year");
       if (year) year.textContent = String(new Date().getFullYear());
+
+      const downloadGrid = document.getElementById("download-grid");
+
+      fetch("https://api.github.com/repos/samluiz/gyst/releases/latest")
+        .then((res) => {
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          return res.json();
+        })
+        .then((release) => {
+          const assets = Array.isArray(release.assets) ? release.assets : [];
+          const find = (patterns) => assets.find((a) => patterns.some((p) => p.test(a.name)));
+          const candidates = [
+            { kind: "android", asset: find([/\.apk$/i]) },
+            { kind: "windows-exe", asset: find([/\.exe$/i]) },
+            { kind: "windows-msi", asset: find([/\.msi$/i]) },
+            { kind: "macos", asset: find([/\.dmg$/i]) },
+            { kind: "linux", asset: find([/\.deb$/i]) },
+            { kind: "portable", asset: find([/portable\.zip$/i, /windows.*\.zip$/i]) },
+          ].filter((x) => !!x.asset);
+
+          if (!downloadGrid || candidates.length === 0) {
+            if (downloadGrid) downloadGrid.innerHTML = '<span class="download-sub">No download available</span>';
+            return;
+          }
+
+          downloadGrid.innerHTML = candidates
+            .map((item) => `
+              <a class="download-btn" href="${item.asset.browser_download_url}" target="_blank" rel="noopener noreferrer">
+                <span class="download-title">${platformLabel(item.kind, item.asset.name)}</span>
+                <span class="download-sub">${item.asset.name}</span>
+              </a>
+            `)
+            .join("");
+        })
+        .catch(() => {
+          if (downloadGrid) downloadGrid.innerHTML = '<span class="download-sub">Unable to load release</span>';
+        });
     })();
   </script>
 </body>
