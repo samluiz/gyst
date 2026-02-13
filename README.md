@@ -228,6 +228,12 @@ Note: `:shared:allTests` may require valid Android SDK configuration in your env
   - keep `**/google-services.json` in `.gitignore`
   - use GitHub Actions Secrets for CI/CD injection
 
+## Legal
+
+- Privacy Policy: `docs/legal/privacy-policy.md`
+- Terms of Service: `docs/legal/terms-of-service.md`
+- Publication notes for Google Console: `docs/legal/README.md`
+
 ## Known Follow-ups
 
 - Migrate deprecated datetime APIs (`monthNumber`, `dayOfMonth`, deprecated `Instant` alias usage).

@@ -1,19 +1,29 @@
 package com.samluiz.gyst.app
 
-import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import gyst.shared.generated.resources.Res
-import gyst.shared.generated.resources.google_g_icon
-import org.jetbrains.compose.resources.painterResource
 
 @Composable
 actual fun GoogleMark(modifier: Modifier) {
-    Image(
-        painter = painterResource(Res.drawable.google_g_icon),
-        contentDescription = "Google",
-        modifier = modifier.size(16.dp),
-    )
+    Box(
+        modifier = modifier
+            .size(16.dp)
+            .background(MaterialTheme.colorScheme.surfaceVariant, CircleShape),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = "G",
+            style = MaterialTheme.typography.labelSmall,
+            fontWeight = FontWeight.Bold,
+        )
+    }
 }

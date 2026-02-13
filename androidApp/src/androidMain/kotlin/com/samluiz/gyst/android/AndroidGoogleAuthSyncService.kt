@@ -56,7 +56,7 @@ class AndroidGoogleAuthSyncService(
         .requestScopes(Scope(DRIVE_APPDATA_SCOPE))
         .build()
 
-    private val signInClient = GoogleSignIn.getClient(appContext, signInOptions)
+    private val signInClient = runCatching { GoogleSignIn.getClient(appContext, signInOptions) }.getOrNull()
 
     private var signInLauncher: ActivityResultLauncher<android.content.Intent>? = null
     private var pendingSignIn: ((Result<GoogleSignInAccount>) -> Unit)? = null
@@ -74,11 +74,32 @@ class AndroidGoogleAuthSyncService(
     }
 
     override suspend fun initialize() {
-        refreshState(lastError = null)
+        runCatching { refreshState(lastError = null) }
+            .onFailure {
+                internal.update { state ->
+                    state.copy(
+                        isAvailable = false,
+                        isSignedIn = false,
+                        isAuthInProgress = false,
+                        isSyncing = false,
+                        lastError = prettyGoogleError(it),
+                    )
+                }
+            }
     }
 
     override suspend fun signIn() {
         internal.update { it.copy(lastError = null, statusMessage = null, isAuthInProgress = true) }
+        if (signInClient == null) {
+            internal.update {
+                it.copy(
+                    isAvailable = false,
+                    isAuthInProgress = false,
+                    lastError = "Google Sign-In unavailable on this device/build.",
+                )
+            }
+            return
+        }
         if (isSignedInWithScope()) {
             refreshState(lastError = null)
             return
@@ -103,6 +124,23 @@ class AndroidGoogleAuthSyncService(
     }
 
     override suspend fun signOut() {
+        if (signInClient == null) {
+            internal.update {
+                it.copy(
+                    isAvailable = false,
+                    isSignedIn = false,
+                    accountName = null,
+                    accountEmail = null,
+                    accountPhotoUrl = null,
+                    isAuthInProgress = false,
+                    isSyncing = false,
+                    statusMessage = null,
+                    requiresAppRestart = false,
+                    lastError = null,
+                )
+            }
+            return
+        }
         withContext(Dispatchers.Main.immediate) {
             suspendCancellableCoroutine { continuation ->
                 signInClient.signOut()
@@ -236,12 +274,12 @@ class AndroidGoogleAuthSyncService(
     }
 
     private fun refreshState(lastError: String?) {
-        val signedAccount = GoogleSignIn.getLastSignedInAccount(appContext)
+        val signedAccount = runCatching { GoogleSignIn.getLastSignedInAccount(appContext) }.getOrNull()
             ?.takeIf { GoogleSignIn.hasPermissions(it, Scope(DRIVE_APPDATA_SCOPE)) }
         val signed = signedAccount != null
         internal.update {
             it.copy(
-                isAvailable = true,
+                isAvailable = signInClient != null,
                 isSignedIn = signed,
                 accountName = signedAccount?.displayName,
                 accountEmail = signedAccount?.email,
@@ -255,6 +293,7 @@ class AndroidGoogleAuthSyncService(
     }
 
     private fun isSignedInWithScope(): Boolean {
+        if (signInClient == null) return false
         val account = GoogleSignIn.getLastSignedInAccount(appContext) ?: return false
         return GoogleSignIn.hasPermissions(account, Scope(DRIVE_APPDATA_SCOPE))
     }
