@@ -1,5 +1,12 @@
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.plugin.KotlinPlatformType
+import org.jetbrains.kotlin.gradle.tasks.KotlinCompilationTask
+import org.gradle.api.DefaultTask
+import org.gradle.api.file.DirectoryProperty
+import org.gradle.api.provider.Property
+import org.gradle.api.tasks.Input
+import org.gradle.api.tasks.OutputDirectory
+import org.gradle.api.tasks.TaskAction
 import java.io.File
 
 plugins {
@@ -18,6 +25,9 @@ kotlin {
         namespace = "com.samluiz.gyst.shared"
         compileSdk = libs.versions.android.compileSdk.get().toInt()
         minSdk = libs.versions.android.minSdk.get().toInt()
+        androidResources {
+            enable = true
+        }
         compilerOptions {
             jvmTarget.set(JvmTarget.JVM_11)
         }
@@ -68,28 +78,52 @@ kotlin {
 }
 
 val generatedBuildInfoDir = layout.buildDirectory.dir("generated/source/buildInfo/kotlin")
-run {
-    val outputDir = generatedBuildInfoDir.get().asFile
-    val versionName = rootProject.extra["appVersionName"].toString()
-    val versionCode = rootProject.extra["appVersionCode"].toString().toInt()
-    val packageDir = File(outputDir, "com/samluiz/gyst/app")
-    val outputFile = File(packageDir, "BuildInfo.kt")
-    val content = """
-        package com.samluiz.gyst.app
 
-        object BuildInfo {
-            const val VERSION_NAME: String = "$versionName"
-            const val VERSION_CODE: Int = $versionCode
+abstract class GenerateBuildInfoTask : DefaultTask() {
+    @get:Input
+    abstract val versionName: Property<String>
+
+    @get:Input
+    abstract val versionCode: Property<Int>
+
+    @get:OutputDirectory
+    abstract val outputDir: DirectoryProperty
+
+    @TaskAction
+    fun generate() {
+        val packageDir = File(outputDir.get().asFile, "com/samluiz/gyst/app")
+        val outputFile = File(packageDir, "BuildInfo.kt")
+        val content = """
+            package com.samluiz.gyst.app
+
+            object BuildInfo {
+                const val VERSION_NAME: String = "${versionName.get()}"
+                const val VERSION_CODE: Int = ${versionCode.get()}
+            }
+            """.trimIndent()
+        packageDir.mkdirs()
+        if (!outputFile.exists() || outputFile.readText() != content) {
+            outputFile.writeText(content)
         }
-        """.trimIndent()
-    packageDir.mkdirs()
-    if (!outputFile.exists() || outputFile.readText() != content) {
-        outputFile.writeText(content)
     }
+}
+
+val generateBuildInfo by tasks.registering(GenerateBuildInfoTask::class) {
+    outputDir.set(generatedBuildInfoDir)
+    versionName.set(rootProject.extra["appVersionName"].toString())
+    versionCode.set(rootProject.extra["appVersionCode"].toString().toInt())
 }
 
 kotlin.sourceSets.named("commonMain") {
     kotlin.srcDir(generatedBuildInfoDir)
+}
+
+tasks.withType<KotlinCompilationTask<*>>().configureEach {
+    dependsOn(generateBuildInfo)
+}
+
+tasks.matching { it.name == "compileAndroidMain" }.configureEach {
+    dependsOn(generateBuildInfo)
 }
 
 configurations

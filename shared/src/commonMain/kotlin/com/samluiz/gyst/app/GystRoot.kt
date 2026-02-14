@@ -98,15 +98,15 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import gyst.shared.generated.resources.OpenspaceBlack
+import gyst.shared.generated.resources.OpenspaceRegular
 import gyst.shared.generated.resources.Res
 import com.samluiz.gyst.domain.model.RecurrenceType
 import com.samluiz.gyst.domain.model.YearMonth
@@ -115,7 +115,6 @@ import com.samluiz.gyst.domain.service.SyncSource
 import com.samluiz.gyst.presentation.MainState
 import com.samluiz.gyst.presentation.MainStore
 import com.samluiz.gyst.domain.service.GoogleSyncState
-import gyst.shared.generated.resources.OpenspaceLine
 import org.jetbrains.compose.resources.Font
 import org.koin.compose.koinInject
 import kotlinx.datetime.LocalDate
@@ -266,7 +265,7 @@ private fun Header(
     onNext: () -> Unit,
     showMonthSelector: Boolean,
 ) {
-    val logoFont = FontFamily(Font(Res.font.OpenspaceLine))
+    val logoFont = FontFamily(Font(Res.font.OpenspaceRegular))
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Row(
             modifier = Modifier
@@ -276,8 +275,11 @@ private fun Header(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                "GYST",
-                style = MaterialTheme.typography.headlineMedium.copy(fontFamily = logoFont),
+                "Gyst",
+                style = MaterialTheme.typography.headlineMedium.copy(
+                    fontFamily = logoFont,
+                    fontWeight = FontWeight.Normal,
+                ),
                 color = MaterialTheme.colorScheme.onSurface,
             )
             Row(
@@ -588,6 +590,13 @@ private fun PlanningTab(
         }
         item {
             PanelCard(title = s.stressTimeline, icon = Icons.Default.AutoGraph) {
+                Text(
+                    s.monthlyForecastHint,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
                 adjusted.take(8).forEachIndexed { index, point ->
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                         Column(modifier = Modifier.weight(1f)) {
@@ -595,21 +604,32 @@ private fun PlanningTab(
                                 capitalizeFirst(formatYearMonthHuman(point.month, s.languageCode)),
                                 style = MaterialTheme.typography.labelMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
                             )
-                            Text("${s.safeAllowance}: ${formatBrl(point.safeAllowanceCents)}", style = MaterialTheme.typography.bodySmall)
+                            Text(
+                                "${s.safeAllowance}: ${formatBrl(point.safeAllowanceCents)}",
+                                style = MaterialTheme.typography.bodySmall,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
                         }
                         val deltaToTarget = point.safeAllowanceCents - desiredMarginCents
-                        Column(horizontalAlignment = Alignment.End) {
+                        Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(1.dp)) {
                             Text(
                                 if (deltaToTarget >= 0) s.aboveDesiredMargin else s.belowDesiredMargin,
                                 style = MaterialTheme.typography.bodySmall,
                                 fontWeight = FontWeight.SemiBold,
                                 color = if (deltaToTarget >= 0) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.error,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
                             )
                             Text(
-                                "${s.marginDelta}: ${formatSigned(deltaToTarget)}",
+                                "${s.marginDelta} ${formatSigned(deltaToTarget)}",
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
                             )
                         }
                     }
