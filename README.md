@@ -128,13 +128,17 @@ Write is dialog-based:
 
 - Workflows:
   - `.github/workflows/ci-cd-quality-gate.yml` (`main` pushes)
-  - `.github/workflows/ci-cd-release-android.yml` (manual Android release)
-  - `.github/workflows/ci-cd-release-windows.yml` (manual Windows release)
+  - `.github/workflows/ci-cd-release.yml` (manual unified release: Android + Windows + optional iOS)
 - Trigger:
-  - manual `workflow_dispatch` only (required `tag` input, example: `v1.4.0`)
+  - manual `workflow_dispatch` only
+  - inputs:
+    - `tag` (required, example: `v1.4.0`)
+    - `skip_quality_gate` (`true/false`)
+    - `build_ios` (`true/false`)
 - Outputs published to GitHub Release:
-  - Android workflow: release APK (`androidApp`)
-  - Windows workflow: desktop artifacts (`.msi` + portable zip)
+  - Android: release APK (`androidApp`)
+  - Windows: desktop artifacts (`.msi` + portable zip + optional `.exe`)
+  - iOS (optional): signed `.ipa`
 
 ### Version propagation
 
@@ -151,15 +155,30 @@ Write is dialog-based:
 - Runtime/Profile:
   - `shared` generates `BuildInfo.VERSION_NAME` and `BuildInfo.VERSION_CODE` used in UI
 
-### Required GitHub Secrets (for signed Android release)
+### Required GitHub Secrets
 
+Android:
 - `GOOGLE_SERVICES_JSON_B64` (base64 of `google-services.json`)
 - `GYST_KEYSTORE_B64` (base64 of `.jks`)
 - `GYST_KEYSTORE_PASSWORD`
 - `GYST_KEY_ALIAS`
 - `GYST_KEY_PASSWORD`
 
-`google-services.json` is injected at workflow runtime. Do not commit this file.
+Desktop:
+- `GYST_DESKTOP_OAUTH_JSON_B64` (base64 of Desktop OAuth JSON)
+
+iOS (required only when `build_ios=true`):
+- `IOS_CERTIFICATE_P12_B64`
+- `IOS_CERTIFICATE_PASSWORD`
+- `IOS_PROVISIONING_PROFILE_B64`
+- `IOS_KEYCHAIN_PASSWORD`
+- `IOS_EXPORT_OPTIONS_PLIST_B64`
+- `IOS_TEAM_ID`
+- `IOS_BUNDLE_IDENTIFIER` (optional; defaults to `com.samluiz.gyst`)
+
+Notes:
+- `google-services.json` is injected at workflow runtime. Do not commit this file.
+- iOS signing assets are injected and used only inside CI job runtime.
 
 ## Internationalization
 
@@ -222,6 +241,20 @@ If needed:
 2. Enable **Google Drive API**.
 3. No broad file scope is used; app requests only `drive.appdata` (app-private folder).
 4. Run the app and authenticate in `Perfil` before tapping sync.
+
+## iOS (Future Release-Ready)
+
+Local iOS app host exists in `iosApp/` and release automation is available in CI.
+
+To enable iOS release in CI:
+1. Prepare Apple signing assets (distribution `.p12`, provisioning profile, export options plist).
+2. Add iOS secrets listed above.
+3. Trigger `CI/CD Release` with `build_ios=true`.
+
+Current iOS defaults:
+- `iosApp/Configuration/Config.xcconfig`
+  - `PRODUCT_NAME=Gyst`
+  - `PRODUCT_BUNDLE_IDENTIFIER=com.samluiz.gyst`
 
 ## Tests
 
