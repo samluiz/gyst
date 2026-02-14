@@ -472,9 +472,15 @@ class DesktopGoogleAuthSyncService(
 
     private fun findBackupFile(token: String): RemoteBackupFile? {
         val query = "name='$BACKUP_FILE_NAME' and 'appDataFolder' in parents and trashed=false"
-        val encodedQuery = URLEncoder.encode(query, Charsets.UTF_8.name())
-        val url =
-            "https://www.googleapis.com/drive/v3/files?q=$encodedQuery&spaces=appDataFolder&orderBy=modifiedTime desc&fields=files(id,name,modifiedTime)"
+        val url = buildGoogleApiUrl(
+            base = "https://www.googleapis.com/drive/v3/files",
+            params = listOf(
+                "q" to query,
+                "spaces" to "appDataFolder",
+                "orderBy" to "modifiedTime desc",
+                "fields" to "files(id,name,modifiedTime)",
+            ),
+        )
         val response = requestText(url = url, method = "GET", token = token)
         val files = json.parseToJsonElement(response).jsonObject["files"] ?: return null
         val first = files.jsonArray.firstOrNull()?.jsonObject ?: return null
@@ -587,12 +593,21 @@ class DesktopGoogleAuthSyncService(
     }
 
     private fun revokeToken(token: String) {
-        val encodedToken = URLEncoder.encode(token, Charsets.UTF_8.name())
+        val encodedToken = encodeUrlParam(token)
         val url = "https://oauth2.googleapis.com/revoke?token=$encodedToken"
         runCatching {
             requestBytes(url = url, method = "POST", token = token, contentType = "application/x-www-form-urlencoded", body = ByteArray(0))
         }
     }
+
+    private fun buildGoogleApiUrl(base: String, params: List<Pair<String, String>>): String {
+        if (params.isEmpty()) return base
+        val query = params.joinToString("&") { (key, value) -> "$key=${encodeUrlParam(value)}" }
+        return "$base?$query"
+    }
+
+    private fun encodeUrlParam(value: String): String =
+        URLEncoder.encode(value, Charsets.UTF_8.name()).replace("+", "%20")
 
     private fun readDatabaseBytes(): ByteArray {
         if (!dbPath.exists()) error("Local database was not found")

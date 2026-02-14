@@ -22,18 +22,15 @@ fun interface AppLogSink {
 }
 
 object AppLogger {
-    private val sinks = mutableListOf<AppLogSink>(ConsoleSink)
+    private var sinks: List<AppLogSink> = listOf(ConsoleSink)
 
-    @Synchronized
     fun addSink(sink: AppLogSink) {
         if (sinks.contains(sink)) return
-        sinks.add(sink)
+        sinks = sinks + sink
     }
 
-    @Synchronized
     fun clearSinks(includeConsole: Boolean = true) {
-        sinks.clear()
-        if (includeConsole) sinks.add(ConsoleSink)
+        sinks = if (includeConsole) listOf(ConsoleSink) else emptyList()
     }
 
     fun d(tag: String, message: String, throwable: Throwable? = null) = log(AppLogLevel.DEBUG, tag, message, throwable)
@@ -49,7 +46,7 @@ object AppLogger {
             message = message,
             throwable = throwable,
         )
-        val snapshot = synchronized(this) { sinks.toList() }
+        val snapshot = sinks
         snapshot.forEach { sink ->
             runCatching { sink.log(entry) }
         }
