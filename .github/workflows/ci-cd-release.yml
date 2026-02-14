@@ -1,4 +1,4 @@
-name: CI/CD Release Android
+name: CI/CD Release
 
 on:
   workflow_dispatch:
@@ -56,10 +56,34 @@ jobs:
             :androidApp:testDebugUnitTest \
             --no-daemon
 
+  quality_gate_windows:
+    name: Quality Gate (Windows/Desktop)
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout selected tag
+        uses: actions/checkout@v4
+        with:
+          ref: refs/tags/${{ github.event.inputs.tag }}
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+
+      - name: Run quality checks
+        shell: pwsh
+        run: |
+          .\gradlew :desktopApp:desktopTest :shared:desktopTest --no-daemon
+
   build_release_android:
     name: Build Android Release APK
     runs-on: ubuntu-latest
-    needs: quality_gate_android
+    needs:
+      - quality_gate_android
+      - quality_gate_windows
     env:
       APP_VERSION: ${{ github.event.inputs.tag }}
     steps:
@@ -137,10 +161,78 @@ jobs:
           path: release-dist/gyst-*.apk
           if-no-files-found: error
 
-  publish_github_release_android:
-    name: Publish GitHub Release (Android Assets)
+  build_release_windows:
+    name: Build Windows MSI and Portable
+    runs-on: windows-latest
+    needs:
+      - quality_gate_android
+      - quality_gate_windows
+    env:
+      APP_VERSION: ${{ github.event.inputs.tag }}
+    steps:
+      - name: Checkout selected tag
+        uses: actions/checkout@v4
+        with:
+          ref: refs/tags/${{ github.event.inputs.tag }}
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+
+      - name: Inject desktop OAuth client JSON
+        shell: pwsh
+        env:
+          GYST_DESKTOP_OAUTH_JSON_B64: ${{ secrets.GYST_DESKTOP_OAUTH_JSON_B64 }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:GYST_DESKTOP_OAUTH_JSON_B64)) {
+            throw "Missing required secret: GYST_DESKTOP_OAUTH_JSON_B64"
+          }
+          New-Item -ItemType Directory -Force -Path "desktopApp\src\desktopMain\resources" | Out-Null
+          [IO.File]::WriteAllBytes(
+            "desktopApp\src\desktopMain\resources\desktop_oauth_client.json",
+            [Convert]::FromBase64String($env:GYST_DESKTOP_OAUTH_JSON_B64)
+          )
+
+      - name: Build MSI and distributable
+        shell: pwsh
+        run: |
+          .\gradlew :desktopApp:packageReleaseMsi :desktopApp:createDistributable "--project-prop=app.version=$env:APP_VERSION" --no-daemon
+
+      - name: Zip portable Windows app
+        shell: pwsh
+        run: |
+          $version = $env:APP_VERSION.TrimStart("v")
+          New-Item -ItemType Directory -Path "release-dist" -Force | Out-Null
+          $source = "desktopApp\build\compose\binaries\main\app"
+          if (-not (Test-Path $source)) { $source = "desktopApp\build\compose\binaries\main-release\app" }
+          if (-not (Test-Path $source)) { throw "Desktop distributable folder not found." }
+          Compress-Archive -Path "$source\*" -DestinationPath "release-dist\gyst-$version-windows-portable.zip" -Force
+
+          $msi = Get-ChildItem "desktopApp\build\compose\binaries" -Recurse -Filter *.msi | Select-Object -First 1
+          if (-not $msi) { throw "MSI artifact not found." }
+          Copy-Item $msi.FullName "release-dist\gyst-$version.msi" -Force
+
+          $exe = Get-ChildItem $source -Recurse -Filter *.exe | Where-Object { $_.Name -notmatch "unins|setup" } | Select-Object -First 1
+          if ($exe) {
+            Copy-Item $exe.FullName "release-dist\gyst-$version.exe" -Force
+          }
+
+      - name: Upload Windows artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-desktop
+          path: release-dist/*
+          if-no-files-found: error
+
+  publish_github_release:
+    name: Publish GitHub Release
     runs-on: ubuntu-latest
-    needs: build_release_android
+    needs:
+      - build_release_android
+      - build_release_windows
     steps:
       - name: Download artifacts
         uses: actions/download-artifact@v4
@@ -154,3 +246,6 @@ jobs:
           generate_release_notes: true
           files: |
             release-assets/**/*.apk
+            release-assets/**/*.msi
+            release-assets/**/*.exe
+            release-assets/**/*.zip

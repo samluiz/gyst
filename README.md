@@ -184,6 +184,19 @@ Write is dialog-based:
 ./gradlew :desktopApp:run
 ```
 
+### Google Login + Drive Sync Setup (Desktop)
+
+1. In Google Cloud Console, create an **OAuth 2.0 Client ID** of type **Desktop app**.
+2. Enable **Google Drive API**.
+3. Save the downloaded JSON as:
+   - `~/.gyst/google/desktop_oauth_client.json` (recommended), or
+   - set env var `GYST_GOOGLE_DESKTOP_OAUTH_PATH` pointing to that file.
+4. Open `Profile` in Desktop app, sign in with Google, then use **Sync data** / **Restore backup**.
+
+Notes:
+- Desktop sync uses the same private Drive scope (`drive.appdata`) as Android.
+- OAuth token data is stored locally under `~/.gyst/google/tokens`.
+
 ## Android
 
 From Android Studio:
