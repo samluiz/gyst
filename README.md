@@ -131,8 +131,8 @@ Write is dialog-based:
   - `.github/workflows/ci-cd-release.yml` (manual unified release: Android + Windows + optional iOS)
 - Trigger:
   - manual `workflow_dispatch` only
+  - choose a **tag** in `Use workflow from` (no manual tag input)
   - inputs:
-    - `tag` (required, example: `v1.4.0`)
     - `skip_quality_gate` (`true/false`)
     - `build_ios` (`true/false`)
 - Outputs published to GitHub Release:
