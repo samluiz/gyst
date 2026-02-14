@@ -30,6 +30,9 @@ kotlin {
 compose.desktop {
     application {
         mainClass = "com.samluiz.gyst.desktop.MainKt"
+        buildTypes.release.proguard {
+            isEnabled.set(false)
+        }
         nativeDistributions {
             targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb)
             packageName = "gyst"
