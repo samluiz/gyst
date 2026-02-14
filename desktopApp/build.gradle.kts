@@ -39,9 +39,11 @@ compose.desktop {
             packageVersion = appVersionName
             vendor = "Gyst"
             description = "Gyst personal finance and planning app"
+            includeAllModules = true
             modules(
                 "java.sql",
                 "java.naming",
+                "jdk.httpserver",
             )
             windows {
                 iconFile.set(rootProject.file("docs/assets/favicon/favicon.ico"))
