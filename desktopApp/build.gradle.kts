@@ -35,10 +35,14 @@ compose.desktop {
         }
         nativeDistributions {
             targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb)
-            packageName = "gyst"
+            packageName = "Gyst"
             packageVersion = appVersionName
             vendor = "Gyst"
             description = "Gyst personal finance and planning app"
+            modules(
+                "java.sql",
+                "java.naming",
+            )
             windows {
                 iconFile.set(rootProject.file("docs/assets/favicon/favicon.ico"))
                 menuGroup = "Gyst"
