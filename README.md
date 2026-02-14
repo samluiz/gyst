@@ -134,10 +134,16 @@ Write is dialog-based:
   - choose a **tag** in `Use workflow from` (no manual tag input)
   - inputs:
     - `skip_quality_gate` (`true/false`)
+    - `build_android` (`true/false`)
+    - `build_windows` (`true/false`)
+    - `build_linux` (`true/false`)
+    - `build_macos` (`true/false`)
     - `build_ios` (`true/false`)
 - Outputs published to GitHub Release:
-  - Android: release APK (`androidApp`)
-  - Windows: desktop artifacts (`.msi` + portable zip + optional `.exe`)
+  - Android (optional): release APK (`androidApp`)
+  - Windows (optional): desktop artifacts (`.msi` + portable zip + optional `.exe`)
+  - Linux (optional): desktop artifacts (`.deb` + portable `.tar.gz`)
+  - macOS (optional): desktop artifacts (`.dmg` + portable `.zip`)
   - iOS (optional): signed `.ipa`
 
 ### Version propagation
@@ -164,7 +170,7 @@ Android:
 - `GYST_KEY_ALIAS`
 - `GYST_KEY_PASSWORD`
 
-Desktop:
+Desktop (required when `build_windows=true` or `build_linux=true`):
 - `GYST_DESKTOP_OAUTH_JSON_B64` (base64 of Desktop OAuth JSON)
 
 iOS (required only when `build_ios=true`):

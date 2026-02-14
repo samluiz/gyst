@@ -8,6 +8,26 @@ on:
         required: true
         default: false
         type: boolean
+      build_android:
+        description: "Build Android APK"
+        required: true
+        default: true
+        type: boolean
+      build_windows:
+        description: "Build Windows artifacts"
+        required: true
+        default: true
+        type: boolean
+      build_linux:
+        description: "Build Linux artifacts"
+        required: true
+        default: false
+        type: boolean
+      build_macos:
+        description: "Build macOS artifacts"
+        required: true
+        default: false
+        type: boolean
       build_ios:
         description: "Build iOS IPA"
         required: true
@@ -29,11 +49,15 @@ jobs:
             echo "Current ref: ${GITHUB_REF}"
             exit 1
           fi
+          if [[ "${{ github.event.inputs.build_android }}" != "true" && "${{ github.event.inputs.build_windows }}" != "true" && "${{ github.event.inputs.build_linux }}" != "true" && "${{ github.event.inputs.build_macos }}" != "true" && "${{ github.event.inputs.build_ios }}" != "true" ]]; then
+            echo "Select at least one platform to build."
+            exit 1
+          fi
           echo "Release ref OK: ${GITHUB_REF}"
 
   quality_gate_android:
     name: Quality Gate (Android)
-    if: ${{ github.event.inputs.skip_quality_gate != 'true' }}
+    if: ${{ github.event.inputs.build_android == 'true' && github.event.inputs.skip_quality_gate != 'true' }}
     runs-on: ubuntu-latest
     needs: [validate_release_ref]
     timeout-minutes: 45
@@ -79,7 +103,7 @@ jobs:
 
   quality_gate_windows:
     name: Quality Gate (Windows/Desktop)
-    if: ${{ github.event.inputs.skip_quality_gate != 'true' }}
+    if: ${{ github.event.inputs.build_windows == 'true' && github.event.inputs.skip_quality_gate != 'true' }}
     runs-on: windows-latest
     needs: [validate_release_ref]
     timeout-minutes: 45
@@ -100,6 +124,54 @@ jobs:
         shell: pwsh
         run: |
           .\gradlew :desktopApp:desktopTest :shared:desktopTest --no-daemon
+
+  quality_gate_linux:
+    name: Quality Gate (Linux/Desktop)
+    if: ${{ github.event.inputs.build_linux == 'true' && github.event.inputs.skip_quality_gate != 'true' }}
+    runs-on: ubuntu-latest
+    needs: [validate_release_ref]
+    timeout-minutes: 45
+    steps:
+      - name: Checkout selected tag
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+
+      - name: Run Linux desktop quality checks
+        run: |
+          chmod +x gradlew
+          ./gradlew :desktopApp:desktopTest :shared:desktopTest --no-daemon
+
+  quality_gate_macos:
+    name: Quality Gate (macOS/Desktop)
+    if: ${{ github.event.inputs.build_macos == 'true' && github.event.inputs.skip_quality_gate != 'true' }}
+    runs-on: macos-14
+    needs: [validate_release_ref]
+    timeout-minutes: 45
+    steps:
+      - name: Checkout selected tag
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+
+      - name: Run macOS desktop quality checks
+        run: |
+          chmod +x gradlew
+          ./gradlew :desktopApp:desktopTest :shared:desktopTest --no-daemon
 
   quality_gate_ios:
     name: Quality Gate (iOS)
@@ -128,8 +200,8 @@ jobs:
   build_release_android:
     name: Build Android Release APK
     runs-on: ubuntu-latest
-    needs: [validate_release_ref, quality_gate_android, quality_gate_windows]
-    if: ${{ always() && needs.validate_release_ref.result == 'success' && (github.event.inputs.skip_quality_gate == 'true' || (needs.quality_gate_android.result == 'success' && needs.quality_gate_windows.result == 'success')) }}
+    needs: [validate_release_ref, quality_gate_android]
+    if: ${{ always() && github.event.inputs.build_android == 'true' && needs.validate_release_ref.result == 'success' && (github.event.inputs.skip_quality_gate == 'true' || needs.quality_gate_android.result == 'success') }}
     env:
       APP_VERSION: ${{ github.ref_name }}
     steps:
@@ -210,8 +282,8 @@ jobs:
   build_release_windows:
     name: Build Windows MSI and Portable
     runs-on: windows-latest
-    needs: [validate_release_ref, quality_gate_android, quality_gate_windows]
-    if: ${{ always() && needs.validate_release_ref.result == 'success' && (github.event.inputs.skip_quality_gate == 'true' || (needs.quality_gate_android.result == 'success' && needs.quality_gate_windows.result == 'success')) }}
+    needs: [validate_release_ref, quality_gate_windows]
+    if: ${{ always() && github.event.inputs.build_windows == 'true' && needs.validate_release_ref.result == 'success' && (github.event.inputs.skip_quality_gate == 'true' || needs.quality_gate_windows.result == 'success') }}
     env:
       APP_VERSION: ${{ github.ref_name }}
     steps:
@@ -272,9 +344,135 @@ jobs:
           path: release-dist/*
           if-no-files-found: error
 
+  build_release_linux:
+    name: Build Linux DEB and Portable
+    runs-on: ubuntu-latest
+    needs: [validate_release_ref, quality_gate_linux]
+    if: ${{ always() && github.event.inputs.build_linux == 'true' && needs.validate_release_ref.result == 'success' && (github.event.inputs.skip_quality_gate == 'true' || needs.quality_gate_linux.result == 'success') }}
+    env:
+      APP_VERSION: ${{ github.ref_name }}
+    steps:
+      - name: Checkout selected tag
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+
+      - name: Inject desktop OAuth client JSON
+        shell: bash
+        env:
+          GYST_DESKTOP_OAUTH_JSON_B64: ${{ secrets.GYST_DESKTOP_OAUTH_JSON_B64 }}
+        run: |
+          if [ -z "$GYST_DESKTOP_OAUTH_JSON_B64" ]; then
+            echo "Missing required secret: GYST_DESKTOP_OAUTH_JSON_B64"
+            exit 1
+          fi
+          mkdir -p desktopApp/src/desktopMain/resources
+          echo "$GYST_DESKTOP_OAUTH_JSON_B64" | base64 --decode > desktopApp/src/desktopMain/resources/desktop_oauth_client.json
+
+      - name: Build DEB and distributable
+        run: |
+          chmod +x gradlew
+          ./gradlew :desktopApp:packageReleaseDeb :desktopApp:createDistributable "-Papp.version=$APP_VERSION" --no-daemon
+
+      - name: Normalize Linux artifact names
+        run: |
+          VERSION_LABEL="${APP_VERSION#v}"
+          mkdir -p release-dist
+          DEB_PATH="$(find desktopApp/build/compose/binaries -name '*.deb' | head -n 1)"
+          if [ -z "$DEB_PATH" ]; then
+            echo "No DEB produced."
+            exit 1
+          fi
+          cp "$DEB_PATH" "release-dist/gyst-${VERSION_LABEL}.deb"
+
+          SOURCE="desktopApp/build/compose/binaries/main/app"
+          if [ ! -d "$SOURCE" ]; then SOURCE="desktopApp/build/compose/binaries/main-release/app"; fi
+          if [ ! -d "$SOURCE" ]; then
+            echo "Desktop distributable folder not found."
+            exit 1
+          fi
+          tar -C "$SOURCE" -czf "release-dist/gyst-${VERSION_LABEL}-linux-portable.tar.gz" .
+
+      - name: Upload Linux artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-desktop
+          path: release-dist/*
+          if-no-files-found: error
+
+  build_release_macos:
+    name: Build macOS DMG and Portable
+    runs-on: macos-14
+    needs: [validate_release_ref, quality_gate_macos]
+    if: ${{ always() && github.event.inputs.build_macos == 'true' && needs.validate_release_ref.result == 'success' && (github.event.inputs.skip_quality_gate == 'true' || needs.quality_gate_macos.result == 'success') }}
+    env:
+      APP_VERSION: ${{ github.ref_name }}
+    steps:
+      - name: Checkout selected tag
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+
+      - name: Inject desktop OAuth client JSON
+        shell: bash
+        env:
+          GYST_DESKTOP_OAUTH_JSON_B64: ${{ secrets.GYST_DESKTOP_OAUTH_JSON_B64 }}
+        run: |
+          if [ -z "$GYST_DESKTOP_OAUTH_JSON_B64" ]; then
+            echo "Missing required secret: GYST_DESKTOP_OAUTH_JSON_B64"
+            exit 1
+          fi
+          mkdir -p desktopApp/src/desktopMain/resources
+          echo "$GYST_DESKTOP_OAUTH_JSON_B64" | base64 --decode > desktopApp/src/desktopMain/resources/desktop_oauth_client.json
+
+      - name: Build DMG and distributable
+        run: |
+          chmod +x gradlew
+          ./gradlew :desktopApp:packageReleaseDmg :desktopApp:createDistributable "-Papp.version=$APP_VERSION" --no-daemon
+
+      - name: Normalize macOS artifact names
+        run: |
+          VERSION_LABEL="${APP_VERSION#v}"
+          mkdir -p release-dist
+          DMG_PATH="$(find desktopApp/build/compose/binaries -name '*.dmg' | head -n 1)"
+          if [ -z "$DMG_PATH" ]; then
+            echo "No DMG produced."
+            exit 1
+          fi
+          cp "$DMG_PATH" "release-dist/gyst-${VERSION_LABEL}.dmg"
+
+          SOURCE="desktopApp/build/compose/binaries/main/app"
+          if [ ! -d "$SOURCE" ]; then SOURCE="desktopApp/build/compose/binaries/main-release/app"; fi
+          if [ ! -d "$SOURCE" ]; then
+            echo "Desktop distributable folder not found."
+            exit 1
+          fi
+          (cd "$SOURCE" && zip -r "$GITHUB_WORKSPACE/release-dist/gyst-${VERSION_LABEL}-macos-portable.zip" .)
+
+      - name: Upload macOS artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-desktop
+          path: release-dist/*
+          if-no-files-found: error
+
   build_release_ios:
     name: Build iOS IPA
-    if: ${{ github.event.inputs.build_ios == 'true' && (github.event.inputs.skip_quality_gate == 'true' || needs.quality_gate_ios.result == 'success') }}
+    if: ${{ github.event.inputs.build_ios == 'true' && needs.validate_release_ref.result == 'success' && (github.event.inputs.skip_quality_gate == 'true' || needs.quality_gate_ios.result == 'success') }}
     runs-on: macos-14
     needs: [validate_release_ref, quality_gate_ios]
     env:
@@ -379,8 +577,8 @@ jobs:
   publish_github_release:
     name: Publish GitHub Release
     runs-on: ubuntu-latest
-    needs: [validate_release_ref, build_release_android, build_release_windows, build_release_ios]
-    if: ${{ always() && needs.validate_release_ref.result == 'success' && needs.build_release_android.result == 'success' && needs.build_release_windows.result == 'success' && (github.event.inputs.build_ios != 'true' || needs.build_release_ios.result == 'success') }}
+    needs: [validate_release_ref, build_release_android, build_release_windows, build_release_linux, build_release_macos, build_release_ios]
+    if: ${{ always() && needs.validate_release_ref.result == 'success' && (github.event.inputs.build_android != 'true' || needs.build_release_android.result == 'success') && (github.event.inputs.build_windows != 'true' || needs.build_release_windows.result == 'success') && (github.event.inputs.build_linux != 'true' || needs.build_release_linux.result == 'success') && (github.event.inputs.build_macos != 'true' || needs.build_release_macos.result == 'success') && (github.event.inputs.build_ios != 'true' || needs.build_release_ios.result == 'success') }}
     steps:
       - name: Download artifacts
         uses: actions/download-artifact@v4
@@ -397,4 +595,7 @@ jobs:
             release-assets/**/*.msi
             release-assets/**/*.exe
             release-assets/**/*.zip
+            release-assets/**/*.deb
+            release-assets/**/*.tar.gz
+            release-assets/**/*.dmg
             release-assets/**/*.ipa
