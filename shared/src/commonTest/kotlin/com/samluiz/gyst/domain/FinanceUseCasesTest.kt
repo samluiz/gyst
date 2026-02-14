@@ -26,6 +26,8 @@ class FinanceUseCasesTest {
         val budgetRepo = FakeBudgetRepository()
         val expenseRepo = FakeExpenseRepository()
         val scheduleRepo = FakeScheduleRepository()
+        val subscriptionRepo = FakeSubscriptionRepository()
+        val installmentRepo = FakeInstallmentRepository()
 
         val month = budgetRepo.createOrUpdateMonth(YearMonth(2026, 2), 5_000_00)
         budgetRepo.setAllocations(
@@ -47,13 +49,81 @@ class FinanceUseCasesTest {
         )
         scheduleRepo.commitments[YearMonth(2026, 2).toString()] = 1_700_00
 
-        val result = ComputeMonthlySummaryUseCase(budgetRepo, expenseRepo, scheduleRepo)(YearMonth(2026, 2))
+        val result = ComputeMonthlySummaryUseCase(
+            budgetRepo,
+            expenseRepo,
+            scheduleRepo,
+            subscriptionRepo,
+            installmentRepo,
+        )(YearMonth(2026, 2))
 
         assertEquals(5_000_00, result.totalIncomeCents)
         assertEquals(3_000_00, result.plannedTotalCents)
         assertEquals(500_00, result.spentTotalCents)
         assertEquals(4_500_00, result.remainingTotalCents)
         assertEquals(1_700_00, result.commitmentsCents)
+    }
+
+    @Test
+    fun monthlySummaryCategoryIncludesExpensesSubscriptionsAndInstallments() = runTest {
+        val budgetRepo = FakeBudgetRepository()
+        val expenseRepo = FakeExpenseRepository()
+        val scheduleRepo = FakeScheduleRepository()
+        val subscriptionRepo = FakeSubscriptionRepository()
+        val installmentRepo = FakeInstallmentRepository()
+
+        val month = YearMonth(2026, 3)
+        val created = budgetRepo.createOrUpdateMonth(month, 2_500_00)
+        budgetRepo.setAllocations(
+            created.id,
+            listOf(BudgetAllocation("a1", created.id, "cat-home", 2_000_00)),
+        )
+
+        expenseRepo.upsert(
+            Expense(
+                id = "e1",
+                occurredAt = LocalDate(2026, 3, 6),
+                amountCents = 300_00,
+                categoryId = "cat-home",
+                paymentMethod = PaymentMethod.PIX,
+                createdAt = Instant.parse("2026-03-06T00:00:00Z"),
+            )
+        )
+        subscriptionRepo.upsert(
+            Subscription(
+                id = "s1",
+                name = "Internet",
+                amountCents = 120_00,
+                billingDay = 10,
+                categoryId = "cat-home",
+                active = true,
+                renewalPolicy = RenewalPolicy.MONTHLY,
+                nextDueDate = LocalDate(2026, 1, 10),
+            )
+        )
+        installmentRepo.upsert(
+            InstallmentPlan(
+                id = "i1",
+                name = "Notebook",
+                totalInstallments = 10,
+                monthlyAmountCents = 200_00,
+                startYearMonth = YearMonth(2026, 2),
+                endYearMonth = YearMonth(2026, 11),
+                categoryId = "cat-home",
+                active = true,
+            )
+        )
+
+        val result = ComputeMonthlySummaryUseCase(
+            budgetRepo,
+            expenseRepo,
+            scheduleRepo,
+            subscriptionRepo,
+            installmentRepo,
+        )(month)
+
+        val home = result.perCategory.first { it.categoryId == "cat-home" }
+        assertEquals(620_00, home.spentCents)
     }
 
     @Test
@@ -327,10 +397,25 @@ private class FakeScheduleRepository : ScheduleRepository {
 }
 
 private class FakeInstallmentRepository : InstallmentRepository {
-    override suspend fun upsert(plan: InstallmentPlan) {}
-    override suspend fun delete(id: String) {}
-    override suspend fun list(): List<InstallmentPlan> = emptyList()
-    override suspend fun listActive(): List<InstallmentPlan> = emptyList()
+    private val plans = mutableListOf<InstallmentPlan>()
+    override suspend fun upsert(plan: InstallmentPlan) {
+        plans.removeAll { it.id == plan.id }
+        plans.add(plan)
+    }
+    override suspend fun delete(id: String) { plans.removeAll { it.id == id } }
+    override suspend fun list(): List<InstallmentPlan> = plans.toList()
+    override suspend fun listActive(): List<InstallmentPlan> = plans.filter { it.active }
+}
+
+private class FakeSubscriptionRepository : SubscriptionRepository {
+    private val subscriptions = mutableListOf<Subscription>()
+    override suspend fun upsert(subscription: Subscription) {
+        subscriptions.removeAll { it.id == subscription.id }
+        subscriptions.add(subscription)
+    }
+    override suspend fun delete(id: String) { subscriptions.removeAll { it.id == id } }
+    override suspend fun list(): List<Subscription> = subscriptions.toList()
+    override suspend fun listActive(): List<Subscription> = subscriptions.filter { it.active }
 }
 
 private class FakeSettingsRepository : SettingsRepository {

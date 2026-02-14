@@ -26,7 +26,7 @@ private val sharedModule = module {
     single { SetBudgetAllocationsUseCase(get()) }
     single { AddOrUpdateExpenseUseCase(get()) }
     single { DeleteExpenseUseCase(get()) }
-    single { ComputeMonthlySummaryUseCase(get(), get(), get()) }
+    single { ComputeMonthlySummaryUseCase(get(), get(), get(), get(), get()) }
     single { ComputeCashFlowForecastUseCase(get(), get(), get()) }
     single { HandleMonthRolloverUseCase(get(), get(), get()) }
     single { UpsertSubscriptionUseCase(get(), get()) }

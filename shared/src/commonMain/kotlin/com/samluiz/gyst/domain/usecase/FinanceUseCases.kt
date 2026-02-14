@@ -37,21 +37,45 @@ class ComputeMonthlySummaryUseCase(
     private val budgetRepository: BudgetRepository,
     private val expenseRepository: ExpenseRepository,
     private val scheduleRepository: ScheduleRepository,
+    private val subscriptionRepository: SubscriptionRepository,
+    private val installmentRepository: InstallmentRepository,
 ) {
     suspend operator fun invoke(yearMonth: YearMonth): MonthlySummary {
         val budget = budgetRepository.findByYearMonth(yearMonth)
         val allocations = budget?.let { budgetRepository.allocationsByBudgetMonth(it.id) }.orEmpty()
         val spentMap = expenseRepository.monthlySpentByCategory(yearMonth)
+        val activeSubscriptions = subscriptionRepository.listActive()
+        val activeInstallments = installmentRepository.listActive()
 
         val plannedTotal = allocations.sumOf { it.plannedCents }
         val spentTotal = expenseRepository.monthlyTotal(yearMonth)
         val commitments = scheduleRepository.commitmentsForMonth(yearMonth)
+        val commitmentsByCategory = mutableMapOf<String, Long>()
+        activeSubscriptions
+            .filter { YearMonth.fromDate(it.nextDueDate) <= yearMonth }
+            .forEach { sub ->
+                commitmentsByCategory[sub.categoryId] =
+                    (commitmentsByCategory[sub.categoryId] ?: 0L) + sub.amountCents
+            }
+        activeInstallments
+            .filter { it.startYearMonth <= yearMonth && it.endYearMonth >= yearMonth }
+            .forEach { plan ->
+                commitmentsByCategory[plan.categoryId] =
+                    (commitmentsByCategory[plan.categoryId] ?: 0L) + plan.monthlyAmountCents
+            }
 
-        val categories = allocations.map {
-            val spent = spentMap[it.categoryId] ?: 0L
-            val remaining = it.plannedCents - spent
-            val percent = if (it.plannedCents == 0L) 0.0 else (spent.toDouble() / it.plannedCents.toDouble())
-            CategorySummary(it.categoryId, it.plannedCents, spent, remaining, percent)
+        val plannedByCategory = allocations.associate { it.categoryId to it.plannedCents }
+        val categoryIds = buildSet {
+            addAll(plannedByCategory.keys)
+            addAll(spentMap.keys)
+            addAll(commitmentsByCategory.keys)
+        }
+        val categories = categoryIds.map { categoryId ->
+            val planned = plannedByCategory[categoryId] ?: 0L
+            val spent = (spentMap[categoryId] ?: 0L) + (commitmentsByCategory[categoryId] ?: 0L)
+            val remaining = planned - spent
+            val percent = if (planned == 0L) 0.0 else (spent.toDouble() / planned.toDouble())
+            CategorySummary(categoryId, planned, spent, remaining, percent)
         }
 
         return MonthlySummary(
