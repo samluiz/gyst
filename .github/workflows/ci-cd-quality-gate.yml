@@ -87,6 +87,62 @@ jobs:
             Start-Sleep -Seconds 20
           } while ($true)
 
+  desktop_linux_quality:
+    name: Desktop Linux Validation
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+
+      - name: Run desktop tests
+        run: |
+          chmod +x gradlew
+          for attempt in 1 2 3; do
+            ./gradlew :desktopApp:desktopTest :shared:desktopTest --no-daemon && break
+            if [ "$attempt" -eq 3 ]; then
+              echo "Desktop Linux validation failed after 3 attempts."
+              exit 1
+            fi
+            echo "Attempt $attempt failed. Retrying in 20s..."
+            sleep 20
+          done
+
+  desktop_macos_quality:
+    name: Desktop macOS Validation
+    runs-on: macos-14
+    timeout-minutes: 40
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+
+      - name: Run desktop tests
+        run: |
+          chmod +x gradlew
+          for attempt in 1 2 3; do
+            ./gradlew :desktopApp:desktopTest :shared:desktopTest --no-daemon && break
+            if [ "$attempt" -eq 3 ]; then
+              echo "Desktop macOS validation failed after 3 attempts."
+              exit 1
+            fi
+            echo "Attempt $attempt failed. Retrying in 20s..."
+            sleep 20
+          done
+
   ios_compile_quality:
     name: iOS Shared Compile Validation
     runs-on: macos-14
