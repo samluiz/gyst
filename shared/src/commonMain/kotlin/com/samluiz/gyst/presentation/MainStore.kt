@@ -660,8 +660,10 @@ class MainStore(
             val originMonth = YearMonth.fromDate(sub.nextDueDate)
             val generationStart = if (startMonth < originMonth) originMonth else startMonth
             UpsertSubscriptionUseCase(subscriptionRepository, scheduleRepository)(
-                sub.copy(nextDueDate = dueDateForMonth(generationStart, sub.billingDay)),
+                sub,
                 monthsAhead = monthsAhead,
+                scheduleStartYearMonth = generationStart,
+                persistSubscription = false,
             )
         }
     }

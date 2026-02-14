@@ -136,12 +136,19 @@ class UpsertSubscriptionUseCase(
     private val subscriptionRepository: SubscriptionRepository,
     private val scheduleRepository: ScheduleRepository,
 ) {
-    suspend operator fun invoke(subscription: Subscription, monthsAhead: Int = 6) {
+    suspend operator fun invoke(
+        subscription: Subscription,
+        monthsAhead: Int = 6,
+        scheduleStartYearMonth: YearMonth? = null,
+        persistSubscription: Boolean = true,
+    ) {
         requireNonNegative(subscription.amountCents)
-        subscriptionRepository.upsert(subscription)
+        if (persistSubscription) {
+            subscriptionRepository.upsert(subscription)
+        }
 
         if (!subscription.active) return
-        val nowYm = YearMonth.fromDate(subscription.nextDueDate)
+        val nowYm = scheduleStartYearMonth ?: YearMonth.fromDate(subscription.nextDueDate)
         repeat(monthsAhead) { offset ->
             val ym = nowYm.plusMonths(offset)
             val due = dueDateForMonth(ym, subscription.billingDay)
