@@ -6,38 +6,48 @@ import android.util.Log
 import androidx.sqlite.db.SupportSQLiteDatabase
 import app.cash.sqldelight.db.SqlDriver
 import app.cash.sqldelight.driver.android.AndroidSqliteDriver
+import com.samluiz.gyst.data.repository.SqlDriverFactory
 import com.samluiz.gyst.db.GystDatabase
 import com.samluiz.gyst.domain.service.GoogleAuthSyncService
 import org.koin.dsl.module
 import java.io.File
 
 fun androidPlatformModule(context: Context): org.koin.core.module.Module = module {
+    single<SqlDriverFactory> {
+        object : SqlDriverFactory {
+            override fun createDriver(): SqlDriver = createAndroidDriver(context)
+        }
+    }
     single<SqlDriver> {
-        hardenLegacySchema(context)
-        AndroidSqliteDriver(
-            schema = GystDatabase.Schema,
-            context = context,
-            name = "gyst.db",
-            callback = object : AndroidSqliteDriver.Callback(GystDatabase.Schema) {
-                override fun onOpen(db: SupportSQLiteDatabase) {
-                    super.onOpen(db)
-                    runCatching {
-                        db.execSQL("PRAGMA foreign_keys=ON")
-                        db.execSQL("PRAGMA journal_mode=WAL")
-                        db.execSQL("PRAGMA synchronous=NORMAL")
-                    }.onFailure { Log.e("GystDb", "Failed to apply SQLite PRAGMA on open", it) }
-                }
-
-                override fun onCorruption(db: SupportSQLiteDatabase) {
-                    backupAndResetCorruptDatabase(context, "callback_corruption")
-                    super.onCorruption(db)
-                }
-            },
-        )
+        get<SqlDriverFactory>().createDriver()
     }
     single<GoogleAuthSyncService> {
         AndroidGoogleAuthSyncService(context.applicationContext)
     }
+}
+
+private fun createAndroidDriver(context: Context): SqlDriver {
+    hardenLegacySchema(context)
+    return AndroidSqliteDriver(
+        schema = GystDatabase.Schema,
+        context = context,
+        name = "gyst.db",
+        callback = object : AndroidSqliteDriver.Callback(GystDatabase.Schema) {
+            override fun onOpen(db: SupportSQLiteDatabase) {
+                super.onOpen(db)
+                runCatching {
+                    db.execSQL("PRAGMA foreign_keys=ON")
+                    db.execSQL("PRAGMA journal_mode=WAL")
+                    db.execSQL("PRAGMA synchronous=NORMAL")
+                }.onFailure { Log.e("GystDb", "Failed to apply SQLite PRAGMA on open", it) }
+            }
+
+            override fun onCorruption(db: SupportSQLiteDatabase) {
+                backupAndResetCorruptDatabase(context, "callback_corruption")
+                super.onCorruption(db)
+            }
+        },
+    )
 }
 
 private fun hardenLegacySchema(context: Context) {

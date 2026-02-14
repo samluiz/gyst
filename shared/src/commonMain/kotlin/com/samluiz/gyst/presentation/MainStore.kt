@@ -2,6 +2,7 @@ package com.samluiz.gyst.presentation
 
 import com.samluiz.gyst.domain.model.*
 import com.samluiz.gyst.logging.AppLogger
+import com.samluiz.gyst.data.repository.DatabaseRuntimeController
 import com.samluiz.gyst.domain.repository.*
 import com.samluiz.gyst.domain.service.GoogleAuthSyncService
 import com.samluiz.gyst.domain.service.GoogleSyncState
@@ -41,6 +42,7 @@ class MainStore(
     private val settingsRepository: SettingsRepository,
     private val localDataMaintenanceRepository: LocalDataMaintenanceRepository,
     private val googleAuthSyncService: GoogleAuthSyncService,
+    private val databaseRuntimeController: DatabaseRuntimeController,
     private val computeMonthlySummaryUseCase: ComputeMonthlySummaryUseCase,
     private val computeCashFlowForecastUseCase: ComputeCashFlowForecastUseCase,
     private val handleMonthRolloverUseCase: HandleMonthRolloverUseCase,
@@ -167,21 +169,33 @@ class MainStore(
     }
 
     fun syncGoogleDrive() {
-        scope.launchSafely {
+        scope.launchSafely(allowDuringBlocking = true) {
             googleAuthSyncService.syncNow()
+            val reloaded = applyHotReloadIfNeeded("sync")
             refreshInternal()
+            if (reloaded) {
+                _state.value = _state.value.copy(infoMessage = "Backup applied successfully.")
+            }
         }
     }
 
     fun restoreFromGoogleDrive(overwriteLocal: Boolean) {
-        scope.launchSafely {
-            googleAuthSyncService.restoreFromCloud(overwriteLocal)
-            if (googleAuthSyncService.state.value.requiresAppRestart) {
-                // DB file was replaced; avoid using stale open connections before app restart.
-                return@launchSafely
+        scope.launchSafely(allowDuringBlocking = true) {
+            _state.value = _state.value.copy(
+                isLoading = true,
+                blockingMessage = "Applying backup...",
+            )
+            try {
+                googleAuthSyncService.restoreFromCloud(overwriteLocal)
+                val reloaded = applyHotReloadIfNeeded("restore")
+                seedDataInitializer.ensureSeedData()
+                refreshInternal()
+                if (reloaded) {
+                    _state.value = _state.value.copy(infoMessage = "Backup applied successfully.")
+                }
+            } finally {
+                _state.value = _state.value.copy(blockingMessage = null)
             }
-            seedDataInitializer.ensureSeedData()
-            refreshInternal()
         }
     }
 
@@ -516,14 +530,37 @@ class MainStore(
         _state.value = _state.value.copy(errorMessage = null)
     }
 
-    private fun CoroutineScope.launchSafely(block: suspend () -> Unit) {
+    fun clearInfo() {
+        _state.value = _state.value.copy(infoMessage = null)
+    }
+
+    private fun CoroutineScope.launchSafely(
+        allowDuringBlocking: Boolean = false,
+        block: suspend () -> Unit,
+    ) {
         launch {
+            if (!allowDuringBlocking && _state.value.blockingMessage != null) {
+                return@launch
+            }
             _state.value = _state.value.copy(errorMessage = null)
             runCatching { block() }
                 .onFailure {
                     AppLogger.e(TAG, "Unhandled store error", it)
                     _state.value = _state.value.copy(errorMessage = it.message ?: "Erro inesperado")
                 }
+        }
+    }
+
+    private suspend fun applyHotReloadIfNeeded(reason: String): Boolean {
+        if (!googleAuthSyncService.state.value.requiresAppRestart) return false
+        AppLogger.i(TAG, "Applying hot DB reload after $reason")
+        _state.value = _state.value.copy(isLoading = true, blockingMessage = "Applying backup...")
+        try {
+            databaseRuntimeController.reloadDatabase()
+            googleAuthSyncService.initialize()
+            return true
+        } finally {
+            _state.value = _state.value.copy(blockingMessage = null)
         }
     }
 
@@ -608,6 +645,8 @@ class MainStore(
             slowQueries = slowQueries,
             googleSync = googleAuthSyncService.state.value,
             errorMessage = previous.errorMessage,
+            blockingMessage = previous.blockingMessage,
+            infoMessage = previous.infoMessage,
             isLoading = false,
             planningUsePostSavingsBudget = planningUsePostSavings,
             planningMonthlyContributionCents = planningMonthlyContribution,
@@ -684,6 +723,8 @@ data class MainState(
     val planningMonthlyContributionCents: Long = 50_000L,
     val planningGoalAmountCents: Long = 1_000_000L,
     val planningDesiredMarginCents: Long = 0L,
+    val blockingMessage: String? = null,
+    val infoMessage: String? = null,
     val errorMessage: String? = null,
     val isLoading: Boolean = true,
 )

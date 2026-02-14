@@ -6,6 +6,7 @@ import androidx.compose.ui.window.application
 import app.cash.sqldelight.db.SqlDriver
 import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
 import com.samluiz.gyst.app.GystRoot
+import com.samluiz.gyst.data.repository.SqlDriverFactory
 import com.samluiz.gyst.db.GystDatabase
 import com.samluiz.gyst.di.initKoin
 import com.samluiz.gyst.domain.service.GoogleAuthSyncService
@@ -24,9 +25,14 @@ fun main() {
     AppLogger.addSink(DesktopFileLogSink(logsPath))
     AppLogger.i("DesktopMain", "Starting desktop app")
     initKoin(platformModule = module {
+        single<SqlDriverFactory> {
+            object : SqlDriverFactory {
+                override fun createDriver(): SqlDriver = openDesktopDriver(dbPath, backupPath)
+            }
+        }
         single<SqlDriver> {
             Files.createDirectories(homeDir)
-            openDesktopDriver(dbPath, backupPath)
+            get<SqlDriverFactory>().createDriver()
         }
         single<GoogleAuthSyncService> { DesktopGoogleAuthSyncService(dbPath = dbPath, backupPath = backupPath) }
     })

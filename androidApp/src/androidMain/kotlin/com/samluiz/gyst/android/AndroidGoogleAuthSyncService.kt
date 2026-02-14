@@ -212,7 +212,7 @@ class AndroidGoogleAuthSyncService(
                             lastSyncSource = SyncSource.CLOUD_TO_LOCAL,
                             lastSyncPolicy = SyncPolicy.NEWEST_WINS,
                             hadSyncConflict = true,
-                            statusMessage = "Conflict resolved by timestamp: cloud data was newer.",
+                            statusMessage = "Conflict resolved by timestamp: cloud data applied.",
                             requiresAppRestart = true,
                             lastError = null,
                         )
@@ -268,7 +268,7 @@ class AndroidGoogleAuthSyncService(
                     lastSyncSource = SyncSource.CLOUD_TO_LOCAL,
                     lastSyncPolicy = SyncPolicy.OVERWRITE_LOCAL,
                     hadSyncConflict = false,
-                    statusMessage = "Backup restored from cloud. Restart app to apply data.",
+                    statusMessage = "Backup restored from cloud.",
                     requiresAppRestart = true,
                     lastError = null,
                 )

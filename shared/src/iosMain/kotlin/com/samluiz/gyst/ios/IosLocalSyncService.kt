@@ -42,17 +42,34 @@ class IosLocalSyncService(
                 isSignedIn = true,
                 accountName = "iOS Local",
                 accountEmail = "local@ios",
+                requiresAppRestart = false,
                 lastError = null,
             )
         }
     }
 
     override suspend fun signIn() {
-        internal.update { it.copy(isSignedIn = true, accountName = "iOS Local", accountEmail = "local@ios", lastError = null) }
+        internal.update {
+            it.copy(
+                isSignedIn = true,
+                accountName = "iOS Local",
+                accountEmail = "local@ios",
+                requiresAppRestart = false,
+                lastError = null,
+            )
+        }
     }
 
     override suspend fun signOut() {
-        internal.update { it.copy(isSignedIn = false, accountName = null, accountEmail = null, lastError = null) }
+        internal.update {
+            it.copy(
+                isSignedIn = false,
+                accountName = null,
+                accountEmail = null,
+                requiresAppRestart = false,
+                lastError = null,
+            )
+        }
     }
 
     override suspend fun syncNow() {
@@ -110,7 +127,7 @@ class IosLocalSyncService(
                             lastSyncSource = SyncSource.CLOUD_TO_LOCAL,
                             lastSyncPolicy = SyncPolicy.NEWEST_WINS,
                             hadSyncConflict = true,
-                            statusMessage = "Conflict resolved by timestamp: backup was newer.",
+                            statusMessage = "Conflict resolved by timestamp: backup applied.",
                             requiresAppRestart = true,
                             lastError = null,
                         )
@@ -159,7 +176,7 @@ class IosLocalSyncService(
                     lastSyncSource = SyncSource.CLOUD_TO_LOCAL,
                     lastSyncPolicy = SyncPolicy.OVERWRITE_LOCAL,
                     hadSyncConflict = false,
-                    statusMessage = "Backup restored. Restart app to apply data.",
+                    statusMessage = "Backup restored.",
                     requiresAppRestart = true,
                     lastError = null,
                 )

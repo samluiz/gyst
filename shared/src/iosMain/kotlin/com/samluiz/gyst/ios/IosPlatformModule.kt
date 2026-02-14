@@ -2,6 +2,7 @@ package com.samluiz.gyst.ios
 
 import app.cash.sqldelight.db.SqlDriver
 import app.cash.sqldelight.driver.native.NativeSqliteDriver
+import com.samluiz.gyst.data.repository.SqlDriverFactory
 import com.samluiz.gyst.db.GystDatabase
 import com.samluiz.gyst.domain.service.GoogleAuthSyncService
 import kotlinx.cinterop.ExperimentalForeignApi
@@ -14,8 +15,13 @@ import platform.Foundation.NSUserDomainMask
 
 @OptIn(ExperimentalForeignApi::class)
 fun iosPlatformModule(): Module = module {
+    single<SqlDriverFactory> {
+        object : SqlDriverFactory {
+            override fun createDriver(): SqlDriver = NativeSqliteDriver(GystDatabase.Schema, iosDbPath())
+        }
+    }
     single<SqlDriver> {
-        NativeSqliteDriver(GystDatabase.Schema, iosDbPath())
+        get<SqlDriverFactory>().createDriver()
     }
     single<GoogleAuthSyncService> {
         IosLocalSyncService(

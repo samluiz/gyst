@@ -8,11 +8,36 @@ import com.samluiz.gyst.domain.usecase.id
 import com.samluiz.gyst.domain.usecase.monthBounds
 import com.samluiz.gyst.domain.usecase.nowInstantUtc
 import kotlinx.datetime.LocalDate
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlin.time.Clock
 import kotlin.time.Instant
 
-class DatabaseHolder(driver: SqlDriver) {
-    val db: GystDatabase = GystDatabase(driver)
+interface SqlDriverFactory {
+    fun createDriver(): SqlDriver
+}
+
+class DatabaseHolder(
+    initialDriver: SqlDriver,
+    private val driverFactory: SqlDriverFactory,
+) {
+    private val reloadMutex = Mutex()
+    private var activeDriver: SqlDriver = initialDriver
+    @Volatile
+    private var activeDb: GystDatabase = GystDatabase(initialDriver)
+
+    val db: GystDatabase
+        get() = activeDb
+
+    suspend fun reloadDatabase() {
+        reloadMutex.withLock {
+            val newDriver = driverFactory.createDriver()
+            val oldDriver = activeDriver
+            activeDriver = newDriver
+            activeDb = GystDatabase(newDriver)
+            runCatching { oldDriver.close() }
+        }
+    }
 }
 
 class SqlCategoryRepository(private val holder: DatabaseHolder) : CategoryRepository {

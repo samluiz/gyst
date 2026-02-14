@@ -10,7 +10,8 @@ import org.koin.core.module.Module
 import org.koin.dsl.module
 
 private val sharedModule = module {
-    single { DatabaseHolder(get<SqlDriver>()) }
+    single { DatabaseHolder(get<SqlDriver>(), get()) }
+    single { DatabaseRuntimeController(get()) }
 
     single<CategoryRepository> { SqlCategoryRepository(get()) }
     single<BudgetRepository> { SqlBudgetRepository(get()) }
@@ -34,7 +35,7 @@ private val sharedModule = module {
     single { MarkSchedulePaidUseCase(get()) }
 
     single { SeedDataInitializer(get(), get(), get()) }
-    single { MainStore(get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get()) }
+    single { MainStore(get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get()) }
 }
 
 private var koinStarted = false

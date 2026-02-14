@@ -96,6 +96,7 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
@@ -124,6 +125,7 @@ import org.jetbrains.compose.resources.Font
 import org.koin.compose.koinInject
 import kotlinx.datetime.LocalDate
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
 import kotlin.time.Clock
@@ -200,6 +202,35 @@ fun GystRoot() {
                             }
                         }
 
+                        state.infoMessage?.let { info ->
+                            PanelCard(title = "Info", icon = Icons.Default.Info) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Text(
+                                        info,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.weight(1f),
+                                        maxLines = 2,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                    IconCompactButton(
+                                        onClick = store::clearInfo,
+                                        icon = Icons.Default.Close,
+                                        contentDescription = s.close,
+                                        compact = true,
+                                    )
+                                }
+                            }
+                            LaunchedEffect(info) {
+                                delay(3500)
+                                store.clearInfo()
+                            }
+                        }
+
                         Header(
                             s = s,
                             month = capitalizeFirst(formatYearMonthHuman(state.currentMonth, s.languageCode)),
@@ -259,6 +290,40 @@ fun GystRoot() {
                                         onResetLocalData = store::resetLocalData,
                                     )
                                 }
+                            }
+                        }
+                    }
+                }
+
+                state.blockingMessage?.let { message ->
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.35f))
+                            .pointerInput(Unit) {},
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Card(
+                            shape = RoundedCornerShape(14.dp),
+                            colors = CardDefaults.cardColors(
+                                containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.98f)
+                            ),
+                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.22f)),
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(18.dp),
+                                    strokeWidth = 2.dp,
+                                )
+                                Text(
+                                    text = message.ifBlank { s.applyingBackup },
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                )
                             }
                         }
                     }
