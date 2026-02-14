@@ -25,6 +25,10 @@ private const val EXPENSES_PAGE_SIZE = 50L
 private const val SLOW_QUERY_MS = 120L
 private const val RETRO_BUDGET_FILL_MONTHS = 24
 private const val EXPLICIT_BUDGET_KEY_PREFIX = "budget.explicit."
+private const val PLANNING_USE_POST_SAVINGS_KEY = "planning.usePostSavingsBudget"
+private const val PLANNING_MONTHLY_CONTRIBUTION_KEY = "planning.monthlyContributionCents"
+private const val PLANNING_GOAL_AMOUNT_KEY = "planning.goalAmountCents"
+private const val PLANNING_DESIRED_MARGIN_KEY = "planning.desiredMarginCents"
 
 class MainStore(
     private val seedDataInitializer: SeedDataInitializer,
@@ -92,6 +96,15 @@ class MainStore(
     fun goToNextMonth() {
         scope.launchSafely {
             val target = _state.value.currentMonth.plusMonths(1)
+            _state.value = _state.value.copy(currentMonth = target)
+            refreshInternal(showSkeleton = true)
+        }
+    }
+
+    fun goToCurrentMonth() {
+        scope.launchSafely {
+            val now = Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault()).date
+            val target = YearMonth.fromDate(now)
             _state.value = _state.value.copy(currentMonth = target)
             refreshInternal(showSkeleton = true)
         }
@@ -196,11 +209,34 @@ class MainStore(
     }
 
     fun setPlanningUsePostSavingsBudget(enabled: Boolean) {
-        _state.value = _state.value.copy(planningUsePostSavingsBudget = enabled)
+        scope.launchSafely {
+            settingsRepository.setString(PLANNING_USE_POST_SAVINGS_KEY, enabled.toString())
+            _state.value = _state.value.copy(planningUsePostSavingsBudget = enabled)
+        }
     }
 
     fun setPlanningMonthlyContribution(cents: Long) {
-        _state.value = _state.value.copy(planningMonthlyContributionCents = cents.coerceAtLeast(0L))
+        scope.launchSafely {
+            val safe = cents.coerceAtLeast(0L)
+            settingsRepository.setString(PLANNING_MONTHLY_CONTRIBUTION_KEY, safe.toString())
+            _state.value = _state.value.copy(planningMonthlyContributionCents = safe)
+        }
+    }
+
+    fun setPlanningGoalAmount(cents: Long) {
+        scope.launchSafely {
+            val safe = cents.coerceAtLeast(0L)
+            settingsRepository.setString(PLANNING_GOAL_AMOUNT_KEY, safe.toString())
+            _state.value = _state.value.copy(planningGoalAmountCents = safe)
+        }
+    }
+
+    fun setPlanningDesiredMargin(cents: Long) {
+        scope.launchSafely {
+            val safe = cents.coerceAtLeast(0L)
+            settingsRepository.setString(PLANNING_DESIRED_MARGIN_KEY, safe.toString())
+            _state.value = _state.value.copy(planningDesiredMarginCents = safe)
+        }
     }
 
     fun saveAllocations(values: Map<String, Long>) {
@@ -518,6 +554,22 @@ class MainStore(
         val installments = profiled("list_installments") { installmentRepository.list() }
         val language = profiled("load_language") { settingsRepository.getString("app.language") ?: "system" }
         val themeMode = profiled("load_theme") { settingsRepository.getString("app.theme") ?: "system" }
+        val planningUsePostSavings = profiled("load_planning_use_post_savings") {
+            settingsRepository.getString(PLANNING_USE_POST_SAVINGS_KEY)?.toBooleanStrictOrNull()
+                ?: _state.value.planningUsePostSavingsBudget
+        }
+        val planningMonthlyContribution = profiled("load_planning_monthly_contribution") {
+            settingsRepository.getString(PLANNING_MONTHLY_CONTRIBUTION_KEY)?.toLongOrNull()
+                ?: _state.value.planningMonthlyContributionCents
+        }
+        val planningGoalAmount = profiled("load_planning_goal_amount") {
+            settingsRepository.getString(PLANNING_GOAL_AMOUNT_KEY)?.toLongOrNull()
+                ?: _state.value.planningGoalAmountCents
+        }
+        val planningDesiredMargin = profiled("load_planning_desired_margin") {
+            settingsRepository.getString(PLANNING_DESIRED_MARGIN_KEY)?.toLongOrNull()
+                ?: _state.value.planningDesiredMarginCents
+        }
         val history = profiled("list_history_months") { budgetRepository.listMonths().ifEmpty { listOf(currentMonth) } }
         val previousMonth = currentMonth.plusMonths(-1)
         val previousSummary = profiled("compute_previous_summary") { computeMonthlySummaryUseCase(previousMonth) }
@@ -557,8 +609,10 @@ class MainStore(
             googleSync = googleAuthSyncService.state.value,
             errorMessage = previous.errorMessage,
             isLoading = false,
-            planningUsePostSavingsBudget = previous.planningUsePostSavingsBudget,
-            planningMonthlyContributionCents = previous.planningMonthlyContributionCents,
+            planningUsePostSavingsBudget = planningUsePostSavings,
+            planningMonthlyContributionCents = planningMonthlyContribution,
+            planningGoalAmountCents = planningGoalAmount,
+            planningDesiredMarginCents = planningDesiredMargin,
         )
     }
 
@@ -628,6 +682,8 @@ data class MainState(
     ),
     val planningUsePostSavingsBudget: Boolean = true,
     val planningMonthlyContributionCents: Long = 50_000L,
+    val planningGoalAmountCents: Long = 1_000_000L,
+    val planningDesiredMarginCents: Long = 0L,
     val errorMessage: String? = null,
     val isLoading: Boolean = true,
 )

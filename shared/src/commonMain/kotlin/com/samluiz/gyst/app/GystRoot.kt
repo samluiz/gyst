@@ -137,6 +137,7 @@ fun GystRoot() {
     val state by store.state.collectAsState()
     val s = rememberStrings(state.language)
     var screen by remember { mutableStateOf(Screen.RESUMO) }
+    var despesasSectionIndex by rememberSaveable { mutableStateOf(0) }
 
     GystTheme(themeMode = state.themeMode) {
         Surface(modifier = Modifier.fillMaxSize()) {
@@ -204,6 +205,7 @@ fun GystRoot() {
                             month = capitalizeFirst(formatYearMonthHuman(state.currentMonth, s.languageCode)),
                             onPrev = store::goToPreviousMonth,
                             onNext = store::goToNextMonth,
+                            onToday = store::goToCurrentMonth,
                             showMonthSelector = screen != Screen.PERFIL,
                         )
 
@@ -220,6 +222,8 @@ fun GystRoot() {
                                 Screen.DESPESAS -> DespesasTab(
                                     s,
                                     state,
+                                    selectedSectionIndex = despesasSectionIndex,
+                                    onSelectedSectionChange = { despesasSectionIndex = it },
                                     onLoadMoreExpenses = store::loadMoreExpenses,
                                     onAddExpense = store::addExpense,
                                     onAddCategory = store::addCategory,
@@ -240,6 +244,8 @@ fun GystRoot() {
                                         state = state,
                                         onSetUsePostSavingsBudget = store::setPlanningUsePostSavingsBudget,
                                         onSetMonthlyContribution = store::setPlanningMonthlyContribution,
+                                        onSetGoalAmount = store::setPlanningGoalAmount,
+                                        onSetDesiredMargin = store::setPlanningDesiredMargin,
                                     )
                                     Screen.PERFIL -> ProfileTab(
                                         s,
@@ -268,6 +274,7 @@ private fun Header(
     month: String,
     onPrev: () -> Unit,
     onNext: () -> Unit,
+    onToday: () -> Unit,
     showMonthSelector: Boolean,
 ) {
     val logoFont = FontFamily(Font(Res.font.OpenspaceRegular))
@@ -300,6 +307,14 @@ private fun Header(
                     compact = true,
                 )
                 Text(month, style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(horizontal = 2.dp))
+                CompactPrimaryButton(
+                    text = s.currentMonth,
+                    compact = true,
+                    subtle = true,
+                    squared = true,
+                    enabled = showMonthSelector,
+                    onClick = { if (showMonthSelector) onToday() },
+                )
                 IconCompactButton(
                     onClick = { if (showMonthSelector) onNext() },
                     icon = Icons.AutoMirrored.Filled.ArrowForward,
@@ -469,7 +484,6 @@ private fun CategoryDistributionCard(s: AppStrings, state: MainState) {
     val rows = summary.perCategory
         .filter { it.spentCents > 0L }
         .sortedByDescending { it.spentCents }
-        .take(5)
 
     PanelCard(title = s.categoryDistribution, icon = Icons.Default.PieChart) {
         if (rows.isEmpty()) {
@@ -577,16 +591,22 @@ private fun PlanningTab(
     state: MainState,
     onSetUsePostSavingsBudget: (Boolean) -> Unit,
     onSetMonthlyContribution: (Long) -> Unit,
+    onSetGoalAmount: (Long) -> Unit,
+    onSetDesiredMargin: (Long) -> Unit,
 ) {
     val forecast = state.forecast
     val topSubscription = state.subscriptions.filter { it.active }.maxByOrNull { it.amountCents }?.amountCents ?: 0L
     var cancelTopSubscription by remember { mutableStateOf(false) }
     var recurringCutPercent by remember { mutableStateOf(10f) }
-    var goalAmountCentsDigits by remember { mutableStateOf("1000000") }
+    var goalAmountCentsDigits by remember(state.planningGoalAmountCents) {
+        mutableStateOf(state.planningGoalAmountCents.toString())
+    }
     var monthlyContributionCentsDigits by remember(state.planningMonthlyContributionCents) {
         mutableStateOf(state.planningMonthlyContributionCents.toString())
     }
-    var desiredMarginCentsDigits by remember { mutableStateOf("0") }
+    var desiredMarginCentsDigits by remember(state.planningDesiredMarginCents) {
+        mutableStateOf(state.planningDesiredMarginCents.toString())
+    }
     var useAfterSavingsBudget by remember(state.planningUsePostSavingsBudget) {
         mutableStateOf(state.planningUsePostSavingsBudget)
     }
@@ -666,7 +686,11 @@ private fun PlanningTab(
             PanelCard(title = s.marginGoalProjection, icon = Icons.Default.Savings) {
                 CompactMoneyInput(
                     desiredMarginCentsDigits,
-                    { desiredMarginCentsDigits = it.filter(Char::isDigit) },
+                    {
+                        val digits = it.filter(Char::isDigit)
+                        desiredMarginCentsDigits = digits
+                        onSetDesiredMargin(digits.toLongOrNull() ?: 0L)
+                    },
                     s.desiredMonthlyMargin,
                 )
             }
@@ -747,7 +771,16 @@ private fun PlanningTab(
         item {
             PanelCard(title = s.goalProjection, icon = Icons.Default.AutoGraph) {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    CompactMoneyInput(goalAmountCentsDigits, { goalAmountCentsDigits = it.filter(Char::isDigit) }, s.goalAmount, modifier = Modifier.weight(1f))
+                    CompactMoneyInput(
+                        goalAmountCentsDigits,
+                        {
+                            val digits = it.filter(Char::isDigit)
+                            goalAmountCentsDigits = digits
+                            onSetGoalAmount(digits.toLongOrNull() ?: 0L)
+                        },
+                        s.goalAmount,
+                        modifier = Modifier.weight(1f),
+                    )
                     CompactMoneyInput(
                         monthlyContributionCentsDigits,
                         {
@@ -953,6 +986,8 @@ private enum class ExpensesSection { DESPESAS, ASSINATURAS, PARCELAMENTOS }
 private fun DespesasTab(
     s: AppStrings,
     state: MainState,
+    selectedSectionIndex: Int,
+    onSelectedSectionChange: (Int) -> Unit,
     onLoadMoreExpenses: () -> Unit,
     onAddExpense: (Long, String, String?, Boolean) -> Unit,
     onAddCategory: (String, ((String) -> Unit)?) -> Unit,
@@ -982,7 +1017,8 @@ private fun DespesasTab(
         state.installments.filter { it.startYearMonth <= state.currentMonth && it.endYearMonth >= state.currentMonth }
     }
     val sections = remember { ExpensesSection.entries.toList() }
-    val pagerState = rememberPagerState(initialPage = 0, pageCount = { sections.size })
+    val initialPage = selectedSectionIndex.coerceIn(0, sections.lastIndex)
+    val pagerState = rememberPagerState(initialPage = initialPage, pageCount = { sections.size })
     val pagerScope = rememberCoroutineScope()
     val section = sections[pagerState.currentPage]
     var rowMenuId by remember { mutableStateOf<String?>(null) }
@@ -991,19 +1027,23 @@ private fun DespesasTab(
     val expensesListState = rememberLazyListState()
     val subscriptionsListState = rememberLazyListState()
     val installmentsListState = rememberLazyListState()
+    val expensesTotal = state.summary?.spentTotalCents ?: state.expenses.sumOf { it.amountCents }
+    val subscriptionsTotal = visibleSubscriptions.sumOf { it.amountCents }
+    val installmentsTotal = visibleInstallments.sumOf { it.monthlyAmountCents }
+    val activeSectionTotal = when (section) {
+        ExpensesSection.DESPESAS -> expensesTotal
+        ExpensesSection.ASSINATURAS -> subscriptionsTotal
+        ExpensesSection.PARCELAMENTOS -> installmentsTotal
+    }
+
+    LaunchedEffect(pagerState.currentPage) {
+        if (pagerState.currentPage != selectedSectionIndex) {
+            onSelectedSectionChange(pagerState.currentPage)
+        }
+    }
 
     LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxSize()) {
         item {
-            val title = when (sections[pagerState.currentPage]) {
-                ExpensesSection.DESPESAS -> s.expenses
-                ExpensesSection.ASSINATURAS -> s.subscriptions
-                ExpensesSection.PARCELAMENTOS -> s.installments
-            }
-            val icon = when (sections[pagerState.currentPage]) {
-                ExpensesSection.DESPESAS -> Icons.AutoMirrored.Filled.ReceiptLong
-                ExpensesSection.ASSINATURAS -> Icons.Default.Subscriptions
-                ExpensesSection.PARCELAMENTOS -> Icons.Default.CalendarMonth
-            }
             PanelCard(
                 title = "",
                 icon = null,
@@ -1274,10 +1314,15 @@ private fun DespesasTab(
                     }
                 }
                 Spacer(Modifier.height(8.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.Center,
-                ) {
+                Box(modifier = Modifier.fillMaxWidth()) {
+                    Text(
+                        text = "${s.total}: ${formatBrl(activeSectionTotal)}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.align(Alignment.CenterStart),
+                    )
                     IconCompactButton(
                         icon = Icons.Default.Add,
                         contentDescription = s.add,
@@ -1290,6 +1335,7 @@ private fun DespesasTab(
                                 ExpensesSection.PARCELAMENTOS -> showAddInstallmentDialog = true
                             }
                         },
+                        modifier = Modifier.align(Alignment.Center),
                     )
                 }
             }
@@ -2520,6 +2566,7 @@ private fun IconCompactButton(
     enabled: Boolean = true,
     compact: Boolean = false,
     subtle: Boolean = false,
+    modifier: Modifier = Modifier,
 ) {
     TextButton(
         onClick = onClick,
@@ -2531,7 +2578,7 @@ private fun IconCompactButton(
             contentColor = MaterialTheme.colorScheme.onSurface,
             disabledContainerColor = Color.Transparent,
         ),
-        modifier = Modifier
+        modifier = modifier
             .heightIn(min = if (subtle || compact) 24.dp else 28.dp),
     ) {
         Icon(icon, contentDescription = contentDescription, modifier = Modifier.size(if (subtle || compact) 14.dp else 16.dp))
