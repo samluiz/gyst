@@ -13,6 +13,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         installSplashScreen()
         super.onCreate(savedInstanceState)
+        installAndroidLogging()
         initKoin(platformModule = androidPlatformModule(applicationContext))
         val googleService = GlobalContext.get().get<GoogleAuthSyncService>()
         if (googleService is AndroidGoogleAuthSyncService) {

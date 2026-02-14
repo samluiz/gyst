@@ -15,6 +15,7 @@ import com.samluiz.gyst.domain.service.GoogleAuthSyncService
 import com.samluiz.gyst.domain.service.GoogleSyncState
 import com.samluiz.gyst.domain.service.SyncPolicy
 import com.samluiz.gyst.domain.service.SyncSource
+import com.samluiz.gyst.logging.AppLogger
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -43,6 +44,10 @@ private const val BACKUP_META_FILE_NAME = "gyst-backup-meta.json"
 class AndroidGoogleAuthSyncService(
     private val appContext: Context,
 ) : GoogleAuthSyncService {
+    private companion object {
+        const val TAG = "AndroidGoogleSync"
+    }
+
     private val internal = MutableStateFlow(
         GoogleSyncState(
             isAvailable = true,
@@ -76,6 +81,7 @@ class AndroidGoogleAuthSyncService(
     override suspend fun initialize() {
         runCatching { refreshState(lastError = null) }
             .onFailure {
+                AppLogger.e(TAG, "Initialize failed", it)
                 internal.update { state ->
                     state.copy(
                         isAvailable = false,
@@ -89,6 +95,7 @@ class AndroidGoogleAuthSyncService(
     }
 
     override suspend fun signIn() {
+        AppLogger.i(TAG, "Sign-in requested")
         internal.update { it.copy(lastError = null, statusMessage = null, isAuthInProgress = true) }
         if (signInClient == null) {
             internal.update {
@@ -119,6 +126,7 @@ class AndroidGoogleAuthSyncService(
             }
             refreshState(lastError = null)
         } catch (t: Throwable) {
+            AppLogger.e(TAG, "Sign-in failed", t)
             internal.update { it.copy(lastError = prettyGoogleError(t), statusMessage = null, isAuthInProgress = false) }
         }
     }
@@ -164,6 +172,7 @@ class AndroidGoogleAuthSyncService(
     }
 
     override suspend fun syncNow() {
+        AppLogger.i(TAG, "Sync requested")
         internal.update { it.copy(isSyncing = true, statusMessage = null, lastError = null) }
         try {
             val account = requireSignedInAccount()
@@ -226,6 +235,7 @@ class AndroidGoogleAuthSyncService(
                 }
             }
         } catch (t: Throwable) {
+            AppLogger.e(TAG, "Sync failed", t)
             internal.update {
                 it.copy(
                     isSyncing = false,
@@ -241,6 +251,7 @@ class AndroidGoogleAuthSyncService(
             internal.update { it.copy(lastError = "Restore canceled") }
             return
         }
+        AppLogger.i(TAG, "Restore requested overwriteLocal=$overwriteLocal")
         internal.update { it.copy(isSyncing = true, statusMessage = null, lastError = null) }
         try {
             val account = requireSignedInAccount()
@@ -263,6 +274,7 @@ class AndroidGoogleAuthSyncService(
                 )
             }
         } catch (t: Throwable) {
+            AppLogger.e(TAG, "Restore failed", t)
             internal.update {
                 it.copy(
                     isSyncing = false,
@@ -529,6 +541,10 @@ class AndroidGoogleAuthSyncService(
         val stream = if (code in 200..299) connection.inputStream else connection.errorStream
         val response = stream?.readAllBytesCompat() ?: ByteArray(0)
         if (code !in 200..299) {
+            AppLogger.e(
+                TAG,
+                "HTTP $code from ${url.substringBefore('?')}: ${response.toString(Charsets.UTF_8).take(1200)}",
+            )
             throw IllegalStateException("Drive API error ($code): ${response.toString(Charsets.UTF_8)}")
         }
         return response

@@ -43,6 +43,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.automirrored.filled.ReceiptLong
 import androidx.compose.material.icons.filled.AutoGraph
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.CreditCardOff
 import androidx.compose.material.icons.filled.Close
@@ -84,6 +85,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -118,6 +120,7 @@ import com.samluiz.gyst.domain.service.GoogleSyncState
 import org.jetbrains.compose.resources.Font
 import org.koin.compose.koinInject
 import kotlinx.datetime.LocalDate
+import kotlinx.coroutines.launch
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
 import kotlin.time.Clock
@@ -210,7 +213,6 @@ fun GystRoot() {
                                         s = s,
                                         state = state,
                                         onSaveIncome = store::saveIncome,
-                                        onRollover = store::rolloverToNextMonth,
                                     )
                                 Screen.DESPESAS -> DespesasTab(
                                     s,
@@ -415,7 +417,6 @@ private fun ResumoTab(
     s: AppStrings,
     state: MainState,
     onSaveIncome: (Long, Boolean) -> Unit,
-    onRollover: () -> Unit,
 ) {
     var budgetCentsDigits by remember(state.currentMonth, state.summary?.totalIncomeCents) {
         mutableStateOf((state.summary?.totalIncomeCents ?: 0L).toString())
@@ -451,15 +452,6 @@ private fun ResumoTab(
         }
         item {
             MonthComparisonCard(s, state)
-        }
-        item {
-            CompactPrimaryButton(
-                text = s.closeMonth,
-                compact = true,
-                squared = true,
-                subtle = true,
-                onClick = onRollover,
-            )
         }
     }
 }
@@ -719,8 +711,9 @@ private fun BudgetHero(
     postSavingsBudget: Long?,
 ) {
     val used = expenses + billings
-    val progress = if (budget > 0L) (used.toFloat() / budget.toFloat()).coerceIn(0f, 1f) else 0f
-    val remaining = budget - used
+    val effectiveBudget = postSavingsBudget ?: budget
+    val progress = if (effectiveBudget > 0L) (used.toFloat() / effectiveBudget.toFloat()).coerceIn(0f, 1f) else 0f
+    val remaining = effectiveBudget - used
     val focusRequester = remember { FocusRequester() }
     var budgetField by remember {
         mutableStateOf(
@@ -891,6 +884,7 @@ private fun DespesasTab(
     }
     val sections = remember { ExpensesSection.entries.toList() }
     val pagerState = rememberPagerState(initialPage = 0, pageCount = { sections.size })
+    val pagerScope = rememberCoroutineScope()
     val section = sections[pagerState.currentPage]
     var rowMenuId by remember { mutableStateOf<String?>(null) }
     var subscriptionsVisibleCount by remember { mutableStateOf(30) }
@@ -912,46 +906,28 @@ private fun DespesasTab(
                 ExpensesSection.PARCELAMENTOS -> Icons.Default.CalendarMonth
             }
             PanelCard(
-                title = title,
-                icon = icon,
+                title = "",
+                icon = null,
                 truncateTitle = false,
                 autoShrinkTitle = true,
                 headerCenter = {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    FlowRow(
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
                     ) {
-                        sections.forEachIndexed { index, _ ->
-                            val selectedDot = index == pagerState.currentPage
-                            Box(
-                                modifier = Modifier
-                                    .size(if (selectedDot) 7.dp else 6.dp)
-                                    .clip(CircleShape)
-                                    .background(
-                                        if (selectedDot) {
-                                            MaterialTheme.colorScheme.primary.copy(alpha = 0.85f)
-                                        } else {
-                                            MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.35f)
-                                        }
-                                    ),
+                        sections.forEachIndexed { index, current ->
+                            val label = when (current) {
+                                ExpensesSection.DESPESAS -> s.expenses
+                                ExpensesSection.ASSINATURAS -> s.subscriptions
+                                ExpensesSection.PARCELAMENTOS -> s.installments
+                            }
+                            AppToggleChip(
+                                selected = index == pagerState.currentPage,
+                                onClick = { pagerScope.launch { pagerState.animateScrollToPage(index) } },
+                                text = label,
                             )
                         }
                     }
-                },
-                headerTrailing = {
-                    CompactPrimaryButton(
-                        text = s.add,
-                        compact = true,
-                        squared = true,
-                        subtle = true,
-                        onClick = {
-                            when (section) {
-                                ExpensesSection.DESPESAS -> showAddExpenseDialog = true
-                                ExpensesSection.ASSINATURAS -> showAddSubscriptionDialog = true
-                                ExpensesSection.PARCELAMENTOS -> showAddInstallmentDialog = true
-                            }
-                        }
-                    )
                 },
             ) {
                 HorizontalPager(
@@ -1198,6 +1174,25 @@ private fun DespesasTab(
                         }
                     }
                 }
+                Spacer(Modifier.height(8.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.Center,
+                ) {
+                    IconCompactButton(
+                        icon = Icons.Default.Add,
+                        contentDescription = s.add,
+                        compact = true,
+                        subtle = true,
+                        onClick = {
+                            when (section) {
+                                ExpensesSection.DESPESAS -> showAddExpenseDialog = true
+                                ExpensesSection.ASSINATURAS -> showAddSubscriptionDialog = true
+                                ExpensesSection.PARCELAMENTOS -> showAddInstallmentDialog = true
+                            }
+                        },
+                    )
+                }
             }
         }
     }
@@ -1245,7 +1240,7 @@ private fun DespesasTab(
                         )
                     }
                     CompactPrimaryButton(
-                        s.save,
+                        s.add,
                         enabled = canSave,
                         compact = true,
                         squared = true,
@@ -1442,7 +1437,7 @@ private fun DespesasTab(
                             )
                         }
                         CompactPrimaryButton(
-                            s.save,
+                            s.edit,
                             enabled = canSave,
                             compact = true,
                             squared = true,
@@ -1514,7 +1509,7 @@ private fun DespesasTab(
                             isError = attemptedSave && categoryInvalid,
                         )
                         CompactPrimaryButton(
-                            s.save,
+                            s.edit,
                             enabled = canSave,
                             compact = true,
                             squared = true,
@@ -1588,7 +1583,7 @@ private fun DespesasTab(
                             isError = attemptedSave && categoryInvalid,
                         )
                         CompactPrimaryButton(
-                            s.save,
+                            s.edit,
                             enabled = canSave,
                             compact = true,
                             squared = true,
@@ -1909,7 +1904,7 @@ private fun ProfileTab(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     CompactPrimaryButton(
-                        s.save,
+                        s.restoreDrive,
                         compact = true,
                         squared = true,
                         modifier = Modifier.fillMaxWidth(),

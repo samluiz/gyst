@@ -9,6 +9,7 @@ import com.samluiz.gyst.app.GystRoot
 import com.samluiz.gyst.db.GystDatabase
 import com.samluiz.gyst.di.initKoin
 import com.samluiz.gyst.domain.service.GoogleAuthSyncService
+import com.samluiz.gyst.logging.AppLogger
 import org.koin.dsl.module
 import java.nio.file.Files
 import java.nio.file.Path
@@ -19,6 +20,9 @@ fun main() {
     val homeDir = Path.of(System.getProperty("user.home"), ".gyst")
     val dbPath = homeDir.resolve("gyst.db")
     val backupPath = homeDir.resolve("backup").resolve("gyst-backup.db")
+    val logsPath = homeDir.resolve("logs").resolve("app.log")
+    AppLogger.addSink(DesktopFileLogSink(logsPath))
+    AppLogger.i("DesktopMain", "Starting desktop app")
     initKoin(platformModule = module {
         single<SqlDriver> {
             Files.createDirectories(homeDir)

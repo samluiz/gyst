@@ -1,6 +1,7 @@
 package com.samluiz.gyst.presentation
 
 import com.samluiz.gyst.domain.model.*
+import com.samluiz.gyst.logging.AppLogger
 import com.samluiz.gyst.domain.repository.*
 import com.samluiz.gyst.domain.service.GoogleAuthSyncService
 import com.samluiz.gyst.domain.service.GoogleSyncState
@@ -40,6 +41,10 @@ class MainStore(
     private val computeCashFlowForecastUseCase: ComputeCashFlowForecastUseCase,
     private val handleMonthRolloverUseCase: HandleMonthRolloverUseCase,
 ) {
+    private companion object {
+        const val TAG = "MainStore"
+    }
+
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
     private val _state = MutableStateFlow(MainState())
@@ -55,6 +60,7 @@ class MainStore(
 
     fun bootstrap() {
         scope.launchSafely {
+            AppLogger.i(TAG, "Bootstrap started")
             val theme = settingsRepository.getString("app.theme") ?: _state.value.themeMode
             val language = settingsRepository.getString("app.language") ?: _state.value.language
             _state.value = _state.value.copy(themeMode = theme, language = language, isLoading = true)
@@ -65,6 +71,7 @@ class MainStore(
             _state.value = _state.value.copy(currentMonth = month)
             handleMonthRolloverUseCase(month)
             refreshInternal(showSkeleton = true)
+            AppLogger.i(TAG, "Bootstrap finished")
         }
     }
 
@@ -477,7 +484,10 @@ class MainStore(
         launch {
             _state.value = _state.value.copy(errorMessage = null)
             runCatching { block() }
-                .onFailure { _state.value = _state.value.copy(errorMessage = it.message ?: "Erro inesperado") }
+                .onFailure {
+                    AppLogger.e(TAG, "Unhandled store error", it)
+                    _state.value = _state.value.copy(errorMessage = it.message ?: "Erro inesperado")
+                }
         }
     }
 
@@ -521,7 +531,7 @@ class MainStore(
             .sortedByDescending { it.second }
             .map { "${it.first}: ${it.second}ms" }
         if (slowQueries.isNotEmpty()) {
-            println("GystPerf slow queries (${currentMonth}): ${slowQueries.joinToString(" | ")}")
+            AppLogger.w("Perf", "Slow queries (${currentMonth}): ${slowQueries.joinToString(" | ")}")
         }
 
         val previous = _state.value
