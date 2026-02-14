@@ -53,6 +53,7 @@ import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Savings
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Subscriptions
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -83,6 +84,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -205,7 +207,12 @@ fun GystRoot() {
                                 ScreenSkeleton(current = current)
                             } else {
                                 when (current) {
-                                    Screen.RESUMO -> ResumoTab(s, state, onSaveIncome = store::saveIncome, onRollover = store::rolloverToNextMonth)
+                                    Screen.RESUMO -> ResumoTab(
+                                        s = s,
+                                        state = state,
+                                        onSaveIncome = store::saveIncome,
+                                        onRollover = store::rolloverToNextMonth,
+                                    )
                                 Screen.DESPESAS -> DespesasTab(
                                     s,
                                     state,
@@ -220,8 +227,16 @@ fun GystRoot() {
                                         onDeleteSubscription = store::deleteSubscription,
                                         onUpdateInstallment = store::updateInstallment,
                                         onDeleteInstallment = store::deleteInstallment,
+                                        onDuplicateExpense = store::duplicateExpense,
+                                        onDuplicateSubscription = store::duplicateSubscription,
+                                        onDuplicateInstallment = store::duplicateInstallment,
                                     )
-                                    Screen.PLANEJAMENTO -> PlanningTab(s, state)
+                                    Screen.PLANEJAMENTO -> PlanningTab(
+                                        s = s,
+                                        state = state,
+                                        onSetUsePostSavingsBudget = store::setPlanningUsePostSavingsBudget,
+                                        onSetMonthlyContribution = store::setPlanningMonthlyContribution,
+                                    )
                                     Screen.PERFIL -> ProfileTab(
                                         s,
                                         state,
@@ -231,6 +246,7 @@ fun GystRoot() {
                                         onSignOutGoogle = store::signOutGoogle,
                                         onSyncGoogleDrive = store::syncGoogleDrive,
                                         onRestoreGoogleDrive = store::restoreFromGoogleDrive,
+                                        onResetLocalData = store::resetLocalData,
                                     )
                                 }
                             }
@@ -393,9 +409,21 @@ private fun BottomNav(
 }
 
 @Composable
-private fun ResumoTab(s: AppStrings, state: MainState, onSaveIncome: (Long) -> Unit, onRollover: () -> Unit) {
+private fun ResumoTab(
+    s: AppStrings,
+    state: MainState,
+    onSaveIncome: (Long, Boolean) -> Unit,
+    onRollover: () -> Unit,
+) {
     var budgetCentsDigits by remember(state.currentMonth, state.summary?.totalIncomeCents) {
         mutableStateOf((state.summary?.totalIncomeCents ?: 0L).toString())
+    }
+    var applyForward by rememberSaveable(state.currentMonth) { mutableStateOf(false) }
+    val budget = state.summary?.totalIncomeCents ?: 0L
+    val postSavingsBudget = if (state.planningUsePostSavingsBudget) {
+        (budget - state.planningMonthlyContributionCents).coerceAtLeast(0L)
+    } else {
+        null
     }
 
     LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxSize()) {
@@ -404,10 +432,19 @@ private fun ResumoTab(s: AppStrings, state: MainState, onSaveIncome: (Long) -> U
                 s = s,
                 budgetCentsDigits = budgetCentsDigits,
                 onBudgetCentsDigits = { budgetCentsDigits = it.ifBlank { "0" } },
-                onSaveBudget = { onSaveIncome((budgetCentsDigits.toLongOrNull() ?: 0L).coerceAtLeast(0L)) },
-                budget = state.summary?.totalIncomeCents ?: 0L,
+                onSaveBudget = {
+                    onSaveIncome(
+                        (budgetCentsDigits.toLongOrNull() ?: 0L).coerceAtLeast(0L),
+                        applyForward,
+                    )
+                },
+                budget = budget,
                 expenses = state.summary?.spentTotalCents ?: 0L,
                 billings = state.summary?.commitmentsCents ?: 0L,
+                applyForward = applyForward,
+                onApplyForwardChange = { applyForward = it },
+                showApplyForward = true,
+                postSavingsBudget = postSavingsBudget,
             )
         }
         item {
@@ -442,21 +479,39 @@ private fun MonthComparisonCard(s: AppStrings, state: MainState) {
 }
 
 @Composable
-private fun PlanningTab(s: AppStrings, state: MainState) {
+private fun PlanningTab(
+    s: AppStrings,
+    state: MainState,
+    onSetUsePostSavingsBudget: (Boolean) -> Unit,
+    onSetMonthlyContribution: (Long) -> Unit,
+) {
     val forecast = state.forecast
     val topSubscription = state.subscriptions.filter { it.active }.maxByOrNull { it.amountCents }?.amountCents ?: 0L
     var cancelTopSubscription by remember { mutableStateOf(false) }
     var recurringCutPercent by remember { mutableStateOf(10f) }
     var goalAmountCentsDigits by remember { mutableStateOf("1000000") }
-    var monthlyContributionCentsDigits by remember { mutableStateOf("50000") }
+    var monthlyContributionCentsDigits by remember(state.planningMonthlyContributionCents) {
+        mutableStateOf(state.planningMonthlyContributionCents.toString())
+    }
+    var desiredMarginCentsDigits by remember { mutableStateOf("0") }
+    var useAfterSavingsBudget by remember(state.planningUsePostSavingsBudget) {
+        mutableStateOf(state.planningUsePostSavingsBudget)
+    }
+
+    val monthlyContributionCents = monthlyContributionCentsDigits.toLongOrNull() ?: 0L
+    val desiredMarginCents = desiredMarginCentsDigits.toLongOrNull() ?: 0L
 
     val adjusted = forecast.map { month ->
         val recurringCut = (month.recurringCents * (recurringCutPercent / 100f)).toLong()
         val subscriptionCut = if (cancelTopSubscription) topSubscription else 0L
         val adjustedSpend = (month.expectedSpendCents - recurringCut - subscriptionCut).coerceAtLeast(0L)
-        val safeAllowance = month.incomeCents - adjustedSpend
-        val stressRatio = if (month.incomeCents > 0L) adjustedSpend.toDouble() / month.incomeCents.toDouble() else 1.0
-        PlanningPoint(month.yearMonth, adjustedSpend, safeAllowance, stressRatio)
+        val projectedIncome = if (useAfterSavingsBudget) {
+            (month.incomeCents - monthlyContributionCents).coerceAtLeast(0L)
+        } else {
+            month.incomeCents
+        }
+        val safeAllowance = projectedIncome - adjustedSpend
+        PlanningPoint(month.yearMonth, adjustedSpend, safeAllowance)
     }
     val baseFreeTotal = forecast.sumOf { it.expectedFreeBalanceCents }
     val adjustedFreeTotal = adjusted.sumOf { it.safeAllowanceCents }
@@ -470,7 +525,6 @@ private fun PlanningTab(s: AppStrings, state: MainState) {
         .sortedBy { it.month.year * 100 + it.month.month }
 
     val goalAmountCents = goalAmountCentsDigits.toLongOrNull() ?: 0L
-    val monthlyContributionCents = monthlyContributionCentsDigits.toLongOrNull() ?: 0L
     val monthsToGoal = if (goalAmountCents > 0L && monthlyContributionCents > 0L) {
         ((goalAmountCents + monthlyContributionCents - 1) / monthlyContributionCents).toInt()
     } else 0
@@ -490,11 +544,37 @@ private fun PlanningTab(s: AppStrings, state: MainState) {
                         colors = appSwitchColors(),
                     )
                 }
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        s.predictUsingBudgetAfterGoal,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.weight(1f),
+                    )
+                    Switch(
+                        checked = useAfterSavingsBudget,
+                        onCheckedChange = {
+                            useAfterSavingsBudget = it
+                            onSetUsePostSavingsBudget(it)
+                        },
+                        modifier = Modifier.scale(0.82f),
+                        colors = appSwitchColors(),
+                    )
+                }
                 Text("${s.recurringCut}: ${recurringCutPercent.toInt()}%", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Slider(
                     value = recurringCutPercent,
                     onValueChange = { recurringCutPercent = it.coerceIn(0f, 40f) },
                     valueRange = 0f..40f,
+                )
+            }
+        }
+        item {
+            PanelCard(title = s.marginGoalProjection, icon = Icons.Default.Savings) {
+                CompactMoneyInput(
+                    desiredMarginCentsDigits,
+                    { desiredMarginCentsDigits = it.filter(Char::isDigit) },
+                    s.desiredMonthlyMargin,
                 )
             }
         }
@@ -518,20 +598,20 @@ private fun PlanningTab(s: AppStrings, state: MainState) {
                             )
                             Text("${s.safeAllowance}: ${formatBrl(point.safeAllowanceCents)}", style = MaterialTheme.typography.bodySmall)
                         }
-                        Text(
-                            when {
-                                point.stressRatio >= 0.75 -> s.riskHigh
-                                point.stressRatio >= 0.55 -> s.riskMedium
-                                else -> s.riskLow
-                            },
-                            style = MaterialTheme.typography.bodySmall,
-                            fontWeight = FontWeight.SemiBold,
-                            color = when {
-                                point.stressRatio >= 0.75 -> MaterialTheme.colorScheme.error
-                                point.stressRatio >= 0.55 -> MaterialTheme.colorScheme.primary
-                                else -> MaterialTheme.colorScheme.secondary
-                            }
-                        )
+                        val deltaToTarget = point.safeAllowanceCents - desiredMarginCents
+                        Column(horizontalAlignment = Alignment.End) {
+                            Text(
+                                if (deltaToTarget >= 0) s.aboveDesiredMargin else s.belowDesiredMargin,
+                                style = MaterialTheme.typography.bodySmall,
+                                fontWeight = FontWeight.SemiBold,
+                                color = if (deltaToTarget >= 0) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.error,
+                            )
+                            Text(
+                                "${s.marginDelta}: ${formatSigned(deltaToTarget)}",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
                     }
                     if (index < adjusted.take(8).lastIndex) {
                         HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.35f))
@@ -557,7 +637,16 @@ private fun PlanningTab(s: AppStrings, state: MainState) {
             PanelCard(title = s.goalProjection, icon = Icons.Default.AutoGraph) {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     CompactMoneyInput(goalAmountCentsDigits, { goalAmountCentsDigits = it.filter(Char::isDigit) }, s.goalAmount, modifier = Modifier.weight(1f))
-                    CompactMoneyInput(monthlyContributionCentsDigits, { monthlyContributionCentsDigits = it.filter(Char::isDigit) }, s.monthlyContribution, modifier = Modifier.weight(1f))
+                    CompactMoneyInput(
+                        monthlyContributionCentsDigits,
+                        {
+                            val digits = it.filter(Char::isDigit)
+                            monthlyContributionCentsDigits = digits
+                            onSetMonthlyContribution(digits.toLongOrNull() ?: 0L)
+                        },
+                        s.monthlyContribution,
+                        modifier = Modifier.weight(1f),
+                    )
                 }
                 Text(
                     "${s.reachesGoalIn}: ${if (monthsToGoal > 0) "$projectedGoalMonth ($monthsToGoal m)" else "-"}",
@@ -573,7 +662,6 @@ private data class PlanningPoint(
     val month: com.samluiz.gyst.domain.model.YearMonth,
     val spendCents: Long,
     val safeAllowanceCents: Long,
-    val stressRatio: Double,
 )
 
 private data class PlanningEvent(
@@ -605,6 +693,10 @@ private fun BudgetHero(
     budget: Long,
     expenses: Long,
     billings: Long,
+    applyForward: Boolean,
+    onApplyForwardChange: (Boolean) -> Unit,
+    showApplyForward: Boolean,
+    postSavingsBudget: Long?,
 ) {
     val used = expenses + billings
     val progress = if (budget > 0L) (used.toFloat() / budget.toFloat()).coerceIn(0f, 1f) else 0f
@@ -663,6 +755,13 @@ private fun BudgetHero(
                     )
                     IconCompactButton(onClick = { editing = true }, icon = Icons.Default.Edit, contentDescription = s.editBudget)
                 }
+                postSavingsBudget?.let { projected ->
+                    Text(
+                        "${s.postSavingsBudget}: ${formatBrl(projected)}",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             } else {
                 BasicTextField(
                     value = budgetField,
@@ -700,6 +799,25 @@ private fun BudgetHero(
             }
 
             LinearProgressIndicator(progress = { progress }, modifier = Modifier.fillMaxWidth().height(5.dp))
+            if (showApplyForward) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Text(
+                        s.applyToNextMonths,
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Switch(
+                        checked = applyForward,
+                        onCheckedChange = onApplyForwardChange,
+                        modifier = Modifier.scale(0.82f),
+                        colors = appSwitchColors(),
+                    )
+                }
+            }
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 MiniMetric(s.expenses, formatBrl(expenses))
                 MiniMetric(s.billings, formatBrl(billings))
@@ -734,6 +852,9 @@ private fun DespesasTab(
     onDeleteSubscription: (String) -> Unit,
     onUpdateInstallment: (String, String, Long, Int, String) -> Unit,
     onDeleteInstallment: (String) -> Unit,
+    onDuplicateExpense: (String) -> Unit,
+    onDuplicateSubscription: (String) -> Unit,
+    onDuplicateInstallment: (String) -> Unit,
 ) {
     var showAddExpenseDialog by remember { mutableStateOf(false) }
     var showAddSubscriptionDialog by remember { mutableStateOf(false) }
@@ -863,6 +984,13 @@ private fun DespesasTab(
                                                         }
                                                     )
                                                     DropdownMenuItem(
+                                                        text = { Text(s.duplicate) },
+                                                        onClick = {
+                                                            rowMenuId = null
+                                                            onDuplicateExpense(item.id)
+                                                        }
+                                                    )
+                                                    DropdownMenuItem(
                                                         text = { Text(s.delete) },
                                                         onClick = {
                                                             rowMenuId = null
@@ -929,6 +1057,13 @@ private fun DespesasTab(
                                                         onClick = {
                                                             rowMenuId = null
                                                             editingSubscriptionId = item.id
+                                                        }
+                                                    )
+                                                    DropdownMenuItem(
+                                                        text = { Text(s.duplicate) },
+                                                        onClick = {
+                                                            rowMenuId = null
+                                                            onDuplicateSubscription(item.id)
                                                         }
                                                     )
                                                     DropdownMenuItem(
@@ -1005,6 +1140,13 @@ private fun DespesasTab(
                                                         }
                                                     )
                                                     DropdownMenuItem(
+                                                        text = { Text(s.duplicate) },
+                                                        onClick = {
+                                                            rowMenuId = null
+                                                            onDuplicateInstallment(item.id)
+                                                        }
+                                                    )
+                                                    DropdownMenuItem(
                                                         text = { Text(s.delete) },
                                                         onClick = {
                                                             rowMenuId = null
@@ -1045,7 +1187,12 @@ private fun DespesasTab(
         var amountCentsDigits by remember { mutableStateOf("") }
         var recurring by remember { mutableStateOf(false) }
         var selectedCategoryId by remember { mutableStateOf<String?>(null) }
+        var attemptedSave by remember { mutableStateOf(false) }
         val selectedCategory = state.categories.firstOrNull { it.id == selectedCategoryId }
+        val amountCents = amountCentsDigits.toLongOrNull() ?: 0L
+        val amountInvalid = amountCents <= 0L
+        val categoryInvalid = selectedCategory == null
+        val canSave = !amountInvalid && !categoryInvalid
         AppDialog(
             title = s.newExpense,
             onClose = { showAddExpenseDialog = false },
@@ -1054,13 +1201,19 @@ private fun DespesasTab(
             onDismissRequest = { showAddExpenseDialog = false },
         ) {
                     CompactInput(description, { description = it }, s.description)
-                    CompactMoneyInput(amountCentsDigits, { amountCentsDigits = it.filter(Char::isDigit) }, s.amount)
+                    CompactMoneyInput(
+                        amountCentsDigits,
+                        { amountCentsDigits = it.filter(Char::isDigit) },
+                        s.amount,
+                        isError = attemptedSave && amountInvalid,
+                    )
                     CategoryPicker(
                         s = s,
                         categories = state.categories,
                         selectedCategoryId = selectedCategoryId,
                         onSelectCategory = { selectedCategoryId = it },
                         onAddCategory = onAddCategory,
+                        isError = attemptedSave && categoryInvalid,
                     )
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Text(s.monthly, style = MaterialTheme.typography.labelMedium)
@@ -1073,12 +1226,15 @@ private fun DespesasTab(
                     }
                     CompactPrimaryButton(
                         s.save,
-                        enabled = selectedCategory != null && amountCentsDigits.isNotBlank(),
+                        enabled = canSave,
                         compact = true,
                         squared = true,
                         modifier = Modifier.fillMaxWidth(),
                         onClick = {
-                            selectedCategory?.let { onAddExpense(amountCentsDigits.toLongOrNull() ?: 0L, it.id, description.takeIf(String::isNotBlank), recurring) }
+                            attemptedSave = true
+                            if (!canSave) return@CompactPrimaryButton
+                            val category = selectedCategory
+                            onAddExpense(amountCents, category.id, description.takeIf(String::isNotBlank), recurring)
                             showAddExpenseDialog = false
                         }
                     )
@@ -1090,7 +1246,15 @@ private fun DespesasTab(
         var amountCentsDigits by remember { mutableStateOf("") }
         var day by remember { mutableStateOf("10") }
         var selectedCategoryId by remember { mutableStateOf<String?>(null) }
+        var attemptedSave by remember { mutableStateOf(false) }
         val selectedCategory = state.categories.firstOrNull { it.id == selectedCategoryId }
+        val amountCents = amountCentsDigits.toLongOrNull() ?: 0L
+        val dayInt = day.toIntOrNull() ?: 0
+        val descriptionInvalid = description.isBlank()
+        val amountInvalid = amountCents <= 0L
+        val dayInvalid = dayInt !in 1..31
+        val categoryInvalid = selectedCategory == null
+        val canSave = !descriptionInvalid && !amountInvalid && !dayInvalid && !categoryInvalid
         AppDialog(
             title = s.subscriptions,
             onClose = { showAddSubscriptionDialog = false },
@@ -1098,10 +1262,22 @@ private fun DespesasTab(
             maxWidth = 420.dp,
             onDismissRequest = { showAddSubscriptionDialog = false },
         ) {
-                    CompactInput(description, { description = it }, s.description)
+                    CompactInput(description, { description = it }, s.description, isError = attemptedSave && descriptionInvalid)
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        CompactMoneyInput(amountCentsDigits, { amountCentsDigits = it.filter(Char::isDigit) }, s.amount, modifier = Modifier.weight(1f))
-                        CompactInput(day, { day = it.filter(Char::isDigit) }, "Dia", modifier = Modifier.width(78.dp))
+                        CompactMoneyInput(
+                            amountCentsDigits,
+                            { amountCentsDigits = it.filter(Char::isDigit) },
+                            s.amount,
+                            modifier = Modifier.weight(1f),
+                            isError = attemptedSave && amountInvalid,
+                        )
+                        CompactInput(
+                            day,
+                            { day = it.filter(Char::isDigit) },
+                            "Dia",
+                            modifier = Modifier.width(78.dp),
+                            isError = attemptedSave && dayInvalid,
+                        )
                     }
                     CategoryPicker(
                         s = s,
@@ -1109,22 +1285,24 @@ private fun DespesasTab(
                         selectedCategoryId = selectedCategoryId,
                         onSelectCategory = { selectedCategoryId = it },
                         onAddCategory = onAddCategory,
+                        isError = attemptedSave && categoryInvalid,
                     )
                     CompactPrimaryButton(
                         s.add,
-                        enabled = selectedCategory != null && description.isNotBlank() && amountCentsDigits.isNotBlank() && day.isNotBlank(),
+                        enabled = canSave,
                         compact = true,
                         squared = true,
                         modifier = Modifier.fillMaxWidth(),
                         onClick = {
-                            selectedCategory?.let {
-                                onAddSubscription(
-                                    description,
-                                    amountCentsDigits.toLongOrNull() ?: 0L,
-                                    (day.toIntOrNull() ?: 1).coerceIn(1, 31),
-                                    it.id,
-                                )
-                            }
+                            attemptedSave = true
+                            if (!canSave) return@CompactPrimaryButton
+                            val category = selectedCategory
+                            onAddSubscription(
+                                description,
+                                amountCents,
+                                dayInt.coerceIn(1, 31),
+                                category.id,
+                            )
                             showAddSubscriptionDialog = false
                         }
                     )
@@ -1136,7 +1314,15 @@ private fun DespesasTab(
         var amountCentsDigits by remember { mutableStateOf("") }
         var total by remember { mutableStateOf("12") }
         var selectedCategoryId by remember { mutableStateOf<String?>(null) }
+        var attemptedSave by remember { mutableStateOf(false) }
         val selectedCategory = state.categories.firstOrNull { it.id == selectedCategoryId }
+        val totalAmountCents = amountCentsDigits.toLongOrNull() ?: 0L
+        val totalInstallments = total.toIntOrNull() ?: 0
+        val descriptionInvalid = description.isBlank()
+        val amountInvalid = totalAmountCents <= 0L
+        val totalInvalid = totalInstallments !in 1..360
+        val categoryInvalid = selectedCategory == null
+        val canSave = !descriptionInvalid && !amountInvalid && !totalInvalid && !categoryInvalid
         AppDialog(
             title = s.installments,
             onClose = { showAddInstallmentDialog = false },
@@ -1144,10 +1330,22 @@ private fun DespesasTab(
             maxWidth = 420.dp,
             onDismissRequest = { showAddInstallmentDialog = false },
         ) {
-                    CompactInput(description, { description = it }, s.description)
+                    CompactInput(description, { description = it }, s.description, isError = attemptedSave && descriptionInvalid)
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        CompactMoneyInput(amountCentsDigits, { amountCentsDigits = it.filter(Char::isDigit) }, s.amount, modifier = Modifier.weight(1f))
-                        CompactInput(total, { total = it.filter(Char::isDigit) }, s.months, modifier = Modifier.width(86.dp))
+                        CompactMoneyInput(
+                            amountCentsDigits,
+                            { amountCentsDigits = it.filter(Char::isDigit) },
+                            s.totalAmount,
+                            modifier = Modifier.weight(1f),
+                            isError = attemptedSave && amountInvalid,
+                        )
+                        CompactInput(
+                            total,
+                            { total = it.filter(Char::isDigit) },
+                            s.months,
+                            modifier = Modifier.width(86.dp),
+                            isError = attemptedSave && totalInvalid,
+                        )
                     }
                     CategoryPicker(
                         s = s,
@@ -1155,22 +1353,24 @@ private fun DespesasTab(
                         selectedCategoryId = selectedCategoryId,
                         onSelectCategory = { selectedCategoryId = it },
                         onAddCategory = onAddCategory,
+                        isError = attemptedSave && categoryInvalid,
                     )
                     CompactPrimaryButton(
                         s.add,
-                        enabled = selectedCategory != null && description.isNotBlank() && amountCentsDigits.isNotBlank() && total.isNotBlank(),
+                        enabled = canSave,
                         compact = true,
                         squared = true,
                         modifier = Modifier.fillMaxWidth(),
                         onClick = {
-                            selectedCategory?.let {
-                                onAddInstallment(
-                                    description,
-                                    amountCentsDigits.toLongOrNull() ?: 0L,
-                                    (total.toIntOrNull() ?: 1).coerceIn(1, 360),
-                                    it.id,
-                                )
-                            }
+                            attemptedSave = true
+                            if (!canSave) return@CompactPrimaryButton
+                            val category = selectedCategory
+                            onAddInstallment(
+                                description,
+                                totalAmountCents,
+                                totalInstallments.coerceIn(1, 360),
+                                category.id,
+                            )
                             showAddInstallmentDialog = false
                         }
                     )
@@ -1184,7 +1384,12 @@ private fun DespesasTab(
             var amountCentsDigits by remember(current.id) { mutableStateOf(current.amountCents.toString()) }
             var recurring by remember(current.id) { mutableStateOf(current.recurrenceType == RecurrenceType.MONTHLY) }
             var selectedCategoryId by remember(current.id) { mutableStateOf<String?>(current.categoryId) }
+            var attemptedSave by remember(current.id) { mutableStateOf(false) }
             val selectedCategory = state.categories.firstOrNull { it.id == selectedCategoryId }
+            val amountCents = amountCentsDigits.toLongOrNull() ?: 0L
+            val amountInvalid = amountCents <= 0L
+            val categoryInvalid = selectedCategory == null
+            val canSave = !amountInvalid && !categoryInvalid
             AppDialog(
                 title = s.newExpense,
                 onClose = { editingExpenseId = null },
@@ -1193,13 +1398,19 @@ private fun DespesasTab(
                 onDismissRequest = { editingExpenseId = null },
             ) {
                         CompactInput(description, { description = it }, s.description)
-                        CompactMoneyInput(amountCentsDigits, { amountCentsDigits = it.filter(Char::isDigit) }, s.amount)
+                        CompactMoneyInput(
+                            amountCentsDigits,
+                            { amountCentsDigits = it.filter(Char::isDigit) },
+                            s.amount,
+                            isError = attemptedSave && amountInvalid,
+                        )
                         CategoryPicker(
                             s = s,
                             categories = state.categories,
                             selectedCategoryId = selectedCategoryId,
                             onSelectCategory = { selectedCategoryId = it },
                             onAddCategory = onAddCategory,
+                            isError = attemptedSave && categoryInvalid,
                         )
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             Text(s.monthly, style = MaterialTheme.typography.labelMedium)
@@ -1212,20 +1423,21 @@ private fun DespesasTab(
                         }
                         CompactPrimaryButton(
                             s.save,
-                            enabled = selectedCategory != null && amountCentsDigits.isNotBlank(),
+                            enabled = canSave,
                             compact = true,
                             squared = true,
                             modifier = Modifier.fillMaxWidth(),
                             onClick = {
-                                selectedCategory?.let {
-                                    onUpdateExpense(
-                                        expenseId,
-                                        amountCentsDigits.toLongOrNull() ?: 0L,
-                                        it.id,
-                                        description.takeIf(String::isNotBlank),
-                                        recurring,
-                                    )
-                                }
+                                attemptedSave = true
+                                if (!canSave) return@CompactPrimaryButton
+                                val category = selectedCategory
+                                onUpdateExpense(
+                                    expenseId,
+                                    amountCents,
+                                    category.id,
+                                    description.takeIf(String::isNotBlank),
+                                    recurring,
+                                )
                                 editingExpenseId = null
                             }
                         )
@@ -1240,7 +1452,15 @@ private fun DespesasTab(
             var amountCentsDigits by remember(current.id) { mutableStateOf(current.amountCents.toString()) }
             var day by remember(current.id) { mutableStateOf(current.billingDay.toString()) }
             var selectedCategoryId by remember(current.id) { mutableStateOf<String?>(current.categoryId) }
+            var attemptedSave by remember(current.id) { mutableStateOf(false) }
             val selectedCategory = state.categories.firstOrNull { it.id == selectedCategoryId }
+            val amountCents = amountCentsDigits.toLongOrNull() ?: 0L
+            val dayInt = day.toIntOrNull() ?: 0
+            val descriptionInvalid = description.isBlank()
+            val amountInvalid = amountCents <= 0L
+            val dayInvalid = dayInt !in 1..31
+            val categoryInvalid = selectedCategory == null
+            val canSave = !descriptionInvalid && !amountInvalid && !dayInvalid && !categoryInvalid
             AppDialog(
                 title = s.subscriptions,
                 onClose = { editingSubscriptionId = null },
@@ -1248,10 +1468,22 @@ private fun DespesasTab(
                 maxWidth = 420.dp,
                 onDismissRequest = { editingSubscriptionId = null },
             ) {
-                        CompactInput(description, { description = it }, s.description)
+                        CompactInput(description, { description = it }, s.description, isError = attemptedSave && descriptionInvalid)
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            CompactMoneyInput(amountCentsDigits, { amountCentsDigits = it.filter(Char::isDigit) }, s.amount, modifier = Modifier.weight(1f))
-                            CompactInput(day, { day = it.filter(Char::isDigit) }, "Dia", modifier = Modifier.width(78.dp))
+                            CompactMoneyInput(
+                                amountCentsDigits,
+                                { amountCentsDigits = it.filter(Char::isDigit) },
+                                s.amount,
+                                modifier = Modifier.weight(1f),
+                                isError = attemptedSave && amountInvalid,
+                            )
+                            CompactInput(
+                                day,
+                                { day = it.filter(Char::isDigit) },
+                                "Dia",
+                                modifier = Modifier.width(78.dp),
+                                isError = attemptedSave && dayInvalid,
+                            )
                         }
                         CategoryPicker(
                             s = s,
@@ -1259,23 +1491,25 @@ private fun DespesasTab(
                             selectedCategoryId = selectedCategoryId,
                             onSelectCategory = { selectedCategoryId = it },
                             onAddCategory = onAddCategory,
+                            isError = attemptedSave && categoryInvalid,
                         )
                         CompactPrimaryButton(
                             s.save,
-                            enabled = selectedCategory != null && description.isNotBlank() && amountCentsDigits.isNotBlank() && day.isNotBlank(),
+                            enabled = canSave,
                             compact = true,
                             squared = true,
                             modifier = Modifier.fillMaxWidth(),
                             onClick = {
-                                selectedCategory?.let {
-                                    onUpdateSubscription(
-                                        subscriptionId,
-                                        description,
-                                        amountCentsDigits.toLongOrNull() ?: 0L,
-                                        (day.toIntOrNull() ?: 1).coerceIn(1, 31),
-                                        it.id,
-                                    )
-                                }
+                                attemptedSave = true
+                                if (!canSave) return@CompactPrimaryButton
+                                val category = selectedCategory
+                                onUpdateSubscription(
+                                    subscriptionId,
+                                    description,
+                                    amountCents,
+                                    dayInt.coerceIn(1, 31),
+                                    category.id,
+                                )
                                 editingSubscriptionId = null
                             }
                         )
@@ -1287,10 +1521,20 @@ private fun DespesasTab(
         val current = state.installments.firstOrNull { it.id == installmentId }
         if (current != null) {
             var description by remember(current.id) { mutableStateOf(current.name) }
-            var amountCentsDigits by remember(current.id) { mutableStateOf(current.monthlyAmountCents.toString()) }
+            var amountCentsDigits by remember(current.id) {
+                mutableStateOf((current.monthlyAmountCents * current.totalInstallments.toLong()).toString())
+            }
             var total by remember(current.id) { mutableStateOf(current.totalInstallments.toString()) }
             var selectedCategoryId by remember(current.id) { mutableStateOf<String?>(current.categoryId) }
+            var attemptedSave by remember(current.id) { mutableStateOf(false) }
             val selectedCategory = state.categories.firstOrNull { it.id == selectedCategoryId }
+            val totalAmountCents = amountCentsDigits.toLongOrNull() ?: 0L
+            val totalInstallments = total.toIntOrNull() ?: 0
+            val descriptionInvalid = description.isBlank()
+            val amountInvalid = totalAmountCents <= 0L
+            val totalInvalid = totalInstallments !in 1..360
+            val categoryInvalid = selectedCategory == null
+            val canSave = !descriptionInvalid && !amountInvalid && !totalInvalid && !categoryInvalid
             AppDialog(
                 title = s.installments,
                 onClose = { editingInstallmentId = null },
@@ -1298,10 +1542,22 @@ private fun DespesasTab(
                 maxWidth = 420.dp,
                 onDismissRequest = { editingInstallmentId = null },
             ) {
-                        CompactInput(description, { description = it }, s.description)
+                        CompactInput(description, { description = it }, s.description, isError = attemptedSave && descriptionInvalid)
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            CompactMoneyInput(amountCentsDigits, { amountCentsDigits = it.filter(Char::isDigit) }, s.amount, modifier = Modifier.weight(1f))
-                            CompactInput(total, { total = it.filter(Char::isDigit) }, s.months, modifier = Modifier.width(86.dp))
+                            CompactMoneyInput(
+                                amountCentsDigits,
+                                { amountCentsDigits = it.filter(Char::isDigit) },
+                                s.totalAmount,
+                                modifier = Modifier.weight(1f),
+                                isError = attemptedSave && amountInvalid,
+                            )
+                            CompactInput(
+                                total,
+                                { total = it.filter(Char::isDigit) },
+                                s.months,
+                                modifier = Modifier.width(86.dp),
+                                isError = attemptedSave && totalInvalid,
+                            )
                         }
                         CategoryPicker(
                             s = s,
@@ -1309,23 +1565,25 @@ private fun DespesasTab(
                             selectedCategoryId = selectedCategoryId,
                             onSelectCategory = { selectedCategoryId = it },
                             onAddCategory = onAddCategory,
+                            isError = attemptedSave && categoryInvalid,
                         )
                         CompactPrimaryButton(
                             s.save,
-                            enabled = selectedCategory != null && description.isNotBlank() && amountCentsDigits.isNotBlank() && total.isNotBlank(),
+                            enabled = canSave,
                             compact = true,
                             squared = true,
                             modifier = Modifier.fillMaxWidth(),
                             onClick = {
-                                selectedCategory?.let {
-                                    onUpdateInstallment(
-                                        installmentId,
-                                        description,
-                                        amountCentsDigits.toLongOrNull() ?: 0L,
-                                        (total.toIntOrNull() ?: 1).coerceIn(1, 360),
-                                        it.id,
-                                    )
-                                }
+                                attemptedSave = true
+                                if (!canSave) return@CompactPrimaryButton
+                                val category = selectedCategory
+                                onUpdateInstallment(
+                                    installmentId,
+                                    description,
+                                    totalAmountCents,
+                                    totalInstallments.coerceIn(1, 360),
+                                    category.id,
+                                )
                                 editingInstallmentId = null
                             }
                         )
@@ -1341,6 +1599,7 @@ private fun CategoryPicker(
     selectedCategoryId: String?,
     onSelectCategory: (String?) -> Unit,
     onAddCategory: (String, ((String) -> Unit)?) -> Unit,
+    isError: Boolean = false,
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
     var showNewCategoryDialog by remember { mutableStateOf(false) }
@@ -1348,7 +1607,11 @@ private fun CategoryPicker(
     val selectedCategory = categories.firstOrNull { it.id == selectedCategoryId }
 
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Text(s.category, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(
+            s.category,
+            style = MaterialTheme.typography.labelMedium,
+            color = if (isError) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+        )
         Box {
             CompactPrimaryButton(
                 text = selectedCategory?.name ?: s.selectCategory,
@@ -1377,6 +1640,13 @@ private fun CategoryPicker(
                 )
             }
         }
+        if (isError) {
+            Text(
+                s.requiredField,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.error,
+            )
+        }
     }
 
     if (showNewCategoryDialog) {
@@ -1387,7 +1657,7 @@ private fun CategoryPicker(
             maxWidth = 380.dp,
             onDismissRequest = { showNewCategoryDialog = false },
         ) {
-                    CompactInput(value = newCategoryName, onValueChange = { newCategoryName = it }, label = s.description)
+                    CompactInput(value = newCategoryName, onValueChange = { newCategoryName = it }, label = s.description, isError = false)
                     CompactPrimaryButton(
                         s.add,
                         enabled = newCategoryName.isNotBlank(),
@@ -1517,9 +1787,11 @@ private fun ProfileTab(
     onSignOutGoogle: () -> Unit,
     onSyncGoogleDrive: () -> Unit,
     onRestoreGoogleDrive: (Boolean) -> Unit,
+    onResetLocalData: () -> Unit,
 ) {
     val google = state.googleSync
     var showRestoreConfirm by remember { mutableStateOf(false) }
+    var showResetConfirm by remember { mutableStateOf(false) }
     var showLicenses by remember { mutableStateOf(false) }
 
     LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxSize()) {
@@ -1578,6 +1850,29 @@ private fun ProfileTab(
                 }
             }
         }
+        item {
+            PanelCard(
+                title = s.dangerZone,
+                icon = Icons.Default.Warning,
+                accentColor = MaterialTheme.colorScheme.error,
+                borderColor = MaterialTheme.colorScheme.error.copy(alpha = 0.45f),
+            ) {
+                Text(
+                    s.resetLocalDataDescription,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error.copy(alpha = 0.95f),
+                )
+                CompactPrimaryButton(
+                    text = s.resetLocalData,
+                    compact = true,
+                    squared = true,
+                    subtle = true,
+                    danger = true,
+                    modifier = Modifier.fillMaxWidth(),
+                    onClick = { showResetConfirm = true },
+                )
+            }
+        }
     }
 
     if (showRestoreConfirm) {
@@ -1626,6 +1921,34 @@ private fun ProfileTab(
                     }
                 }
             }
+        }
+    }
+
+    if (showResetConfirm) {
+        AppDialog(
+            title = s.resetLocalData,
+            onClose = { showResetConfirm = false },
+            closeLabel = s.close,
+            maxWidth = 420.dp,
+            onDismissRequest = { showResetConfirm = false },
+        ) {
+            Text(
+                s.resetLocalDataConfirm,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            CompactPrimaryButton(
+                text = s.delete,
+                compact = true,
+                squared = true,
+                subtle = true,
+                danger = true,
+                modifier = Modifier.fillMaxWidth(),
+                onClick = {
+                    showResetConfirm = false
+                    onResetLocalData()
+                },
+            )
         }
     }
 }
@@ -1829,6 +2152,8 @@ private fun PanelCard(
     icon: ImageVector? = null,
     truncateTitle: Boolean = true,
     autoShrinkTitle: Boolean = false,
+    accentColor: Color = MaterialTheme.colorScheme.primary,
+    borderColor: Color = MaterialTheme.colorScheme.outline.copy(alpha = 0.18f),
     headerCenter: (@Composable () -> Unit)? = null,
     headerTrailing: (@Composable () -> Unit)? = null,
     content: @Composable ColumnScope.() -> Unit,
@@ -1849,7 +2174,7 @@ private fun PanelCard(
                 spotColor = Color.Black.copy(alpha = 0.20f),
             ),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.98f)),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.18f)),
+        border = BorderStroke(1.dp, borderColor),
         shape = RoundedCornerShape(18.dp),
     ) {
         Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 11.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -1864,10 +2189,11 @@ private fun PanelCard(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
-                        icon?.let { Icon(it, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp)) }
+                        icon?.let { Icon(it, contentDescription = null, tint = accentColor, modifier = Modifier.size(16.dp)) }
                         Text(
                             title,
                             style = resolvedTitleStyle,
+                            color = accentColor,
                             maxLines = 1,
                             softWrap = false,
                             overflow = if (truncateTitle) TextOverflow.Ellipsis else TextOverflow.Visible,
@@ -1885,7 +2211,13 @@ private fun PanelCard(
 }
 
 @Composable
-private fun CompactInput(value: String, onValueChange: (String) -> Unit, label: String, modifier: Modifier = Modifier) {
+private fun CompactInput(
+    value: String,
+    onValueChange: (String) -> Unit,
+    label: String,
+    modifier: Modifier = Modifier,
+    isError: Boolean = false,
+) {
     var focused by remember { mutableStateOf(false) }
     var fieldValue by remember(value) {
         mutableStateOf(
@@ -1920,15 +2252,28 @@ private fun CompactInput(value: String, onValueChange: (String) -> Unit, label: 
                 .heightIn(min = 36.dp)
                 .border(
                     1.dp,
-                    if (focused) MaterialTheme.colorScheme.primary.copy(alpha = 0.55f) else MaterialTheme.colorScheme.outline.copy(alpha = 0.18f),
+                    when {
+                        isError -> MaterialTheme.colorScheme.error.copy(alpha = 0.75f)
+                        focused -> MaterialTheme.colorScheme.primary.copy(alpha = 0.55f)
+                        else -> MaterialTheme.colorScheme.outline.copy(alpha = 0.18f)
+                    },
                     RoundedCornerShape(10.dp)
                 )
                 .background(
                     if (focused) MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.92f)
                     else MaterialTheme.colorScheme.surface.copy(alpha = 0.94f),
                     RoundedCornerShape(10.dp)
-                )
-                .padding(horizontal = 9.dp, vertical = 6.dp),
+                ),
+            decorationBox = { innerTextField ->
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 9.dp, vertical = 6.dp),
+                    contentAlignment = Alignment.CenterStart,
+                ) {
+                    innerTextField()
+                }
+            },
         )
     }
 }
@@ -1939,6 +2284,7 @@ private fun CompactMoneyInput(
     onCentsDigitsChange: (String) -> Unit,
     label: String,
     modifier: Modifier = Modifier,
+    isError: Boolean = false,
 ) {
     var fieldValue by remember(centsDigits) {
         val formatted = formatBrlFromCentsDigits(centsDigits)
@@ -1978,15 +2324,28 @@ private fun CompactMoneyInput(
                 )
                 .border(
                     1.dp,
-                    if (focused) MaterialTheme.colorScheme.primary.copy(alpha = 0.65f) else MaterialTheme.colorScheme.outline.copy(alpha = 0.24f),
+                    when {
+                        isError -> MaterialTheme.colorScheme.error.copy(alpha = 0.8f)
+                        focused -> MaterialTheme.colorScheme.primary.copy(alpha = 0.65f)
+                        else -> MaterialTheme.colorScheme.outline.copy(alpha = 0.24f)
+                    },
                     RoundedCornerShape(10.dp)
                 )
                 .background(
                     if (focused) MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.96f)
                     else MaterialTheme.colorScheme.surface.copy(alpha = 0.98f),
                     RoundedCornerShape(10.dp)
-                )
-                .padding(horizontal = 9.dp, vertical = 6.dp),
+                ),
+            decorationBox = { innerTextField ->
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 9.dp, vertical = 6.dp),
+                    contentAlignment = Alignment.CenterStart,
+                ) {
+                    innerTextField()
+                }
+            },
         )
     }
 }
@@ -1999,6 +2358,7 @@ private fun CompactPrimaryButton(
     compact: Boolean = false,
     squared: Boolean = false,
     subtle: Boolean = false,
+    danger: Boolean = false,
     leadingContent: (@Composable () -> Unit)? = null,
     modifier: Modifier = Modifier,
     onClick: () -> Unit,
@@ -2009,7 +2369,7 @@ private fun CompactPrimaryButton(
         shape = RoundedCornerShape(8.dp),
         colors = ButtonDefaults.textButtonColors(
             containerColor = Color.Transparent,
-            contentColor = MaterialTheme.colorScheme.primary,
+            contentColor = if (danger) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
             disabledContainerColor = Color.Transparent,
             disabledContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
         ),
@@ -2024,7 +2384,7 @@ private fun CompactPrimaryButton(
             CircularProgressIndicator(
                 strokeWidth = 2.dp,
                 modifier = Modifier.size(16.dp),
-                color = MaterialTheme.colorScheme.primary,
+                color = if (danger) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
             )
         } else {
             Row(

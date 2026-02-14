@@ -20,6 +20,7 @@ private val sharedModule = module {
     single<ScheduleRepository> { SqlScheduleRepository(get()) }
     single<SettingsRepository> { SqlSettingsRepository(get()) }
     single<CommitmentPaymentRepository> { SqlCommitmentPaymentRepository(get()) }
+    single<LocalDataMaintenanceRepository> { SqlLocalDataMaintenanceRepository(get()) }
 
     single { CreateBudgetMonthUseCase(get()) }
     single { SetBudgetAllocationsUseCase(get()) }
@@ -33,7 +34,7 @@ private val sharedModule = module {
     single { MarkSchedulePaidUseCase(get()) }
 
     single { SeedDataInitializer(get(), get(), get()) }
-    single { MainStore(get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get()) }
+    single { MainStore(get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get()) }
 }
 
 private var koinStarted = false

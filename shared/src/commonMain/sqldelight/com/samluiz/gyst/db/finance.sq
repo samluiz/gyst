@@ -289,3 +289,30 @@ VALUES (?, ?);
 
 getAppSetting:
 SELECT value FROM app_setting WHERE key = ? LIMIT 1;
+
+deleteAllScheduleItems:
+DELETE FROM payment_schedule_item;
+
+deleteAllExpenses:
+DELETE FROM expense;
+
+deleteAllSubscriptions:
+DELETE FROM subscription;
+
+deleteAllInstallments:
+DELETE FROM installment_plan;
+
+deleteAllBudgetAllocations:
+DELETE FROM budget_allocation;
+
+deleteAllBudgetMonths:
+DELETE FROM budget_month;
+
+deleteAllCategories:
+DELETE FROM category;
+
+deleteAllSafetyGuards:
+DELETE FROM safety_guard;
+
+deleteAllSettings:
+DELETE FROM app_setting;

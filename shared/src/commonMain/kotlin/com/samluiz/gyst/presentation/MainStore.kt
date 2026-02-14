@@ -22,6 +22,8 @@ import kotlin.time.Clock
 
 private const val EXPENSES_PAGE_SIZE = 50L
 private const val SLOW_QUERY_MS = 120L
+private const val RETRO_BUDGET_FILL_MONTHS = 24
+private const val EXPLICIT_BUDGET_KEY_PREFIX = "budget.explicit."
 
 class MainStore(
     private val seedDataInitializer: SeedDataInitializer,
@@ -32,6 +34,7 @@ class MainStore(
     private val installmentRepository: InstallmentRepository,
     private val scheduleRepository: ScheduleRepository,
     private val settingsRepository: SettingsRepository,
+    private val localDataMaintenanceRepository: LocalDataMaintenanceRepository,
     private val googleAuthSyncService: GoogleAuthSyncService,
     private val computeMonthlySummaryUseCase: ComputeMonthlySummaryUseCase,
     private val computeCashFlowForecastUseCase: ComputeCashFlowForecastUseCase,
@@ -162,12 +165,35 @@ class MainStore(
         }
     }
 
-    fun saveIncome(cents: Long) {
+    fun resetLocalData() {
+        scope.launchSafely {
+            _state.value = _state.value.copy(isLoading = true)
+            localDataMaintenanceRepository.resetLocalData()
+            seedDataInitializer.ensureSeedData()
+            googleAuthSyncService.initialize()
+            refreshInternal(showSkeleton = true)
+        }
+    }
+
+    fun saveIncome(cents: Long, applyForward: Boolean = false) {
         scope.launchSafely {
             val currentMonth = _state.value.currentMonth
-            CreateBudgetMonthUseCase(budgetRepository)(currentMonth, cents)
+            if (applyForward) {
+                saveIncomeForwardFrom(currentMonth, cents)
+            } else {
+                CreateBudgetMonthUseCase(budgetRepository)(currentMonth, cents)
+                markExplicitBudgetMonth(currentMonth)
+            }
             refreshInternal()
         }
+    }
+
+    fun setPlanningUsePostSavingsBudget(enabled: Boolean) {
+        _state.value = _state.value.copy(planningUsePostSavingsBudget = enabled)
+    }
+
+    fun setPlanningMonthlyContribution(cents: Long) {
+        _state.value = _state.value.copy(planningMonthlyContributionCents = cents.coerceAtLeast(0L))
     }
 
     fun saveAllocations(values: Map<String, Long>) {
@@ -260,6 +286,7 @@ class MainStore(
             val safeName = name.trim().take(120)
             require(safeName.isNotBlank()) { "Descricao obrigatoria" }
             val safeInstallments = totalInstallments.coerceIn(1, 360)
+            val monthlyAmountCents = toMonthlyInstallmentCents(amountCents, safeInstallments)
             val start = _state.value.currentMonth
             val end = start.plusMonths(safeInstallments - 1)
             CreateInstallmentPlanUseCase(installmentRepository, scheduleRepository)(
@@ -267,7 +294,7 @@ class MainStore(
                     id = id("inst"),
                     name = safeName,
                     totalInstallments = safeInstallments,
-                    monthlyAmountCents = amountCents,
+                    monthlyAmountCents = monthlyAmountCents,
                     startYearMonth = start,
                     endYearMonth = end,
                     categoryId = categoryId,
@@ -363,6 +390,7 @@ class MainStore(
             val safeName = name.trim().take(120)
             require(safeName.isNotBlank()) { "Descricao obrigatoria" }
             val safeInstallments = totalInstallments.coerceIn(1, 360)
+            val monthlyAmountCents = toMonthlyInstallmentCents(amountCents, safeInstallments)
             val current = installmentRepository.list().firstOrNull { it.id == installmentId } ?: return@launchSafely
             val currentMonth = _state.value.currentMonth
             val start = current.startYearMonth
@@ -373,7 +401,7 @@ class MainStore(
                     id = installmentId,
                     name = safeName,
                     totalInstallments = safeInstallments,
-                    monthlyAmountCents = amountCents,
+                    monthlyAmountCents = monthlyAmountCents,
                     startYearMonth = start,
                     endYearMonth = start.plusMonths(safeInstallments - 1),
                     categoryId = categoryId,
@@ -388,6 +416,55 @@ class MainStore(
         scope.launchSafely {
             scheduleRepository.deleteByRefAndKind(installmentId, ScheduleKind.INSTALLMENT)
             installmentRepository.delete(installmentId)
+            refreshInternal()
+        }
+    }
+
+    fun duplicateExpense(expenseId: String) {
+        scope.launchSafely {
+            val current = expenseRepository.getById(expenseId) ?: return@launchSafely
+            val targetMonth = _state.value.currentMonth
+            val day = current.occurredAt.day.coerceAtMost(monthBounds(targetMonth).second.day)
+            AddOrUpdateExpenseUseCase(expenseRepository)(
+                current.copy(
+                    id = id("exp"),
+                    occurredAt = LocalDate(targetMonth.year, targetMonth.month, day),
+                    createdAt = Clock.System.now(),
+                    scheduleItemId = null,
+                )
+            )
+            refreshInternal()
+        }
+    }
+
+    fun duplicateSubscription(subscriptionId: String) {
+        scope.launchSafely {
+            val current = subscriptionRepository.list().firstOrNull { it.id == subscriptionId } ?: return@launchSafely
+            UpsertSubscriptionUseCase(subscriptionRepository, scheduleRepository)(
+                current.copy(
+                    id = id("sub"),
+                    nextDueDate = dueDateForMonth(_state.value.currentMonth, current.billingDay),
+                )
+            )
+            refreshInternal()
+        }
+    }
+
+    fun duplicateInstallment(installmentId: String) {
+        scope.launchSafely {
+            val current = installmentRepository.list().firstOrNull { it.id == installmentId } ?: return@launchSafely
+            val start = _state.value.currentMonth
+            val safeInstallments = current.totalInstallments.coerceIn(1, 360)
+            val totalAmountCents = current.monthlyAmountCents * safeInstallments.toLong()
+            val monthlyAmountCents = toMonthlyInstallmentCents(totalAmountCents, safeInstallments)
+            CreateInstallmentPlanUseCase(installmentRepository, scheduleRepository)(
+                current.copy(
+                    id = id("inst"),
+                    monthlyAmountCents = monthlyAmountCents,
+                    startYearMonth = start,
+                    endYearMonth = start.plusMonths(safeInstallments - 1),
+                )
+            )
             refreshInternal()
         }
     }
@@ -447,6 +524,7 @@ class MainStore(
             println("GystPerf slow queries (${currentMonth}): ${slowQueries.joinToString(" | ")}")
         }
 
+        val previous = _state.value
         _state.value = MainState(
             currentMonth = currentMonth,
             summary = summary,
@@ -467,8 +545,10 @@ class MainStore(
             themeMode = themeMode,
             slowQueries = slowQueries,
             googleSync = googleAuthSyncService.state.value,
-            errorMessage = _state.value.errorMessage,
+            errorMessage = previous.errorMessage,
             isLoading = false,
+            planningUsePostSavingsBudget = previous.planningUsePostSavingsBudget,
+            planningMonthlyContributionCents = previous.planningMonthlyContributionCents,
         )
     }
 
@@ -481,6 +561,35 @@ class MainStore(
                 monthsAhead = monthsAhead,
             )
         }
+    }
+
+    private suspend fun saveIncomeForwardFrom(startMonth: YearMonth, cents: Long) {
+        CreateBudgetMonthUseCase(budgetRepository)(startMonth, cents)
+        markExplicitBudgetMonth(startMonth)
+        var cursor = startMonth.plusMonths(1)
+        var filled = 0
+        while (filled < RETRO_BUDGET_FILL_MONTHS) {
+            if (isExplicitBudgetMonth(cursor)) {
+                break
+            }
+            budgetRepository.createOrUpdateMonth(cursor, cents)
+            cursor = cursor.plusMonths(1)
+            filled++
+        }
+    }
+
+    private fun toMonthlyInstallmentCents(totalAmountCents: Long, totalInstallments: Int): Long {
+        if (totalInstallments <= 0) return totalAmountCents.coerceAtLeast(0L)
+        val split = totalAmountCents / totalInstallments.toLong()
+        return split.coerceAtLeast(if (totalAmountCents > 0L) 1L else 0L)
+    }
+
+    private suspend fun markExplicitBudgetMonth(month: YearMonth) {
+        settingsRepository.setString("$EXPLICIT_BUDGET_KEY_PREFIX$month", "1")
+    }
+
+    private suspend fun isExplicitBudgetMonth(month: YearMonth): Boolean {
+        return settingsRepository.getString("$EXPLICIT_BUDGET_KEY_PREFIX$month") == "1"
     }
 }
 
@@ -507,6 +616,8 @@ data class MainState(
         isAvailable = false,
         isSignedIn = false,
     ),
+    val planningUsePostSavingsBudget: Boolean = true,
+    val planningMonthlyContributionCents: Long = 50_000L,
     val errorMessage: String? = null,
     val isLoading: Boolean = true,
 )

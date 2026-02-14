@@ -100,10 +100,12 @@ Write is dialog-based:
 - **Simulador**:
   - toggle to cancel highest subscription
   - slider for recurring-cost reduction (%)
+  - configurable **safety target** (desired monthly leftover)
 - **Impacto do cenário**:
   - average monthly delta and 12-month delta
-- **Pressão mensal**:
-  - future months with safe allowance and risk label (`low/medium/high`)
+- **Previsão mensal**:
+  - future months with projected **Margin** (`income - projected spend`)
+  - direct comparison against safety target (`Above target` / `Below target` + delta)
 - **Eventos de alívio**:
   - installment-end milestones and freed monthly cash
 - **Projeção de meta**:
@@ -238,3 +240,8 @@ Note: `:shared:allTests` may require valid Android SDK configuration in your env
 
 - Migrate deprecated datetime APIs (`monthNumber`, `dayOfMonth`, deprecated `Instant` alias usage).
 - Continue UI/accessibility polish and chart/report depth.
+
+
+## License
+
+This project is licensed under the GNU General Public License v3.0 (`GPL-3.0-or-later`). See `LICENSE` for details.

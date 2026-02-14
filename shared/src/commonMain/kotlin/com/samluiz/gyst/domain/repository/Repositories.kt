@@ -71,3 +71,7 @@ interface CommitmentPaymentRepository {
         note: String? = null,
     )
 }
+
+interface LocalDataMaintenanceRepository {
+    suspend fun resetLocalData()
+}

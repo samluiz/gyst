@@ -480,3 +480,21 @@ class SqlCommitmentPaymentRepository(private val holder: DatabaseHolder) : Commi
         }
     }
 }
+
+class SqlLocalDataMaintenanceRepository(private val holder: DatabaseHolder) : LocalDataMaintenanceRepository {
+    private val q get() = holder.db.financeQueries
+
+    override suspend fun resetLocalData() {
+        holder.db.transaction {
+            q.deleteAllScheduleItems()
+            q.deleteAllExpenses()
+            q.deleteAllSubscriptions()
+            q.deleteAllInstallments()
+            q.deleteAllBudgetAllocations()
+            q.deleteAllBudgetMonths()
+            q.deleteAllCategories()
+            q.deleteAllSafetyGuards()
+            q.deleteAllSettings()
+        }
+    }
+}
