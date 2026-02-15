@@ -663,7 +663,12 @@ private fun PlanningTab(
     onSetDesiredMargin: (Long) -> Unit,
 ) {
     val forecast = state.forecast
-    val topSubscription = state.subscriptions.filter { it.active }.maxByOrNull { it.amountCents }?.amountCents ?: 0L
+    val currentMonth = state.currentMonth
+    val currentTopSubscription = state.subscriptions
+        .filter { it.active && YearMonth.fromDate(it.nextDueDate) <= currentMonth }
+        .maxByOrNull { it.amountCents }
+        ?.amountCents
+        ?: 0L
     var cancelTopSubscription by remember { mutableStateOf(false) }
     var recurringCutPercent by remember { mutableStateOf(10f) }
     var goalAmountCentsDigits by remember(state.planningGoalAmountCents) {
@@ -678,26 +683,58 @@ private fun PlanningTab(
     var useAfterSavingsBudget by remember(state.planningUsePostSavingsBudget) {
         mutableStateOf(state.planningUsePostSavingsBudget)
     }
+    var showFormulaDialog by remember { mutableStateOf(false) }
+    var showFreedCashDialog by remember { mutableStateOf(false) }
 
     val monthlyContributionCents = monthlyContributionCentsDigits.toLongOrNull() ?: 0L
     val desiredMarginCents = desiredMarginCentsDigits.toLongOrNull() ?: 0L
 
+    val summary = state.summary
+    val currentRecurring = forecast.firstOrNull()?.recurringCents ?: 0L
+    val currentOneTime = ((summary?.spentTotalCents ?: 0L) - currentRecurring).coerceAtLeast(0L)
+    val currentEffectiveBudget = if (useAfterSavingsBudget) {
+        ((summary?.totalIncomeCents ?: 0L) - monthlyContributionCents).coerceAtLeast(0L)
+    } else {
+        summary?.totalIncomeCents ?: 0L
+    }
+    val currentBaseRemaining = currentEffectiveBudget - (summary?.spentTotalCents ?: 0L) - (summary?.commitmentsCents ?: 0L)
+    val currentRecurringGain = (currentRecurring * (recurringCutPercent / 100f)).toLong()
+    val currentSubscriptionGain = if (cancelTopSubscription) currentTopSubscription else 0L
+    val currentScenarioGain = currentRecurringGain + currentSubscriptionGain
+    val currentSimulatedRemaining = currentBaseRemaining + currentScenarioGain
+
     val adjusted = forecast.map { month ->
         val recurringCut = (month.recurringCents * (recurringCutPercent / 100f)).toLong()
-        val subscriptionCut = if (cancelTopSubscription) topSubscription else 0L
-        val adjustedSpend = (month.expectedSpendCents - recurringCut - subscriptionCut).coerceAtLeast(0L)
+        val monthTopSubscription = state.subscriptions
+            .filter { it.active && YearMonth.fromDate(it.nextDueDate) <= month.yearMonth }
+            .maxByOrNull { it.amountCents }
+            ?.amountCents
+            ?: 0L
+        val subscriptionCut = if (cancelTopSubscription) monthTopSubscription else 0L
         val projectedIncome = if (useAfterSavingsBudget) {
             (month.incomeCents - monthlyContributionCents).coerceAtLeast(0L)
         } else {
             month.incomeCents
         }
-        val safeAllowance = projectedIncome - adjustedSpend
-        PlanningPoint(month.yearMonth, adjustedSpend, safeAllowance)
+        val baseSpend = month.commitmentsCents + month.recurringCents + currentOneTime
+        val baseRemaining = projectedIncome - baseSpend
+        val scenarioGain = recurringCut + subscriptionCut
+        val simulatedRemaining = baseRemaining + scenarioGain
+        PlanningPoint(
+            month = month.yearMonth,
+            baseRemainingCents = baseRemaining,
+            simulatedRemainingCents = simulatedRemaining,
+        )
     }
-    val baseFreeTotal = forecast.sumOf { it.expectedFreeBalanceCents }
-    val adjustedFreeTotal = adjusted.sumOf { it.safeAllowanceCents }
-    val deltaTotal = adjustedFreeTotal - baseFreeTotal
-    val averageDelta = if (adjusted.isNotEmpty()) deltaTotal / adjusted.size else 0L
+    val simulatedTotal12m = adjusted.sumOf { it.simulatedRemainingCents }
+    val baseTotal12m = adjusted.sumOf { it.baseRemainingCents }
+    val deltaTotal12m = simulatedTotal12m - baseTotal12m
+    val activeSimulationTags = buildList {
+        if (cancelTopSubscription) add(s.cancelTopSubscription)
+        if (recurringCutPercent > 0f) add("${s.recurringCut}: ${recurringCutPercent.toInt()}%")
+        if (useAfterSavingsBudget) add(s.postSavingsBudget)
+    }
+    val currentMarginDelta = currentSimulatedRemaining - desiredMarginCents
 
     val installmentEndEvents = state.installments
         .filter { it.active }
@@ -743,11 +780,43 @@ private fun PlanningTab(
                     )
                 }
                 Text("${s.recurringCut}: ${recurringCutPercent.toInt()}%", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    listOf(0, 5, 10, 15, 20).forEach { preset ->
+                        AppToggleChip(
+                            selected = recurringCutPercent.toInt() == preset,
+                            onClick = { recurringCutPercent = preset.toFloat() },
+                            text = "$preset%",
+                        )
+                    }
+                }
                 Slider(
                     value = recurringCutPercent,
                     onValueChange = { recurringCutPercent = it.coerceIn(0f, 40f) },
                     valueRange = 0f..40f,
                 )
+                if (activeSimulationTags.isEmpty()) {
+                    Text(
+                        s.noSimulationAdjustments,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                } else {
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        activeSimulationTags.forEach { tag ->
+                            AppToggleChip(
+                                selected = true,
+                                onClick = {},
+                                text = tag,
+                            )
+                        }
+                    }
+                }
             }
         }
         item {
@@ -764,11 +833,48 @@ private fun PlanningTab(
             }
         }
         item {
-            PanelCard(title = s.scenarioImpact, icon = Icons.Default.AutoGraph) {
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    MiniMetric(s.projectedFree, formatSigned(averageDelta))
-                    MiniMetric("12m", formatSigned(deltaTotal))
+            PanelCard(
+                title = s.scenarioImpact,
+                icon = Icons.Default.AutoGraph,
+                headerTrailing = {
+                    IconCompactButton(
+                        onClick = { showFormulaDialog = true },
+                        icon = Icons.Default.Info,
+                        contentDescription = s.howCalculated,
+                        compact = true,
+                        subtle = true,
+                    )
+                },
+            ) {
+                Text(
+                    s.thisMonth,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.secondary,
+                )
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Box(modifier = Modifier.weight(1f)) {
+                        MiniMetric(s.baseRemaining, formatBrl(currentBaseRemaining))
+                    }
+                    Box(modifier = Modifier.weight(1f)) {
+                        MiniMetric(s.simulatedRemaining, formatBrl(currentSimulatedRemaining))
+                    }
                 }
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Box(modifier = Modifier.weight(1f)) {
+                        MiniMetric(s.scenarioGain, formatSigned(currentScenarioGain))
+                    }
+                    Box(modifier = Modifier.weight(1f)) {
+                        MiniMetric("${s.scenarioGain} (12m)", formatSigned(deltaTotal12m))
+                    }
+                }
+                Text(
+                    if (currentMarginDelta >= 0L)
+                        "${s.aboveDesiredMargin}: ${formatSigned(currentMarginDelta)}"
+                    else
+                        "${s.belowDesiredMargin}: ${formatSigned(currentMarginDelta)}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = if (currentMarginDelta >= 0L) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.error,
+                )
             }
         }
         item {
@@ -780,7 +886,12 @@ private fun PlanningTab(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
-                adjusted.take(8).forEachIndexed { index, point ->
+                Text(
+                    s.nextMonths,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.secondary,
+                )
+                adjusted.drop(1).take(8).forEachIndexed { index, point ->
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
@@ -791,13 +902,13 @@ private fun PlanningTab(
                                 overflow = TextOverflow.Ellipsis,
                             )
                             Text(
-                                "${s.safeAllowance}: ${formatBrl(point.safeAllowanceCents)}",
+                                "${s.simulatedRemaining}: ${formatBrl(point.simulatedRemainingCents)}",
                                 style = MaterialTheme.typography.bodySmall,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
                             )
                         }
-                        val deltaToTarget = point.safeAllowanceCents - desiredMarginCents
+                        val deltaToTarget = point.simulatedRemainingCents - desiredMarginCents
                         Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(1.dp)) {
                             Text(
                                 if (deltaToTarget >= 0) s.aboveDesiredMargin else s.belowDesiredMargin,
@@ -816,14 +927,26 @@ private fun PlanningTab(
                             )
                         }
                     }
-                    if (index < adjusted.take(8).lastIndex) {
+                    if (index < adjusted.drop(1).take(8).lastIndex) {
                         HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.35f))
                     }
                 }
             }
         }
         item {
-            PanelCard(title = s.freedCashEvents, icon = Icons.Default.CreditCardOff) {
+            PanelCard(
+                title = s.freedCashEvents,
+                icon = Icons.Default.CreditCardOff,
+                headerTrailing = {
+                    IconCompactButton(
+                        onClick = { showFreedCashDialog = true },
+                        icon = Icons.Default.Info,
+                        contentDescription = s.freedCashHowItWorks,
+                        compact = true,
+                        subtle = true,
+                    )
+                },
+            ) {
                 if (installmentEndEvents.isEmpty()) {
                     Text(s.noEvents, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 } else {
@@ -868,12 +991,72 @@ private fun PlanningTab(
             }
         }
     }
+
+    if (showFormulaDialog) {
+        AppDialog(
+            title = s.howCalculated,
+            onClose = { showFormulaDialog = false },
+            closeLabel = s.close,
+            onDismissRequest = { showFormulaDialog = false },
+            maxWidth = 460.dp,
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(
+                        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+                        RoundedCornerShape(12.dp),
+                    )
+                    .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.2f), RoundedCornerShape(12.dp))
+                    .padding(horizontal = 12.dp, vertical = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Text(
+                    s.simulationFormulaHint,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    textAlign = TextAlign.Center,
+                )
+            }
+        }
+    }
+
+    if (showFreedCashDialog) {
+        AppDialog(
+            title = s.freedCashHowItWorks,
+            onClose = { showFreedCashDialog = false },
+            closeLabel = s.close,
+            onDismissRequest = { showFreedCashDialog = false },
+            maxWidth = 460.dp,
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(
+                        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+                        RoundedCornerShape(12.dp),
+                    )
+                    .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.2f), RoundedCornerShape(12.dp))
+                    .padding(horizontal = 12.dp, vertical = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Text(
+                    s.freedCashExplanation,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    textAlign = TextAlign.Center,
+                )
+            }
+        }
+    }
 }
 
 private data class PlanningPoint(
     val month: com.samluiz.gyst.domain.model.YearMonth,
-    val spendCents: Long,
-    val safeAllowanceCents: Long,
+    val baseRemainingCents: Long,
+    val simulatedRemainingCents: Long,
 )
 
 private data class PlanningEvent(
