@@ -23,7 +23,6 @@ class DatabaseHolder(
 ) {
     private val reloadMutex = Mutex()
     private var activeDriver: SqlDriver = initialDriver
-    @Volatile
     private var activeDb: GystDatabase = GystDatabase(initialDriver)
 
     val db: GystDatabase
