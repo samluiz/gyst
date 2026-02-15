@@ -313,6 +313,43 @@ class MainStore(
         }
     }
 
+    fun updateCategoryName(categoryId: String, name: String, onDone: ((Boolean) -> Unit)? = null) {
+        scope.launchSafely {
+            val normalized = name.trim()
+            if (normalized.isBlank()) {
+                onDone?.invoke(false)
+                return@launchSafely
+            }
+            val categories = categoryRepository.list()
+            val current = categories.firstOrNull { it.id == categoryId }
+            if (current == null) {
+                onDone?.invoke(false)
+                return@launchSafely
+            }
+            val duplicate = categories.any { it.id != categoryId && it.name.equals(normalized, ignoreCase = true) }
+            if (duplicate) {
+                onDone?.invoke(false)
+                return@launchSafely
+            }
+            categoryRepository.upsert(current.copy(name = normalized))
+            onDone?.invoke(true)
+            refreshInternal()
+        }
+    }
+
+    fun deleteCategory(categoryId: String, onDone: ((Boolean, Long) -> Unit)? = null) {
+        scope.launchSafely {
+            val inUse = categoryRepository.usageCount(categoryId)
+            if (inUse > 0L) {
+                onDone?.invoke(false, inUse)
+                return@launchSafely
+            }
+            categoryRepository.delete(categoryId)
+            onDone?.invoke(true, 0L)
+            refreshInternal()
+        }
+    }
+
     fun addSubscription(name: String, amountCents: Long, billingDay: Int, categoryId: String) {
         scope.launchSafely {
             requireNonNegative(amountCents)

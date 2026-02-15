@@ -7,6 +7,7 @@ interface CategoryRepository {
     suspend fun list(): List<Category>
     suspend fun upsert(category: Category)
     suspend fun delete(id: String)
+    suspend fun usageCount(id: String): Long
 }
 
 interface BudgetRepository {

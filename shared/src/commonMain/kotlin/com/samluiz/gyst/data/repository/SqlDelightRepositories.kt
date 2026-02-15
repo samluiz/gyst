@@ -59,6 +59,8 @@ class SqlCategoryRepository(private val holder: DatabaseHolder) : CategoryReposi
     override suspend fun delete(id: String) {
         q.deleteCategory(id)
     }
+
+    override suspend fun usageCount(id: String): Long = q.countCategoryUsage(id).executeAsOne()
 }
 
 class SqlBudgetRepository(private val holder: DatabaseHolder) : BudgetRepository {

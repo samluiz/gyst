@@ -47,6 +47,7 @@ import androidx.compose.material.icons.filled.AutoGraph
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.CreditCardOff
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Info
@@ -258,6 +259,8 @@ fun GystRoot() {
                                     onLoadMoreExpenses = store::loadMoreExpenses,
                                     onAddExpense = store::addExpense,
                                     onAddCategory = store::addCategory,
+                                    onUpdateCategory = store::updateCategoryName,
+                                    onDeleteCategory = store::deleteCategory,
                                     onAddSubscription = store::addSubscription,
                                         onAddInstallment = store::addInstallment,
                                         onUpdateExpense = store::updateExpense,
@@ -1056,6 +1059,8 @@ private fun DespesasTab(
     onLoadMoreExpenses: () -> Unit,
     onAddExpense: (Long, String, String?, Boolean) -> Unit,
     onAddCategory: (String, ((String) -> Unit)?) -> Unit,
+    onUpdateCategory: (String, String, ((Boolean) -> Unit)?) -> Unit,
+    onDeleteCategory: (String, ((Boolean, Long) -> Unit)?) -> Unit,
     onAddSubscription: (String, Long, Int, String) -> Unit,
     onAddInstallment: (String, Long, Int, String) -> Unit,
     onUpdateExpense: (String, Long, String, String?, Boolean) -> Unit,
@@ -1438,6 +1443,8 @@ private fun DespesasTab(
                         selectedCategoryId = selectedCategoryId,
                         onSelectCategory = { selectedCategoryId = it },
                         onAddCategory = onAddCategory,
+                        onUpdateCategory = onUpdateCategory,
+                        onDeleteCategory = onDeleteCategory,
                         isError = attemptedSave && categoryInvalid,
                     )
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -1510,6 +1517,8 @@ private fun DespesasTab(
                         selectedCategoryId = selectedCategoryId,
                         onSelectCategory = { selectedCategoryId = it },
                         onAddCategory = onAddCategory,
+                        onUpdateCategory = onUpdateCategory,
+                        onDeleteCategory = onDeleteCategory,
                         isError = attemptedSave && categoryInvalid,
                     )
                     CompactPrimaryButton(
@@ -1578,6 +1587,8 @@ private fun DespesasTab(
                         selectedCategoryId = selectedCategoryId,
                         onSelectCategory = { selectedCategoryId = it },
                         onAddCategory = onAddCategory,
+                        onUpdateCategory = onUpdateCategory,
+                        onDeleteCategory = onDeleteCategory,
                         isError = attemptedSave && categoryInvalid,
                     )
                     CompactPrimaryButton(
@@ -1635,6 +1646,8 @@ private fun DespesasTab(
                             selectedCategoryId = selectedCategoryId,
                             onSelectCategory = { selectedCategoryId = it },
                             onAddCategory = onAddCategory,
+                            onUpdateCategory = onUpdateCategory,
+                            onDeleteCategory = onDeleteCategory,
                             isError = attemptedSave && categoryInvalid,
                         )
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -1716,6 +1729,8 @@ private fun DespesasTab(
                             selectedCategoryId = selectedCategoryId,
                             onSelectCategory = { selectedCategoryId = it },
                             onAddCategory = onAddCategory,
+                            onUpdateCategory = onUpdateCategory,
+                            onDeleteCategory = onDeleteCategory,
                             isError = attemptedSave && categoryInvalid,
                         )
                         CompactPrimaryButton(
@@ -1790,6 +1805,8 @@ private fun DespesasTab(
                             selectedCategoryId = selectedCategoryId,
                             onSelectCategory = { selectedCategoryId = it },
                             onAddCategory = onAddCategory,
+                            onUpdateCategory = onUpdateCategory,
+                            onDeleteCategory = onDeleteCategory,
                             isError = attemptedSave && categoryInvalid,
                         )
                         CompactPrimaryButton(
@@ -1824,11 +1841,17 @@ private fun CategoryPicker(
     selectedCategoryId: String?,
     onSelectCategory: (String?) -> Unit,
     onAddCategory: (String, ((String) -> Unit)?) -> Unit,
+    onUpdateCategory: (String, String, ((Boolean) -> Unit)?) -> Unit,
+    onDeleteCategory: (String, ((Boolean, Long) -> Unit)?) -> Unit,
     isError: Boolean = false,
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
     var showNewCategoryDialog by remember { mutableStateOf(false) }
+    var showManageCategoriesDialog by remember { mutableStateOf(false) }
     var newCategoryName by remember { mutableStateOf("") }
+    var editingCategoryId by remember { mutableStateOf<String?>(null) }
+    var editingCategoryName by remember { mutableStateOf("") }
+    var manageError by remember { mutableStateOf<String?>(null) }
     val selectedCategory = categories.firstOrNull { it.id == selectedCategoryId }
 
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -1863,6 +1886,13 @@ private fun CategoryPicker(
                         showNewCategoryDialog = true
                     }
                 )
+                DropdownMenuItem(
+                    text = { Text(s.manageCategories, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                    onClick = {
+                        menuExpanded = false
+                        showManageCategoriesDialog = true
+                    }
+                )
             }
         }
         if (isError) {
@@ -1882,21 +1912,132 @@ private fun CategoryPicker(
             maxWidth = 380.dp,
             onDismissRequest = { showNewCategoryDialog = false },
         ) {
-                    CompactInput(value = newCategoryName, onValueChange = { newCategoryName = it }, label = s.description, isError = false)
-                    CompactPrimaryButton(
-                        s.add,
-                        enabled = newCategoryName.isNotBlank(),
-                        compact = true,
-                        squared = true,
-                        modifier = Modifier.fillMaxWidth(),
-                        onClick = {
-                            onAddCategory(newCategoryName) { createdId ->
-                                onSelectCategory(createdId)
+            CompactInput(value = newCategoryName, onValueChange = { newCategoryName = it }, label = s.description, isError = false)
+            CompactPrimaryButton(
+                s.add,
+                enabled = newCategoryName.isNotBlank(),
+                compact = true,
+                squared = true,
+                modifier = Modifier.fillMaxWidth(),
+                onClick = {
+                    onAddCategory(newCategoryName) { createdId ->
+                        onSelectCategory(createdId)
+                    }
+                    newCategoryName = ""
+                    showNewCategoryDialog = false
+                }
+            )
+        }
+    }
+
+    if (showManageCategoriesDialog) {
+        AppDialog(
+            title = s.manageCategories,
+            onClose = {
+                showManageCategoriesDialog = false
+                editingCategoryId = null
+                editingCategoryName = ""
+                manageError = null
+            },
+            closeLabel = s.close,
+            maxWidth = 420.dp,
+            onDismissRequest = {
+                showManageCategoriesDialog = false
+                editingCategoryId = null
+                editingCategoryName = ""
+                manageError = null
+            },
+        ) {
+            manageError?.let {
+                Text(
+                    text = it,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
+            if (categories.isEmpty()) {
+                Text(
+                    text = s.noRecords,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            } else {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    categories.forEach { category ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            if (editingCategoryId == category.id) {
+                                CompactInput(
+                                    value = editingCategoryName,
+                                    onValueChange = { editingCategoryName = it },
+                                    label = s.description,
+                                    isError = false,
+                                    modifier = Modifier.weight(1f),
+                                )
+                                CompactPrimaryButton(
+                                    text = s.save,
+                                    enabled = editingCategoryName.isNotBlank(),
+                                    compact = true,
+                                    subtle = true,
+                                    squared = true,
+                                    onClick = {
+                                        onUpdateCategory(category.id, editingCategoryName) { ok ->
+                                            if (ok) {
+                                                editingCategoryId = null
+                                                editingCategoryName = ""
+                                                manageError = null
+                                            } else {
+                                                manageError = s.categoryNameTaken
+                                            }
+                                        }
+                                    }
+                                )
+                            } else {
+                                Text(
+                                    text = category.name,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.weight(1f),
+                                )
+                                IconCompactButton(
+                                    onClick = {
+                                        editingCategoryId = category.id
+                                        editingCategoryName = category.name
+                                        manageError = null
+                                    },
+                                    icon = Icons.Default.Edit,
+                                    contentDescription = s.edit,
+                                    compact = true,
+                                    subtle = true,
+                                )
+                                IconCompactButton(
+                                    onClick = {
+                                        onDeleteCategory(category.id) { ok, refs ->
+                                            if (ok) {
+                                                if (selectedCategoryId == category.id) {
+                                                    onSelectCategory(null)
+                                                }
+                                                manageError = null
+                                            } else {
+                                                manageError = "${s.cannotDeleteCategoryInUse} ($refs)"
+                                            }
+                                        }
+                                    },
+                                    icon = Icons.Default.Delete,
+                                    contentDescription = s.delete,
+                                    compact = true,
+                                    subtle = true,
+                                )
                             }
-                            newCategoryName = ""
-                            showNewCategoryDialog = false
                         }
-                    )
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.18f))
+                    }
+                }
+            }
         }
     }
 }
