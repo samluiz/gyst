@@ -8,6 +8,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -2119,6 +2120,8 @@ private fun CategoryPicker(
     }
 
     if (showManageCategoriesDialog) {
+        val categoryListScroll = rememberScrollState()
+        val categoryListViewportHeight = 280.dp
         AppDialog(
             title = s.manageCategories,
             onClose = {
@@ -2144,13 +2147,27 @@ private fun CategoryPicker(
                 )
             }
             if (categories.isEmpty()) {
-                Text(
-                    text = s.noRecords,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(categoryListViewportHeight),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        text = s.noRecords,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             } else {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(categoryListViewportHeight)
+                        .verticalScroll(categoryListScroll)
+                        .padding(end = 2.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
                     categories.forEach { category ->
                         Row(
                             modifier = Modifier.fillMaxWidth(),
