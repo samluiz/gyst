@@ -14,6 +14,26 @@ enum class SyncSource {
     CLOUD_TO_LOCAL,
 }
 
+enum class GoogleSyncErrorCode {
+    OAUTH_NOT_CONFIGURED,
+    SIGN_IN_UNAVAILABLE,
+    SIGN_IN_CONFIG_MISMATCH,
+    SIGN_IN_CANCELED,
+    SIGN_IN_FAILED,
+    SESSION_EXPIRED,
+    ACCOUNT_NOT_AUTHENTICATED,
+    ACCESS_TOKEN_FAILED,
+    BACKUP_NOT_FOUND,
+    LOCAL_DATA_MISSING,
+    INVALID_BACKUP,
+    NETWORK,
+    API,
+    RESTORE_CANCELED,
+    SYNC_FAILED,
+    RESTORE_FAILED,
+    UNKNOWN,
+}
+
 data class GoogleSyncState(
     val isAvailable: Boolean,
     val isSignedIn: Boolean,
@@ -28,6 +48,7 @@ data class GoogleSyncState(
     val hadSyncConflict: Boolean = false,
     val statusMessage: String? = null,
     val requiresAppRestart: Boolean = false,
+    val lastErrorCode: GoogleSyncErrorCode? = null,
     val lastError: String? = null,
 )
 

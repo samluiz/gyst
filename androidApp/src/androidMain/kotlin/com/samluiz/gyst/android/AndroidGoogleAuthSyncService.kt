@@ -12,6 +12,7 @@ import com.google.android.gms.common.api.ApiException
 import com.google.android.gms.common.api.Scope
 import com.google.api.client.googleapis.extensions.android.gms.auth.GoogleAccountCredential
 import com.samluiz.gyst.domain.service.GoogleAuthSyncService
+import com.samluiz.gyst.domain.service.GoogleSyncErrorCode
 import com.samluiz.gyst.domain.service.GoogleSyncState
 import com.samluiz.gyst.domain.service.SyncPolicy
 import com.samluiz.gyst.domain.service.SyncSource
@@ -79,7 +80,7 @@ class AndroidGoogleAuthSyncService(
     }
 
     override suspend fun initialize() {
-        runCatching { refreshState(lastError = null) }
+        runCatching { refreshState(lastError = null, lastErrorCode = null) }
             .onFailure {
                 AppLogger.e(TAG, "Initialize failed", it)
                 internal.update { state ->
@@ -88,7 +89,8 @@ class AndroidGoogleAuthSyncService(
                         isSignedIn = false,
                         isAuthInProgress = false,
                         isSyncing = false,
-                        lastError = prettyGoogleError(it),
+                        lastError = it.message,
+                        lastErrorCode = GoogleSyncErrorCode.OAUTH_NOT_CONFIGURED,
                     )
                 }
             }
@@ -96,19 +98,20 @@ class AndroidGoogleAuthSyncService(
 
     override suspend fun signIn() {
         AppLogger.i(TAG, "Sign-in requested")
-        internal.update { it.copy(lastError = null, statusMessage = null, isAuthInProgress = true) }
+        internal.update { it.copy(lastError = null, lastErrorCode = null, statusMessage = null, isAuthInProgress = true) }
         if (signInClient == null) {
             internal.update {
                 it.copy(
                     isAvailable = false,
                     isAuthInProgress = false,
                     lastError = "Google Sign-In unavailable on this device/build.",
+                    lastErrorCode = GoogleSyncErrorCode.SIGN_IN_UNAVAILABLE,
                 )
             }
             return
         }
         if (isSignedInWithScope()) {
-            refreshState(lastError = null)
+            refreshState(lastError = null, lastErrorCode = null)
             return
         }
         val launcher = signInLauncher ?: throw IllegalStateException("Google Sign-In not bound to Activity")
@@ -124,10 +127,17 @@ class AndroidGoogleAuthSyncService(
                     continuation.invokeOnCancellation { pendingSignIn = null }
                 }
             }
-            refreshState(lastError = null)
+            refreshState(lastError = null, lastErrorCode = null)
         } catch (t: Throwable) {
             AppLogger.e(TAG, "Sign-in failed", t)
-            internal.update { it.copy(lastError = prettyGoogleError(t), statusMessage = null, isAuthInProgress = false) }
+            internal.update {
+                it.copy(
+                    lastError = t.message,
+                    lastErrorCode = classifyGoogleError(t),
+                    statusMessage = null,
+                    isAuthInProgress = false,
+                )
+            }
         }
     }
 
@@ -145,6 +155,7 @@ class AndroidGoogleAuthSyncService(
                     statusMessage = null,
                     requiresAppRestart = false,
                     lastError = null,
+                    lastErrorCode = null,
                 )
             }
             return
@@ -167,13 +178,14 @@ class AndroidGoogleAuthSyncService(
                 statusMessage = null,
                 requiresAppRestart = false,
                 lastError = null,
+                lastErrorCode = null,
             )
         }
     }
 
     override suspend fun syncNow() {
         AppLogger.i(TAG, "Sync requested")
-        internal.update { it.copy(isSyncing = true, statusMessage = null, lastError = null) }
+        internal.update { it.copy(isSyncing = true, statusMessage = null, lastError = null, lastErrorCode = null) }
         try {
             val account = requireSignedInAccount()
             val token = withContext(Dispatchers.IO) { fetchToken(account) }
@@ -196,6 +208,7 @@ class AndroidGoogleAuthSyncService(
                             statusMessage = "Uploaded local data to Google Drive.",
                             requiresAppRestart = false,
                             lastError = null,
+                            lastErrorCode = null,
                         )
                     }
                     return@withContext
@@ -215,6 +228,7 @@ class AndroidGoogleAuthSyncService(
                             statusMessage = "Conflict resolved by timestamp: cloud data applied.",
                             requiresAppRestart = true,
                             lastError = null,
+                            lastErrorCode = null,
                         )
                     }
                 } else {
@@ -230,6 +244,7 @@ class AndroidGoogleAuthSyncService(
                             statusMessage = "Synced local data to Google Drive.",
                             requiresAppRestart = false,
                             lastError = null,
+                            lastErrorCode = null,
                         )
                     }
                 }
@@ -240,7 +255,8 @@ class AndroidGoogleAuthSyncService(
                 it.copy(
                     isSyncing = false,
                     statusMessage = null,
-                    lastError = t.message ?: "Google Drive sync failed",
+                    lastError = t.message,
+                    lastErrorCode = classifyGoogleError(t, isRestore = false),
                 )
             }
         }
@@ -248,11 +264,16 @@ class AndroidGoogleAuthSyncService(
 
     override suspend fun restoreFromCloud(overwriteLocal: Boolean) {
         if (!overwriteLocal) {
-            internal.update { it.copy(lastError = "Restore canceled") }
+            internal.update {
+                it.copy(
+                    lastError = "Restore canceled",
+                    lastErrorCode = GoogleSyncErrorCode.RESTORE_CANCELED,
+                )
+            }
             return
         }
         AppLogger.i(TAG, "Restore requested overwriteLocal=$overwriteLocal")
-        internal.update { it.copy(isSyncing = true, statusMessage = null, lastError = null) }
+        internal.update { it.copy(isSyncing = true, statusMessage = null, lastError = null, lastErrorCode = null) }
         try {
             val account = requireSignedInAccount()
             val token = withContext(Dispatchers.IO) { fetchToken(account) }
@@ -271,6 +292,7 @@ class AndroidGoogleAuthSyncService(
                     statusMessage = "Backup restored from cloud.",
                     requiresAppRestart = true,
                     lastError = null,
+                    lastErrorCode = null,
                 )
             }
         } catch (t: Throwable) {
@@ -279,13 +301,14 @@ class AndroidGoogleAuthSyncService(
                 it.copy(
                     isSyncing = false,
                     statusMessage = null,
-                    lastError = t.message ?: "Google Drive restore failed",
+                    lastError = t.message,
+                    lastErrorCode = classifyGoogleError(t, isRestore = true),
                 )
             }
         }
     }
 
-    private fun refreshState(lastError: String?) {
+    private fun refreshState(lastError: String?, lastErrorCode: GoogleSyncErrorCode?) {
         val signedAccount = runCatching { GoogleSignIn.getLastSignedInAccount(appContext) }.getOrNull()
             ?.takeIf { GoogleSignIn.hasPermissions(it, Scope(DRIVE_APPDATA_SCOPE)) }
         val signed = signedAccount != null
@@ -300,6 +323,7 @@ class AndroidGoogleAuthSyncService(
                 requiresAppRestart = false,
                 hadSyncConflict = false,
                 lastError = lastError,
+                lastErrorCode = lastErrorCode,
             )
         }
     }
@@ -567,17 +591,24 @@ private fun InputStream.readAllBytesCompat(): ByteArray {
     return buffer.toByteArray()
 }
 
-private fun prettyGoogleError(t: Throwable): String {
+private fun classifyGoogleError(t: Throwable, isRestore: Boolean = false): GoogleSyncErrorCode {
     if (t is ApiException) {
         return when (t.statusCode) {
-            7 -> "Network error while signing in."
-            10 -> "Google Sign-In configuration error (package/SHA mismatch)."
-            16 -> "Sign-in was canceled."
-            12500 -> "Google Sign-In failed (check OAuth consent/test users)."
-            12501 -> "Sign-in canceled."
-            12502 -> "Another sign-in operation is in progress."
-            else -> "Google Sign-In failed (code ${t.statusCode})."
+            7 -> GoogleSyncErrorCode.NETWORK
+            10 -> GoogleSyncErrorCode.SIGN_IN_CONFIG_MISMATCH
+            16, 12501 -> GoogleSyncErrorCode.SIGN_IN_CANCELED
+            12500, 12502 -> GoogleSyncErrorCode.SIGN_IN_FAILED
+            else -> GoogleSyncErrorCode.SIGN_IN_FAILED
         }
     }
-    return t.message ?: "Google Sign-In failed."
+    val msg = t.message.orEmpty().lowercase()
+    return when {
+        "not authenticated" in msg -> GoogleSyncErrorCode.ACCOUNT_NOT_AUTHENTICATED
+        "access token" in msg || "token" in msg && "failed" in msg -> GoogleSyncErrorCode.ACCESS_TOKEN_FAILED
+        "no backup found" in msg -> GoogleSyncErrorCode.BACKUP_NOT_FOUND
+        "invalid backup" in msg || "not a valid sqlite" in msg || "invalid backup format" in msg -> GoogleSyncErrorCode.INVALID_BACKUP
+        "network" in msg || "timeout" in msg || "unable to resolve host" in msg -> GoogleSyncErrorCode.NETWORK
+        "api error" in msg || "drive api" in msg -> GoogleSyncErrorCode.API
+        else -> if (isRestore) GoogleSyncErrorCode.RESTORE_FAILED else GoogleSyncErrorCode.SYNC_FAILED
+    }
 }

@@ -122,6 +122,7 @@ import com.samluiz.gyst.domain.model.YearMonth
 import com.samluiz.gyst.domain.model.CategorySummary
 import com.samluiz.gyst.domain.service.SyncPolicy
 import com.samluiz.gyst.domain.service.SyncSource
+import com.samluiz.gyst.domain.service.GoogleSyncErrorCode
 import com.samluiz.gyst.presentation.MainState
 import com.samluiz.gyst.presentation.MainStore
 import com.samluiz.gyst.domain.service.GoogleSyncState
@@ -326,7 +327,7 @@ fun GystRoot() {
                                     strokeWidth = 2.dp,
                                 )
                                 Text(
-                                    text = message.ifBlank { s.applyingBackup },
+                                    text = blockingMessageLabel(message, s),
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurface,
                                 )
@@ -2607,13 +2608,22 @@ private fun ProfileIdentitySection(
                     overflow = TextOverflow.Clip,
                 )
             } else {
-                if (google.statusMessage != null) {
+                val feedback = googleFeedbackLabel(google, s)
+                if (feedback != null) {
                     Text(
-                        google.statusMessage,
+                        feedback,
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.primary,
                         maxLines = 3,
                         overflow = TextOverflow.Clip,
+                    )
+                }
+                if (google.isSyncing) {
+                    LinearProgressIndicator(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(3.dp),
+                        trackColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
                     )
                 }
                 if (google.lastSyncAtIso != null) {
@@ -2634,6 +2644,13 @@ private fun ProfileIdentitySection(
                         overflow = TextOverflow.Clip,
                     )
                 }
+                Text(
+                    "${s.syncPolicy}: ${syncPolicyLabel(google.lastSyncPolicy, s)}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2,
+                    overflow = TextOverflow.Clip,
+                )
                 if (google.hadSyncConflict) {
                     Text(
                         s.conflictResolvedByPolicy,
@@ -2652,9 +2669,10 @@ private fun ProfileIdentitySection(
                         overflow = TextOverflow.Clip,
                     )
                 }
-                if (google.lastError != null) {
+                val localizedError = googleErrorLabel(google, s)
+                if (localizedError != null) {
                     Text(
-                        google.lastError,
+                        localizedError,
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.error,
                         maxLines = 3,
@@ -3027,6 +3045,45 @@ private fun syncSourceLabel(source: SyncSource, s: AppStrings): String = when (s
 private fun syncPolicyLabel(policy: SyncPolicy, s: AppStrings): String = when (policy) {
     SyncPolicy.NEWEST_WINS -> s.syncPolicyNewestWins
     SyncPolicy.OVERWRITE_LOCAL -> s.syncPolicyOverwriteLocal
+}
+
+private fun blockingMessageLabel(token: String, s: AppStrings): String = when (token) {
+    "sync.restore.applying" -> s.applyingBackup
+    "sync.reload.applying" -> s.applyingData
+    else -> token.ifBlank { s.applyingBackup }
+}
+
+private fun googleFeedbackLabel(google: GoogleSyncState, s: AppStrings): String? = when {
+    google.isAuthInProgress -> s.signingInGoogle
+    google.isSyncing -> s.syncInProgress
+    google.hadSyncConflict && google.lastSyncSource == SyncSource.CLOUD_TO_LOCAL -> s.syncConflictApplied
+    google.lastSyncSource == SyncSource.LOCAL_TO_CLOUD -> s.syncUploaded
+    google.lastSyncSource == SyncSource.CLOUD_TO_LOCAL && google.lastSyncPolicy == SyncPolicy.OVERWRITE_LOCAL -> s.restoreApplied
+    google.lastSyncSource == SyncSource.CLOUD_TO_LOCAL -> s.syncDownloaded
+    else -> null
+}
+
+private fun googleErrorLabel(google: GoogleSyncState, s: AppStrings): String? {
+    val mapped = when (google.lastErrorCode) {
+        GoogleSyncErrorCode.OAUTH_NOT_CONFIGURED -> s.syncErrorOauthConfig
+        GoogleSyncErrorCode.SIGN_IN_UNAVAILABLE -> s.syncErrorSignInUnavailable
+        GoogleSyncErrorCode.SIGN_IN_CONFIG_MISMATCH -> s.syncErrorSignInConfigMismatch
+        GoogleSyncErrorCode.SIGN_IN_CANCELED -> s.syncErrorSignInCanceled
+        GoogleSyncErrorCode.SIGN_IN_FAILED -> s.syncErrorGeneric
+        GoogleSyncErrorCode.SESSION_EXPIRED -> s.syncErrorSessionExpired
+        GoogleSyncErrorCode.ACCOUNT_NOT_AUTHENTICATED -> s.syncErrorAccountNotAuthenticated
+        GoogleSyncErrorCode.ACCESS_TOKEN_FAILED -> s.syncErrorSessionExpired
+        GoogleSyncErrorCode.BACKUP_NOT_FOUND -> s.syncErrorBackupNotFound
+        GoogleSyncErrorCode.LOCAL_DATA_MISSING -> s.syncErrorGeneric
+        GoogleSyncErrorCode.INVALID_BACKUP -> s.syncErrorInvalidBackup
+        GoogleSyncErrorCode.NETWORK -> s.syncErrorNetwork
+        GoogleSyncErrorCode.API -> s.syncErrorApi
+        GoogleSyncErrorCode.RESTORE_CANCELED -> null
+        GoogleSyncErrorCode.SYNC_FAILED -> s.syncErrorGeneric
+        GoogleSyncErrorCode.RESTORE_FAILED -> s.syncErrorGeneric
+        GoogleSyncErrorCode.UNKNOWN, null -> null
+    }
+    return mapped ?: google.lastError
 }
 
 private fun pad2(value: Long): String {

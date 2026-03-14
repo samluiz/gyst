@@ -30,6 +30,8 @@ private const val PLANNING_USE_POST_SAVINGS_KEY = "planning.usePostSavingsBudget
 private const val PLANNING_MONTHLY_CONTRIBUTION_KEY = "planning.monthlyContributionCents"
 private const val PLANNING_GOAL_AMOUNT_KEY = "planning.goalAmountCents"
 private const val PLANNING_DESIRED_MARGIN_KEY = "planning.desiredMarginCents"
+private const val BLOCKING_RESTORE_TOKEN = "sync.restore.applying"
+private const val BLOCKING_RELOAD_TOKEN = "sync.reload.applying"
 
 class MainStore(
     private val seedDataInitializer: SeedDataInitializer,
@@ -171,11 +173,8 @@ class MainStore(
     fun syncGoogleDrive() {
         scope.launchSafely(allowDuringBlocking = true) {
             googleAuthSyncService.syncNow()
-            val reloaded = applyHotReloadIfNeeded("sync")
+            applyHotReloadIfNeeded("sync")
             refreshInternal()
-            if (reloaded) {
-                _state.value = _state.value.copy(infoMessage = "Backup applied successfully.")
-            }
         }
     }
 
@@ -183,16 +182,13 @@ class MainStore(
         scope.launchSafely(allowDuringBlocking = true) {
             _state.value = _state.value.copy(
                 isLoading = true,
-                blockingMessage = "Applying backup...",
+                blockingMessage = BLOCKING_RESTORE_TOKEN,
             )
             try {
                 googleAuthSyncService.restoreFromCloud(overwriteLocal)
-                val reloaded = applyHotReloadIfNeeded("restore")
+                applyHotReloadIfNeeded(reason = "restore", force = true)
                 seedDataInitializer.ensureSeedData()
                 refreshInternal()
-                if (reloaded) {
-                    _state.value = _state.value.copy(infoMessage = "Backup applied successfully.")
-                }
             } finally {
                 _state.value = _state.value.copy(blockingMessage = null)
             }
@@ -588,10 +584,10 @@ class MainStore(
         }
     }
 
-    private suspend fun applyHotReloadIfNeeded(reason: String): Boolean {
-        if (!googleAuthSyncService.state.value.requiresAppRestart) return false
+    private suspend fun applyHotReloadIfNeeded(reason: String, force: Boolean = false): Boolean {
+        if (!force && !googleAuthSyncService.state.value.requiresAppRestart) return false
         AppLogger.i(TAG, "Applying hot DB reload after $reason")
-        _state.value = _state.value.copy(isLoading = true, blockingMessage = "Applying backup...")
+        _state.value = _state.value.copy(isLoading = true, blockingMessage = BLOCKING_RELOAD_TOKEN)
         try {
             databaseRuntimeController.reloadDatabase()
             googleAuthSyncService.initialize()

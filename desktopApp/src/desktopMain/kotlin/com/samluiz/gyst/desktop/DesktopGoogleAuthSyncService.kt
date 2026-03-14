@@ -7,6 +7,7 @@ import com.google.api.client.googleapis.auth.oauth2.GoogleAuthorizationCodeFlow
 import com.google.api.client.json.gson.GsonFactory
 import com.google.api.client.util.store.FileDataStoreFactory
 import com.samluiz.gyst.domain.service.GoogleAuthSyncService
+import com.samluiz.gyst.domain.service.GoogleSyncErrorCode
 import com.samluiz.gyst.domain.service.GoogleSyncState
 import com.samluiz.gyst.domain.service.SyncPolicy
 import com.samluiz.gyst.domain.service.SyncSource
@@ -83,6 +84,7 @@ class DesktopGoogleAuthSyncService(
                         accountEmail = null,
                         accountPhotoUrl = null,
                         lastError = initError,
+                        lastErrorCode = GoogleSyncErrorCode.OAUTH_NOT_CONFIGURED,
                     )
                 }
                 return@withContext
@@ -101,6 +103,7 @@ class DesktopGoogleAuthSyncService(
                         accountEmail = null,
                         accountPhotoUrl = null,
                         lastError = null,
+                        lastErrorCode = null,
                     )
                 }
                 return@withContext
@@ -118,6 +121,7 @@ class DesktopGoogleAuthSyncService(
                         accountEmail = null,
                         accountPhotoUrl = null,
                         lastError = throwable.message ?: "Failed to refresh Google session.",
+                        lastErrorCode = GoogleSyncErrorCode.SESSION_EXPIRED,
                     )
                 }
                 return@withContext
@@ -135,6 +139,7 @@ class DesktopGoogleAuthSyncService(
                     isSyncing = false,
                     requiresAppRestart = false,
                     lastError = null,
+                    lastErrorCode = null,
                 )
             }
         }
@@ -142,7 +147,7 @@ class DesktopGoogleAuthSyncService(
 
     override suspend fun signIn() {
         AppLogger.i(TAG, "Sign-in requested")
-        internal.update { it.copy(isAuthInProgress = true, lastError = null, statusMessage = null) }
+        internal.update { it.copy(isAuthInProgress = true, lastError = null, lastErrorCode = null, statusMessage = null) }
         withContext(Dispatchers.IO) {
             val authFlow = runCatching { ensureFlow() }.getOrElse { throwable ->
                 AppLogger.e(TAG, "Sign-in failed: OAuth flow unavailable", throwable)
@@ -152,6 +157,7 @@ class DesktopGoogleAuthSyncService(
                         isSignedIn = false,
                         isAuthInProgress = false,
                         lastError = throwable.message ?: "Desktop Google OAuth is not configured.",
+                        lastErrorCode = GoogleSyncErrorCode.OAUTH_NOT_CONFIGURED,
                     )
                 }
                 return@withContext
@@ -173,6 +179,7 @@ class DesktopGoogleAuthSyncService(
                         isAvailable = true,
                         isAuthInProgress = false,
                         lastError = throwable.message ?: "Google sign-in failed.",
+                        lastErrorCode = classifyDesktopError(throwable),
                     )
                 }
                 return@withContext
@@ -186,6 +193,7 @@ class DesktopGoogleAuthSyncService(
                         isSignedIn = false,
                         isAuthInProgress = false,
                         lastError = throwable.message ?: "Failed to complete Google sign-in.",
+                        lastErrorCode = GoogleSyncErrorCode.ACCESS_TOKEN_FAILED,
                     )
                 }
                 return@withContext
@@ -203,6 +211,7 @@ class DesktopGoogleAuthSyncService(
                     isAuthInProgress = false,
                     requiresAppRestart = false,
                     lastError = null,
+                    lastErrorCode = null,
                 )
             }
         }
@@ -233,6 +242,7 @@ class DesktopGoogleAuthSyncService(
                     statusMessage = null,
                     requiresAppRestart = false,
                     lastError = null,
+                    lastErrorCode = null,
                 )
             }
         }
@@ -240,16 +250,16 @@ class DesktopGoogleAuthSyncService(
 
     override suspend fun syncNow() {
         AppLogger.i(TAG, "Sync requested")
-        internal.update { it.copy(isSyncing = true, lastError = null, statusMessage = null, requiresAppRestart = false) }
+        internal.update { it.copy(isSyncing = true, lastError = null, lastErrorCode = null, statusMessage = null, requiresAppRestart = false) }
         withContext(Dispatchers.IO) {
             val authFlow = runCatching { ensureFlow() }.getOrElse { throwable ->
                 AppLogger.e(TAG, "Sync failed: OAuth flow unavailable", throwable)
-                internal.update { it.copy(isSyncing = false, lastError = throwable.message ?: "Google OAuth not configured.") }
+                internal.update { it.copy(isSyncing = false, lastError = throwable.message ?: "Google OAuth not configured.", lastErrorCode = GoogleSyncErrorCode.OAUTH_NOT_CONFIGURED) }
                 return@withContext
             }
             val token = runCatching { requireAccessToken(authFlow) }.getOrElse { throwable ->
                 AppLogger.e(TAG, "Sync failed: token unavailable", throwable)
-                internal.update { it.copy(isSyncing = false, lastError = throwable.message ?: "Google session expired.") }
+                internal.update { it.copy(isSyncing = false, lastError = throwable.message ?: "Google session expired.", lastErrorCode = GoogleSyncErrorCode.SESSION_EXPIRED) }
                 return@withContext
             }
             runCatching {
@@ -277,6 +287,7 @@ class DesktopGoogleAuthSyncService(
                                 hadSyncConflict = false,
                                 statusMessage = "Uploaded local data to Google Drive.",
                                 lastError = null,
+                                lastErrorCode = null,
                             )
                         }
                     }
@@ -295,6 +306,7 @@ class DesktopGoogleAuthSyncService(
                                 statusMessage = "Recovered local data from Google Drive.",
                                 requiresAppRestart = true,
                                 lastError = null,
+                                lastErrorCode = null,
                             )
                         }
                     }
@@ -313,6 +325,7 @@ class DesktopGoogleAuthSyncService(
                                 statusMessage = "Conflict resolved by timestamp: cloud data applied.",
                                 requiresAppRestart = true,
                                 lastError = null,
+                                lastErrorCode = null,
                             )
                         }
                     }
@@ -330,6 +343,7 @@ class DesktopGoogleAuthSyncService(
                                 hadSyncConflict = false,
                                 statusMessage = "Synced local data to Google Drive.",
                                 lastError = null,
+                                lastErrorCode = null,
                             )
                         }
                     }
@@ -341,6 +355,7 @@ class DesktopGoogleAuthSyncService(
                         isSyncing = false,
                         statusMessage = null,
                         lastError = throwable.message ?: "Google Drive sync failed",
+                        lastErrorCode = classifyDesktopError(throwable, isRestore = false),
                     )
                 }
             }
@@ -350,19 +365,19 @@ class DesktopGoogleAuthSyncService(
     override suspend fun restoreFromCloud(overwriteLocal: Boolean) {
         AppLogger.i(TAG, "Restore requested overwriteLocal=$overwriteLocal")
         if (!overwriteLocal) {
-            internal.update { it.copy(lastError = "Restore canceled.") }
+            internal.update { it.copy(lastError = "Restore canceled.", lastErrorCode = GoogleSyncErrorCode.RESTORE_CANCELED) }
             return
         }
-        internal.update { it.copy(isSyncing = true, lastError = null, statusMessage = null) }
+        internal.update { it.copy(isSyncing = true, lastError = null, lastErrorCode = null, statusMessage = null) }
         withContext(Dispatchers.IO) {
             val authFlow = runCatching { ensureFlow() }.getOrElse { throwable ->
                 AppLogger.e(TAG, "Restore failed: OAuth flow unavailable", throwable)
-                internal.update { it.copy(isSyncing = false, lastError = throwable.message ?: "Google OAuth not configured.") }
+                internal.update { it.copy(isSyncing = false, lastError = throwable.message ?: "Google OAuth not configured.", lastErrorCode = GoogleSyncErrorCode.OAUTH_NOT_CONFIGURED) }
                 return@withContext
             }
             val token = runCatching { requireAccessToken(authFlow) }.getOrElse { throwable ->
                 AppLogger.e(TAG, "Restore failed: token unavailable", throwable)
-                internal.update { it.copy(isSyncing = false, lastError = throwable.message ?: "Google session expired.") }
+                internal.update { it.copy(isSyncing = false, lastError = throwable.message ?: "Google session expired.", lastErrorCode = GoogleSyncErrorCode.SESSION_EXPIRED) }
                 return@withContext
             }
             runCatching {
@@ -380,6 +395,7 @@ class DesktopGoogleAuthSyncService(
                         statusMessage = "Backup restored from cloud.",
                         requiresAppRestart = true,
                         lastError = null,
+                        lastErrorCode = null,
                     )
                 }
             }.onFailure { throwable ->
@@ -389,6 +405,7 @@ class DesktopGoogleAuthSyncService(
                         isSyncing = false,
                         statusMessage = null,
                         lastError = throwable.message ?: "Google Drive restore failed",
+                        lastErrorCode = classifyDesktopError(throwable, isRestore = true),
                     )
                 }
             }
@@ -673,3 +690,19 @@ private data class GoogleProfile(
     val email: String?,
     val photoUrl: String?,
 )
+
+private fun classifyDesktopError(t: Throwable, isRestore: Boolean = false): GoogleSyncErrorCode {
+    val msg = t.message.orEmpty().lowercase()
+    return when {
+        "oauth" in msg && ("not found" in msg || "invalid" in msg || "desktop app" in msg) -> GoogleSyncErrorCode.OAUTH_NOT_CONFIGURED
+        "signed in" in msg || "not authenticated" in msg -> GoogleSyncErrorCode.ACCOUNT_NOT_AUTHENTICATED
+        "refresh google access token" in msg || "access token" in msg && "missing" in msg -> GoogleSyncErrorCode.ACCESS_TOKEN_FAILED
+        "session expired" in msg || "token" in msg && "expired" in msg -> GoogleSyncErrorCode.SESSION_EXPIRED
+        "no backup found" in msg -> GoogleSyncErrorCode.BACKUP_NOT_FOUND
+        "local database was not found" in msg || "no local data available to sync" in msg -> GoogleSyncErrorCode.LOCAL_DATA_MISSING
+        "invalid backup format" in msg || "not a valid sqlite" in msg -> GoogleSyncErrorCode.INVALID_BACKUP
+        "api error" in msg || "google api error" in msg || "http 4" in msg || "http 5" in msg -> GoogleSyncErrorCode.API
+        "timeout" in msg || "network" in msg || "connection" in msg -> GoogleSyncErrorCode.NETWORK
+        else -> if (isRestore) GoogleSyncErrorCode.RESTORE_FAILED else GoogleSyncErrorCode.SYNC_FAILED
+    }
+}
