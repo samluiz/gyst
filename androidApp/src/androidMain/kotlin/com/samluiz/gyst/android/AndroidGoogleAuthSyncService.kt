@@ -94,6 +94,16 @@ class AndroidGoogleAuthSyncService(
                     )
                 }
             }
+        if (internal.value.isSignedIn) {
+            runCatching {
+                withContext(Dispatchers.IO) {
+                    val token = fetchToken(requireSignedInAccount())
+                    findBackupFile(token)?.modifiedAt?.toString()
+                }
+            }.onSuccess { remoteTs ->
+                internal.update { it.copy(lastCloudBackupAtIso = remoteTs) }
+            }
+        }
     }
 
     override suspend fun signIn() {
@@ -112,6 +122,14 @@ class AndroidGoogleAuthSyncService(
         }
         if (isSignedInWithScope()) {
             refreshState(lastError = null, lastErrorCode = null)
+            runCatching {
+                withContext(Dispatchers.IO) {
+                    val token = fetchToken(requireSignedInAccount())
+                    findBackupFile(token)?.modifiedAt?.toString()
+                }
+            }.onSuccess { remoteTs ->
+                internal.update { it.copy(lastCloudBackupAtIso = remoteTs) }
+            }
             return
         }
         val launcher = signInLauncher ?: throw IllegalStateException("Google Sign-In not bound to Activity")
@@ -128,6 +146,14 @@ class AndroidGoogleAuthSyncService(
                 }
             }
             refreshState(lastError = null, lastErrorCode = null)
+            runCatching {
+                withContext(Dispatchers.IO) {
+                    val token = fetchToken(requireSignedInAccount())
+                    findBackupFile(token)?.modifiedAt?.toString()
+                }
+            }.onSuccess { remoteTs ->
+                internal.update { it.copy(lastCloudBackupAtIso = remoteTs) }
+            }
         } catch (t: Throwable) {
             AppLogger.e(TAG, "Sign-in failed", t)
             internal.update {
@@ -173,6 +199,7 @@ class AndroidGoogleAuthSyncService(
                 accountName = null,
                 accountEmail = null,
                 accountPhotoUrl = null,
+                lastCloudBackupAtIso = null,
                 isAuthInProgress = false,
                 isSyncing = false,
                 statusMessage = null,
@@ -202,6 +229,7 @@ class AndroidGoogleAuthSyncService(
                         it.copy(
                             isSyncing = false,
                             lastSyncAtIso = Clock.System.now().toString(),
+                            lastCloudBackupAtIso = Clock.System.now().toString(),
                             lastSyncSource = SyncSource.LOCAL_TO_CLOUD,
                             lastSyncPolicy = SyncPolicy.NEWEST_WINS,
                             hadSyncConflict = false,
@@ -222,6 +250,7 @@ class AndroidGoogleAuthSyncService(
                         it.copy(
                             isSyncing = false,
                             lastSyncAtIso = Clock.System.now().toString(),
+                            lastCloudBackupAtIso = remoteUpdatedAt?.toString(),
                             lastSyncSource = SyncSource.CLOUD_TO_LOCAL,
                             lastSyncPolicy = SyncPolicy.NEWEST_WINS,
                             hadSyncConflict = true,
@@ -238,6 +267,7 @@ class AndroidGoogleAuthSyncService(
                         it.copy(
                             isSyncing = false,
                             lastSyncAtIso = Clock.System.now().toString(),
+                            lastCloudBackupAtIso = Clock.System.now().toString(),
                             lastSyncSource = SyncSource.LOCAL_TO_CLOUD,
                             lastSyncPolicy = SyncPolicy.NEWEST_WINS,
                             hadSyncConflict = false,
@@ -286,6 +316,7 @@ class AndroidGoogleAuthSyncService(
                 it.copy(
                     isSyncing = false,
                     lastSyncAtIso = Clock.System.now().toString(),
+                    lastCloudBackupAtIso = file.modifiedAt?.toString(),
                     lastSyncSource = SyncSource.CLOUD_TO_LOCAL,
                     lastSyncPolicy = SyncPolicy.OVERWRITE_LOCAL,
                     hadSyncConflict = false,
@@ -319,6 +350,7 @@ class AndroidGoogleAuthSyncService(
                 accountName = signedAccount?.displayName,
                 accountEmail = signedAccount?.email,
                 accountPhotoUrl = signedAccount?.photoUrl?.toString(),
+                lastCloudBackupAtIso = if (signed) it.lastCloudBackupAtIso else null,
                 isAuthInProgress = false,
                 requiresAppRestart = false,
                 hadSyncConflict = false,
@@ -414,12 +446,21 @@ class AndroidGoogleAuthSyncService(
         val root = JSONObject(response)
         val files = root.optJSONArray("files") ?: return null
         if (files.length() == 0) return null
-        val file = files.optJSONObject(0) ?: return null
-        val id = file.optString("id").takeIf { it.isNotBlank() } ?: return null
-        val modifiedAt = file.optString("modifiedTime")
-            .takeIf { it.isNotBlank() }
-            ?.let { runCatching { Instant.parse(it) }.getOrNull() }
-        return RemoteBackupFile(id = id, modifiedAt = modifiedAt)
+        val candidates = buildList {
+            for (i in 0 until files.length()) {
+                val file = files.optJSONObject(i) ?: continue
+                val id = file.optString("id").takeIf { it.isNotBlank() } ?: continue
+                val modifiedAt = file.optString("modifiedTime")
+                    .takeIf { it.isNotBlank() }
+                    ?.let { runCatching { Instant.parse(it) }.getOrNull() }
+                add(RemoteBackupFile(id = id, modifiedAt = modifiedAt))
+            }
+        }
+        if (candidates.isEmpty()) return null
+        return candidates.maxWithOrNull(
+            compareBy<RemoteBackupFile> { it.modifiedAt ?: Instant.DISTANT_PAST }
+                .thenBy { it.id }
+        )
     }
 
     private fun createBackupFile(token: String, data: ByteArray) {

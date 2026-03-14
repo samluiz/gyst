@@ -120,7 +120,6 @@ import gyst.shared.generated.resources.Res
 import com.samluiz.gyst.domain.model.RecurrenceType
 import com.samluiz.gyst.domain.model.YearMonth
 import com.samluiz.gyst.domain.model.CategorySummary
-import com.samluiz.gyst.domain.service.SyncPolicy
 import com.samluiz.gyst.domain.service.SyncSource
 import com.samluiz.gyst.domain.service.GoogleSyncErrorCode
 import com.samluiz.gyst.presentation.MainState
@@ -2635,6 +2634,15 @@ private fun ProfileIdentitySection(
                         overflow = TextOverflow.Clip,
                     )
                 }
+                if (google.lastCloudBackupAtIso != null) {
+                    Text(
+                        "${s.cloudBackupAt}: ${formatInstantHuman(google.lastCloudBackupAtIso, s.languageCode)}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 2,
+                        overflow = TextOverflow.Clip,
+                    )
+                }
                 if (google.lastSyncSource != null) {
                     Text(
                         "${s.syncSource}: ${syncSourceLabel(google.lastSyncSource, s)}",
@@ -2644,13 +2652,6 @@ private fun ProfileIdentitySection(
                         overflow = TextOverflow.Clip,
                     )
                 }
-                Text(
-                    "${s.syncPolicy}: ${syncPolicyLabel(google.lastSyncPolicy, s)}",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 2,
-                    overflow = TextOverflow.Clip,
-                )
                 if (google.hadSyncConflict) {
                     Text(
                         s.conflictResolvedByPolicy,
@@ -3042,11 +3043,6 @@ private fun syncSourceLabel(source: SyncSource, s: AppStrings): String = when (s
     SyncSource.CLOUD_TO_LOCAL -> s.syncSourceCloudToLocal
 }
 
-private fun syncPolicyLabel(policy: SyncPolicy, s: AppStrings): String = when (policy) {
-    SyncPolicy.NEWEST_WINS -> s.syncPolicyNewestWins
-    SyncPolicy.OVERWRITE_LOCAL -> s.syncPolicyOverwriteLocal
-}
-
 private fun blockingMessageLabel(token: String, s: AppStrings): String = when (token) {
     "sync.restore.applying" -> s.applyingBackup
     "sync.reload.applying" -> s.applyingData
@@ -3058,8 +3054,7 @@ private fun googleFeedbackLabel(google: GoogleSyncState, s: AppStrings): String?
     google.isSyncing -> s.syncInProgress
     google.hadSyncConflict && google.lastSyncSource == SyncSource.CLOUD_TO_LOCAL -> s.syncConflictApplied
     google.lastSyncSource == SyncSource.LOCAL_TO_CLOUD -> s.syncUploaded
-    google.lastSyncSource == SyncSource.CLOUD_TO_LOCAL && google.lastSyncPolicy == SyncPolicy.OVERWRITE_LOCAL -> s.restoreApplied
-    google.lastSyncSource == SyncSource.CLOUD_TO_LOCAL -> s.syncDownloaded
+    google.lastSyncSource == SyncSource.CLOUD_TO_LOCAL -> s.restoreApplied
     else -> null
 }
 

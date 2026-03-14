@@ -43,6 +43,7 @@ data class GoogleSyncState(
     val isAuthInProgress: Boolean = false,
     val isSyncing: Boolean = false,
     val lastSyncAtIso: String? = null,
+    val lastCloudBackupAtIso: String? = null,
     val lastSyncSource: SyncSource? = null,
     val lastSyncPolicy: SyncPolicy = SyncPolicy.NEWEST_WINS,
     val hadSyncConflict: Boolean = false,

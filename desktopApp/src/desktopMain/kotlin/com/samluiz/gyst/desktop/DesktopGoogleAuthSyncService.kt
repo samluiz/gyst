@@ -127,6 +127,7 @@ class DesktopGoogleAuthSyncService(
                 return@withContext
             }
             val profile = runCatching { fetchProfile(token) }.getOrNull()
+            val remoteBackup = runCatching { findBackupFile(token) }.getOrNull()
             AppLogger.i(TAG, "Initialize completed. signedIn=${profile != null}")
             internal.update {
                 it.copy(
@@ -135,6 +136,7 @@ class DesktopGoogleAuthSyncService(
                     accountName = profile?.name,
                     accountEmail = profile?.email,
                     accountPhotoUrl = profile?.photoUrl,
+                    lastCloudBackupAtIso = remoteBackup?.modifiedAt?.toString(),
                     isAuthInProgress = false,
                     isSyncing = false,
                     requiresAppRestart = false,
@@ -200,6 +202,7 @@ class DesktopGoogleAuthSyncService(
             }
 
             val profile = runCatching { fetchProfile(token) }.getOrNull()
+            val remoteBackup = runCatching { findBackupFile(token) }.getOrNull()
             AppLogger.i(TAG, "Sign-in completed. account=${profile?.email ?: "unknown"}")
             internal.update {
                 it.copy(
@@ -208,6 +211,7 @@ class DesktopGoogleAuthSyncService(
                     accountName = profile?.name,
                     accountEmail = profile?.email,
                     accountPhotoUrl = profile?.photoUrl,
+                    lastCloudBackupAtIso = remoteBackup?.modifiedAt?.toString(),
                     isAuthInProgress = false,
                     requiresAppRestart = false,
                     lastError = null,
@@ -237,6 +241,7 @@ class DesktopGoogleAuthSyncService(
                     accountName = null,
                     accountEmail = null,
                     accountPhotoUrl = null,
+                    lastCloudBackupAtIso = null,
                     isAuthInProgress = false,
                     isSyncing = false,
                     statusMessage = null,
@@ -282,6 +287,7 @@ class DesktopGoogleAuthSyncService(
                             it.copy(
                                 isSyncing = false,
                                 lastSyncAtIso = Clock.System.now().toString(),
+                                lastCloudBackupAtIso = Clock.System.now().toString(),
                                 lastSyncSource = SyncSource.LOCAL_TO_CLOUD,
                                 lastSyncPolicy = SyncPolicy.NEWEST_WINS,
                                 hadSyncConflict = false,
@@ -300,6 +306,7 @@ class DesktopGoogleAuthSyncService(
                             it.copy(
                                 isSyncing = false,
                                 lastSyncAtIso = Clock.System.now().toString(),
+                                lastCloudBackupAtIso = remoteUpdatedAt.toString(),
                                 lastSyncSource = SyncSource.CLOUD_TO_LOCAL,
                                 lastSyncPolicy = SyncPolicy.NEWEST_WINS,
                                 hadSyncConflict = false,
@@ -319,6 +326,7 @@ class DesktopGoogleAuthSyncService(
                             it.copy(
                                 isSyncing = false,
                                 lastSyncAtIso = Clock.System.now().toString(),
+                                lastCloudBackupAtIso = remoteUpdatedAt.toString(),
                                 lastSyncSource = SyncSource.CLOUD_TO_LOCAL,
                                 lastSyncPolicy = SyncPolicy.NEWEST_WINS,
                                 hadSyncConflict = true,
@@ -338,6 +346,7 @@ class DesktopGoogleAuthSyncService(
                             it.copy(
                                 isSyncing = false,
                                 lastSyncAtIso = Clock.System.now().toString(),
+                                lastCloudBackupAtIso = Clock.System.now().toString(),
                                 lastSyncSource = SyncSource.LOCAL_TO_CLOUD,
                                 lastSyncPolicy = SyncPolicy.NEWEST_WINS,
                                 hadSyncConflict = false,
@@ -389,6 +398,7 @@ class DesktopGoogleAuthSyncService(
                     it.copy(
                         isSyncing = false,
                         lastSyncAtIso = Clock.System.now().toString(),
+                        lastCloudBackupAtIso = remote.modifiedAt?.toString(),
                         lastSyncSource = SyncSource.CLOUD_TO_LOCAL,
                         lastSyncPolicy = SyncPolicy.OVERWRITE_LOCAL,
                         hadSyncConflict = false,
@@ -503,11 +513,18 @@ class DesktopGoogleAuthSyncService(
         )
         val response = requestText(url = url, method = "GET", token = token)
         val files = json.parseToJsonElement(response).jsonObject["files"] ?: return null
-        val first = files.jsonArray.firstOrNull()?.jsonObject ?: return null
-        val id = first["id"]?.jsonPrimitive?.contentOrNull ?: return null
-        val modified = first["modifiedTime"]?.jsonPrimitive?.contentOrNull
-            ?.let { runCatching { Instant.parse(it) }.getOrNull() }
-        return RemoteBackupFile(id = id, modifiedAt = modified)
+        val candidates = files.jsonArray.mapNotNull { item ->
+            val obj = item.jsonObject
+            val id = obj["id"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
+            val modified = obj["modifiedTime"]?.jsonPrimitive?.contentOrNull
+                ?.let { runCatching { Instant.parse(it) }.getOrNull() }
+            RemoteBackupFile(id = id, modifiedAt = modified)
+        }
+        if (candidates.isEmpty()) return null
+        return candidates.maxWithOrNull(
+            compareBy<RemoteBackupFile> { it.modifiedAt ?: Instant.DISTANT_PAST }
+                .thenBy { it.id }
+        )
     }
 
     private fun createBackupFile(token: String, data: ByteArray) {
