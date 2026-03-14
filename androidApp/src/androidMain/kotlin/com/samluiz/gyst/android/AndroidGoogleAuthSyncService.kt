@@ -307,16 +307,18 @@ class AndroidGoogleAuthSyncService(
         try {
             val account = requireSignedInAccount()
             val token = withContext(Dispatchers.IO) { fetchToken(account) }
+            var restoredBackupAtIso: String? = null
             withContext(Dispatchers.IO) {
                 val file = findBackupFile(token) ?: throw IllegalStateException("No backup found on Google Drive")
                 val remoteBytes = downloadBackupFile(token, file.id)
                 writeDatabaseBytes(remoteBytes, localDbFile())
+                restoredBackupAtIso = file.modifiedAt?.toString()
             }
             internal.update {
                 it.copy(
                     isSyncing = false,
                     lastSyncAtIso = Clock.System.now().toString(),
-                    lastCloudBackupAtIso = file.modifiedAt?.toString(),
+                    lastCloudBackupAtIso = restoredBackupAtIso,
                     lastSyncSource = SyncSource.CLOUD_TO_LOCAL,
                     lastSyncPolicy = SyncPolicy.OVERWRITE_LOCAL,
                     hadSyncConflict = false,
