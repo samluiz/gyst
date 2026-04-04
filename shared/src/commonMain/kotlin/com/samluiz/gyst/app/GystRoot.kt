@@ -57,6 +57,7 @@ import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PieChart
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Savings
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Subscriptions
@@ -2408,24 +2409,59 @@ private fun ProfileTab(
             PanelCard(title = s.appVersion, icon = Icons.Default.Info) {
                 val update = state.appUpdate
                 val updateStatus = appUpdateStatusVisual(update, s)
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Text(
-                            "v${BuildInfo.VERSION_NAME}",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurface,
-                        )
-                        CompactPrimaryButton(
-                            text = s.viewLicenses,
-                            compact = true,
-                            squared = true,
-                            subtle = true,
-                            onClick = { showLicenses = true },
-                        )
+                        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            Text(
+                                "v${BuildInfo.VERSION_NAME}",
+                                style = MaterialTheme.typography.titleSmall,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                fontWeight = FontWeight.SemiBold,
+                            )
+                            val secondaryLine = when {
+                                update.isChecking -> s.updateStatusChecking
+                                update.isUpdateAvailable && update.latestVersion != null -> "${s.latestVersion}: v${update.latestVersion}"
+                                else -> updateStatus.label
+                            }
+                            Text(
+                                secondaryLine,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(2.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            if (update.isChecking) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(16.dp),
+                                    strokeWidth = 2.dp,
+                                )
+                            } else {
+                                IconCompactButton(
+                                    onClick = onCheckForUpdates,
+                                    icon = Icons.Default.Refresh,
+                                    contentDescription = s.checkUpdates,
+                                    enabled = update.isAvailable,
+                                    compact = true,
+                                    subtle = true,
+                                )
+                            }
+                            IconCompactButton(
+                                onClick = { showLicenses = true },
+                                icon = Icons.Default.Info,
+                                contentDescription = s.viewLicenses,
+                                compact = true,
+                                subtle = true,
+                            )
+                        }
                     }
                     Row(
                         modifier = Modifier
@@ -2442,17 +2478,8 @@ private fun ProfileTab(
                                 .background(updateStatus.dotColor, CircleShape),
                         )
                         Text(
-                            "${s.updateStatus}: ${updateStatus.label}",
+                            updateStatus.label,
                             style = MaterialTheme.typography.labelSmall,
-                            maxLines = 2,
-                            overflow = TextOverflow.Clip,
-                        )
-                    }
-                    if (update.latestVersion != null) {
-                        Text(
-                            "${s.latestVersion}: v${update.latestVersion}",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                         )
@@ -2471,33 +2498,18 @@ private fun ProfileTab(
                             update.lastError.ifBlank { s.updateCheckFailed },
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.error,
-                            maxLines = 2,
-                            overflow = TextOverflow.Clip,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
                         )
                     }
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
+                    if (update.isUpdateAvailable && update.downloadUrl != null) {
                         CompactPrimaryButton(
-                            text = s.checkUpdates,
+                            text = s.updateNow,
                             compact = true,
                             squared = true,
-                            subtle = true,
-                            enabled = update.isAvailable,
-                            loading = update.isChecking,
-                            modifier = Modifier.weight(1f),
-                            onClick = onCheckForUpdates,
+                            modifier = Modifier.fillMaxWidth(),
+                            onClick = onOpenUpdate,
                         )
-                        if (update.isUpdateAvailable && update.downloadUrl != null) {
-                            CompactPrimaryButton(
-                                text = s.updateNow,
-                                compact = true,
-                                squared = true,
-                                modifier = Modifier.weight(1f),
-                                onClick = onOpenUpdate,
-                            )
-                        }
                     }
                 }
             }
@@ -2636,6 +2648,7 @@ private fun ProfileIdentitySection(
     val initial = displayName.firstOrNull()?.uppercase() ?: "G"
     val remotePhoto = rememberRemoteProfileImage(photoUrl)
     var showSyncTooltip by remember { mutableStateOf(false) }
+    var showGoogleActions by remember { mutableStateOf(false) }
     val syncBadge = if (google.isAvailable && google.isSignedIn) {
         when (cloudSyncStatus(google)) {
             CloudSyncStatus.UPDATED -> SyncBadgeVisual(
@@ -2685,7 +2698,7 @@ private fun ProfileIdentitySection(
                 Text(initial, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
             }
         }
-        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -2750,7 +2763,7 @@ private fun ProfileIdentitySection(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier.widthIn(max = 240.dp),
                 )
                 if (google.isSignedIn) {
                     GoogleMark(modifier = Modifier.size(14.dp))
@@ -2827,40 +2840,44 @@ private fun ProfileIdentitySection(
                     onClick = onSignInGoogle,
                 )
             } else {
-                Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterEnd) {
+                    IconCompactButton(
+                        onClick = { showGoogleActions = true },
+                        icon = Icons.Default.MoreVert,
+                        contentDescription = s.settings,
+                        compact = true,
+                    )
+                    DropdownMenu(
+                        expanded = showGoogleActions,
+                        onDismissRequest = { showGoogleActions = false },
+                        modifier = Modifier
+                            .widthIn(min = 190.dp, max = 260.dp)
+                            .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.98f)),
                     ) {
-                        CompactPrimaryButton(
-                            s.syncDrive,
+                        DropdownMenuItem(
+                            text = { Text(s.syncDrive) },
                             enabled = !google.isSyncing,
-                            loading = google.isSyncing,
-                            compact = true,
-                            squared = true,
-                            modifier = Modifier.weight(1f),
-                            onClick = onSyncGoogleDrive,
+                            onClick = {
+                                showGoogleActions = false
+                                onSyncGoogleDrive()
+                            },
                         )
-                        CompactPrimaryButton(
-                            s.restoreDrive,
+                        DropdownMenuItem(
+                            text = { Text(s.restoreDrive) },
                             enabled = !google.isSyncing,
-                            compact = true,
-                            squared = true,
-                            modifier = Modifier.weight(1f),
-                            onClick = onRestoreGoogleDrive,
+                            onClick = {
+                                showGoogleActions = false
+                                onRestoreGoogleDrive()
+                            },
+                        )
+                        DropdownMenuItem(
+                            text = { Text(s.logoutGoogle) },
+                            onClick = {
+                                showGoogleActions = false
+                                onSignOutGoogle()
+                            },
                         )
                     }
-                    CompactPrimaryButton(
-                        text = s.logoutGoogle,
-                        compact = true,
-                        squared = true,
-                        subtle = true,
-                        modifier = Modifier.fillMaxWidth(),
-                        onClick = onSignOutGoogle,
-                    )
                 }
             }
         }
