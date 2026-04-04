@@ -2370,10 +2370,58 @@ private fun ProfileTab(
     var showRestoreConfirm by remember { mutableStateOf(false) }
     var showResetConfirm by remember { mutableStateOf(false) }
     var showLicenses by remember { mutableStateOf(false) }
+    var showGoogleActions by remember { mutableStateOf(false) }
 
     LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxSize()) {
         item {
-            PanelCard(title = s.profile, icon = Icons.Default.Person) {
+            PanelCard(
+                title = s.profile,
+                icon = Icons.Default.Person,
+                headerTrailing = {
+                    if (google.isAvailable && google.isSignedIn) {
+                        Box {
+                            IconCompactButton(
+                                onClick = { showGoogleActions = true },
+                                icon = Icons.Default.MoreVert,
+                                contentDescription = s.settings,
+                                compact = true,
+                                subtle = true,
+                            )
+                            DropdownMenu(
+                                expanded = showGoogleActions,
+                                onDismissRequest = { showGoogleActions = false },
+                                modifier = Modifier
+                                    .widthIn(min = 190.dp, max = 260.dp)
+                                    .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.98f)),
+                            ) {
+                                DropdownMenuItem(
+                                    text = { Text(s.syncDrive) },
+                                    enabled = !google.isSyncing,
+                                    onClick = {
+                                        showGoogleActions = false
+                                        onSyncGoogleDrive()
+                                    },
+                                )
+                                DropdownMenuItem(
+                                    text = { Text(s.restoreDrive) },
+                                    enabled = !google.isSyncing,
+                                    onClick = {
+                                        showGoogleActions = false
+                                        showRestoreConfirm = true
+                                    },
+                                )
+                                DropdownMenuItem(
+                                    text = { Text(s.logoutGoogle) },
+                                    onClick = {
+                                        showGoogleActions = false
+                                        onSignOutGoogle()
+                                    },
+                                )
+                            }
+                        }
+                    }
+                },
+            ) {
                 ProfileIdentitySection(
                     s = s,
                     name = google.accountName,
@@ -2381,9 +2429,6 @@ private fun ProfileTab(
                     photoUrl = google.accountPhotoUrl,
                     google = google,
                     onSignInGoogle = onSignInGoogle,
-                    onSignOutGoogle = onSignOutGoogle,
-                    onSyncGoogleDrive = onSyncGoogleDrive,
-                    onRestoreGoogleDrive = { showRestoreConfirm = true },
                 )
             }
         }
@@ -2462,27 +2507,6 @@ private fun ProfileTab(
                                 subtle = true,
                             )
                         }
-                    }
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .background(updateStatus.containerColor, RoundedCornerShape(10.dp))
-                            .border(1.dp, updateStatus.borderColor, RoundedCornerShape(10.dp))
-                            .padding(horizontal = 9.dp, vertical = 6.dp),
-                        horizontalArrangement = Arrangement.spacedBy(7.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(7.dp)
-                                .background(updateStatus.dotColor, CircleShape),
-                        )
-                        Text(
-                            updateStatus.label,
-                            style = MaterialTheme.typography.labelSmall,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
                     }
                     if (update.isUpdateAvailable && !update.notes.isNullOrBlank()) {
                         Text(
@@ -2639,16 +2663,12 @@ private fun ProfileIdentitySection(
     photoUrl: String?,
     google: GoogleSyncState,
     onSignInGoogle: () -> Unit,
-    onSignOutGoogle: () -> Unit,
-    onSyncGoogleDrive: () -> Unit,
-    onRestoreGoogleDrive: () -> Unit,
 ) {
     val displayName = name?.takeIf { it.isNotBlank() } ?: s.guestUser
     val displayEmail = email?.takeIf { it.isNotBlank() } ?: s.noGoogleConnected
     val initial = displayName.firstOrNull()?.uppercase() ?: "G"
     val remotePhoto = rememberRemoteProfileImage(photoUrl)
     var showSyncTooltip by remember { mutableStateOf(false) }
-    var showGoogleActions by remember { mutableStateOf(false) }
     val syncBadge = if (google.isAvailable && google.isSignedIn) {
         when (cloudSyncStatus(google)) {
             CloudSyncStatus.UPDATED -> SyncBadgeVisual(
@@ -2827,60 +2847,16 @@ private fun ProfileIdentitySection(
             }
         }
     }
-    if (google.isAvailable) {
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-            if (!google.isSignedIn) {
-                CompactPrimaryButton(
-                    s.loginGoogle,
-                    loading = google.isAuthInProgress,
-                    compact = true,
-                    squared = true,
-                    leadingContent = { GoogleMark() },
-                    modifier = Modifier.fillMaxWidth(),
-                    onClick = onSignInGoogle,
-                )
-            } else {
-                Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterEnd) {
-                    IconCompactButton(
-                        onClick = { showGoogleActions = true },
-                        icon = Icons.Default.MoreVert,
-                        contentDescription = s.settings,
-                        compact = true,
-                    )
-                    DropdownMenu(
-                        expanded = showGoogleActions,
-                        onDismissRequest = { showGoogleActions = false },
-                        modifier = Modifier
-                            .widthIn(min = 190.dp, max = 260.dp)
-                            .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.98f)),
-                    ) {
-                        DropdownMenuItem(
-                            text = { Text(s.syncDrive) },
-                            enabled = !google.isSyncing,
-                            onClick = {
-                                showGoogleActions = false
-                                onSyncGoogleDrive()
-                            },
-                        )
-                        DropdownMenuItem(
-                            text = { Text(s.restoreDrive) },
-                            enabled = !google.isSyncing,
-                            onClick = {
-                                showGoogleActions = false
-                                onRestoreGoogleDrive()
-                            },
-                        )
-                        DropdownMenuItem(
-                            text = { Text(s.logoutGoogle) },
-                            onClick = {
-                                showGoogleActions = false
-                                onSignOutGoogle()
-                            },
-                        )
-                    }
-                }
-            }
-        }
+    if (google.isAvailable && !google.isSignedIn) {
+        CompactPrimaryButton(
+            s.loginGoogle,
+            loading = google.isAuthInProgress,
+            compact = true,
+            squared = true,
+            leadingContent = { GoogleMark() },
+            modifier = Modifier.fillMaxWidth(),
+            onClick = onSignInGoogle,
+        )
     }
 }
 
