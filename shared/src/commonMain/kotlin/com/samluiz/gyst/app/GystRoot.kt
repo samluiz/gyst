@@ -52,6 +52,7 @@ import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.CreditCardOff
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.MoreVert
@@ -2721,10 +2722,16 @@ private fun ProfileIdentitySection(
         Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text(displayName, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                Text(
+                    displayName,
+                    style = MaterialTheme.typography.titleMedium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false),
+                )
                 if (syncBadge != null) {
                     Box {
                         Row(
@@ -2732,20 +2739,15 @@ private fun ProfileIdentitySection(
                                 .background(syncBadge.containerColor, RoundedCornerShape(999.dp))
                                 .border(1.dp, syncBadge.borderColor, RoundedCornerShape(999.dp))
                                 .clickable { showSyncTooltip = true }
-                                .padding(horizontal = 8.dp, vertical = 4.dp),
+                                .padding(horizontal = 7.dp, vertical = 4.dp),
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(5.dp),
+                            horizontalArrangement = Arrangement.Center,
                         ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(6.dp)
-                                    .background(syncBadge.dotColor, CircleShape),
-                            )
-                            Text(
-                                text = "Sync",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurface,
-                                maxLines = 1,
+                            Icon(
+                                imageVector = Icons.Default.Cloud,
+                                contentDescription = s.cloudSyncStatus,
+                                tint = syncBadge.dotColor,
+                                modifier = Modifier.size(13.dp),
                             )
                         }
                         DropdownMenu(
