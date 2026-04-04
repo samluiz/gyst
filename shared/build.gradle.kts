@@ -94,6 +94,12 @@ abstract class GenerateBuildInfoTask : DefaultTask() {
     @get:Input
     abstract val versionCode: Property<Int>
 
+    @get:Input
+    abstract val updateApiUrl: Property<String>
+
+    @get:Input
+    abstract val releasesPageUrl: Property<String>
+
     @get:OutputDirectory
     abstract val outputDir: DirectoryProperty
 
@@ -107,6 +113,8 @@ abstract class GenerateBuildInfoTask : DefaultTask() {
             object BuildInfo {
                 const val VERSION_NAME: String = "${versionName.get()}"
                 const val VERSION_CODE: Int = ${versionCode.get()}
+                const val UPDATE_API_URL: String = "${updateApiUrl.get()}"
+                const val RELEASES_PAGE_URL: String = "${releasesPageUrl.get()}"
             }
             """.trimIndent()
         packageDir.mkdirs()
@@ -120,6 +128,14 @@ val generateBuildInfo by tasks.registering(GenerateBuildInfoTask::class) {
     outputDir.set(generatedBuildInfoDir)
     versionName.set(rootProject.extra["appVersionName"].toString())
     versionCode.set(rootProject.extra["appVersionCode"].toString().toInt())
+    updateApiUrl.set(
+        providers.gradleProperty("app.updateApiUrl").orNull
+            ?: "https://api.github.com/repos/samluiz/gyst/releases/latest"
+    )
+    releasesPageUrl.set(
+        providers.gradleProperty("app.releasesPageUrl").orNull
+            ?: "https://github.com/samluiz/gyst/releases"
+    )
 }
 
 kotlin.sourceSets.named("commonMain") {

@@ -9,6 +9,7 @@ import com.samluiz.gyst.app.GystRoot
 import com.samluiz.gyst.data.repository.SqlDriverFactory
 import com.samluiz.gyst.db.GystDatabase
 import com.samluiz.gyst.di.initKoin
+import com.samluiz.gyst.domain.service.AppUpdateService
 import com.samluiz.gyst.domain.service.GoogleAuthSyncService
 import com.samluiz.gyst.logging.AppLogger
 import org.koin.dsl.module
@@ -35,6 +36,7 @@ fun main() {
             get<SqlDriverFactory>().createDriver()
         }
         single<GoogleAuthSyncService> { DesktopGoogleAuthSyncService(dbPath = dbPath, backupPath = backupPath) }
+        single<AppUpdateService> { DesktopAppUpdateService() }
     })
 
     application {

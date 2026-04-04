@@ -4,7 +4,9 @@ import app.cash.sqldelight.db.SqlDriver
 import app.cash.sqldelight.driver.native.NativeSqliteDriver
 import com.samluiz.gyst.data.repository.SqlDriverFactory
 import com.samluiz.gyst.db.GystDatabase
+import com.samluiz.gyst.domain.service.AppUpdateService
 import com.samluiz.gyst.domain.service.GoogleAuthSyncService
+import com.samluiz.gyst.domain.service.NoOpAppUpdateService
 import kotlinx.cinterop.ExperimentalForeignApi
 import org.koin.core.module.Module
 import org.koin.dsl.module
@@ -29,6 +31,7 @@ fun iosPlatformModule(): Module = module {
             backupPath = iosBackupPath(),
         )
     }
+    single<AppUpdateService> { NoOpAppUpdateService() }
 }
 
 @OptIn(ExperimentalForeignApi::class)

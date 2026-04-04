@@ -35,7 +35,7 @@ private val sharedModule = module {
     single { MarkSchedulePaidUseCase(get()) }
 
     single { SeedDataInitializer(get(), get(), get()) }
-    single { MainStore(get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get()) }
+    single { MainStore(get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get()) }
 }
 
 private var koinStarted = false

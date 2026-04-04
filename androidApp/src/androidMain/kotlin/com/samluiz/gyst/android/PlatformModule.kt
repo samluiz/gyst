@@ -8,6 +8,7 @@ import app.cash.sqldelight.db.SqlDriver
 import app.cash.sqldelight.driver.android.AndroidSqliteDriver
 import com.samluiz.gyst.data.repository.SqlDriverFactory
 import com.samluiz.gyst.db.GystDatabase
+import com.samluiz.gyst.domain.service.AppUpdateService
 import com.samluiz.gyst.domain.service.GoogleAuthSyncService
 import org.koin.dsl.module
 import java.io.File
@@ -23,6 +24,9 @@ fun androidPlatformModule(context: Context): org.koin.core.module.Module = modul
     }
     single<GoogleAuthSyncService> {
         AndroidGoogleAuthSyncService(context.applicationContext)
+    }
+    single<AppUpdateService> {
+        AndroidAppUpdateService(context.applicationContext)
     }
 }
 

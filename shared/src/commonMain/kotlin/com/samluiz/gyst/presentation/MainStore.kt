@@ -6,6 +6,8 @@ import com.samluiz.gyst.data.repository.DatabaseRuntimeController
 import com.samluiz.gyst.domain.repository.*
 import com.samluiz.gyst.domain.service.GoogleAuthSyncService
 import com.samluiz.gyst.domain.service.GoogleSyncState
+import com.samluiz.gyst.domain.service.AppUpdateService
+import com.samluiz.gyst.domain.service.AppUpdateState
 import com.samluiz.gyst.domain.usecase.*
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -44,6 +46,7 @@ class MainStore(
     private val settingsRepository: SettingsRepository,
     private val localDataMaintenanceRepository: LocalDataMaintenanceRepository,
     private val googleAuthSyncService: GoogleAuthSyncService,
+    private val appUpdateService: AppUpdateService,
     private val databaseRuntimeController: DatabaseRuntimeController,
     private val computeMonthlySummaryUseCase: ComputeMonthlySummaryUseCase,
     private val computeCashFlowForecastUseCase: ComputeCashFlowForecastUseCase,
@@ -64,6 +67,11 @@ class MainStore(
                 _state.value = _state.value.copy(googleSync = google)
             }
         }
+        scope.launch {
+            appUpdateService.state.collectLatest { update ->
+                _state.value = _state.value.copy(appUpdate = update)
+            }
+        }
     }
 
     fun bootstrap() {
@@ -74,6 +82,7 @@ class MainStore(
             _state.value = _state.value.copy(themeMode = theme, language = language, isLoading = true)
             seedDataInitializer.ensureSeedData()
             googleAuthSyncService.initialize()
+            appUpdateService.checkForUpdates(silent = true)
             val now = Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault()).date
             val month = YearMonth.fromDate(now)
             _state.value = _state.value.copy(currentMonth = month)
@@ -167,6 +176,18 @@ class MainStore(
     fun signOutGoogle() {
         scope.launchSafely {
             googleAuthSyncService.signOut()
+        }
+    }
+
+    fun checkForUpdates() {
+        scope.launchSafely {
+            appUpdateService.checkForUpdates(silent = false)
+        }
+    }
+
+    fun openUpdate() {
+        scope.launchSafely {
+            appUpdateService.openUpdate()
         }
     }
 
@@ -677,6 +698,7 @@ class MainStore(
             themeMode = themeMode,
             slowQueries = slowQueries,
             googleSync = googleAuthSyncService.state.value,
+            appUpdate = appUpdateService.state.value,
             errorMessage = previous.errorMessage,
             blockingMessage = previous.blockingMessage,
             infoMessage = previous.infoMessage,
@@ -759,6 +781,9 @@ data class MainState(
     val googleSync: GoogleSyncState = GoogleSyncState(
         isAvailable = false,
         isSignedIn = false,
+    ),
+    val appUpdate: AppUpdateState = AppUpdateState(
+        isAvailable = false,
     ),
     val planningUsePostSavingsBudget: Boolean = true,
     val planningMonthlyContributionCents: Long = 50_000L,

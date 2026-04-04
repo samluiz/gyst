@@ -122,6 +122,7 @@ import com.samluiz.gyst.domain.model.YearMonth
 import com.samluiz.gyst.domain.model.CategorySummary
 import com.samluiz.gyst.domain.service.SyncSource
 import com.samluiz.gyst.domain.service.GoogleSyncErrorCode
+import com.samluiz.gyst.domain.service.AppUpdateState
 import com.samluiz.gyst.presentation.MainState
 import com.samluiz.gyst.presentation.MainStore
 import com.samluiz.gyst.domain.service.GoogleSyncState
@@ -289,6 +290,8 @@ fun GystRoot() {
                                         state,
                                         onSetLanguage = store::setLanguage,
                                         onSetTheme = store::setThemeMode,
+                                        onCheckForUpdates = store::checkForUpdates,
+                                        onOpenUpdate = store::openUpdate,
                                         onSignInGoogle = store::signInGoogle,
                                         onSignOutGoogle = store::signOutGoogle,
                                         onSyncGoogleDrive = store::syncGoogleDrive,
@@ -2354,6 +2357,8 @@ private fun ProfileTab(
     state: MainState,
     onSetLanguage: (String) -> Unit,
     onSetTheme: (String) -> Unit,
+    onCheckForUpdates: () -> Unit,
+    onOpenUpdate: () -> Unit,
     onSignInGoogle: () -> Unit,
     onSignOutGoogle: () -> Unit,
     onSyncGoogleDrive: () -> Unit,
@@ -2401,23 +2406,99 @@ private fun ProfileTab(
         }
         item {
             PanelCard(title = s.appVersion, icon = Icons.Default.Info) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        "v${BuildInfo.VERSION_NAME}",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurface,
-                    )
-                    CompactPrimaryButton(
-                        text = s.viewLicenses,
-                        compact = true,
-                        squared = true,
-                        subtle = true,
-                        onClick = { showLicenses = true },
-                    )
+                val update = state.appUpdate
+                val updateStatus = appUpdateStatusVisual(update, s)
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            "v${BuildInfo.VERSION_NAME}",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurface,
+                        )
+                        CompactPrimaryButton(
+                            text = s.viewLicenses,
+                            compact = true,
+                            squared = true,
+                            subtle = true,
+                            onClick = { showLicenses = true },
+                        )
+                    }
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(updateStatus.containerColor, RoundedCornerShape(10.dp))
+                            .border(1.dp, updateStatus.borderColor, RoundedCornerShape(10.dp))
+                            .padding(horizontal = 9.dp, vertical = 6.dp),
+                        horizontalArrangement = Arrangement.spacedBy(7.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(7.dp)
+                                .background(updateStatus.dotColor, CircleShape),
+                        )
+                        Text(
+                            "${s.updateStatus}: ${updateStatus.label}",
+                            style = MaterialTheme.typography.labelSmall,
+                            maxLines = 2,
+                            overflow = TextOverflow.Clip,
+                        )
+                    }
+                    if (update.latestVersion != null) {
+                        Text(
+                            "${s.latestVersion}: v${update.latestVersion}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                    if (update.isUpdateAvailable && !update.notes.isNullOrBlank()) {
+                        Text(
+                            update.notes.lineSequence().firstOrNull().orEmpty(),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                    if (update.lastError != null) {
+                        Text(
+                            update.lastError.ifBlank { s.updateCheckFailed },
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.error,
+                            maxLines = 2,
+                            overflow = TextOverflow.Clip,
+                        )
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        CompactPrimaryButton(
+                            text = s.checkUpdates,
+                            compact = true,
+                            squared = true,
+                            subtle = true,
+                            enabled = update.isAvailable,
+                            loading = update.isChecking,
+                            modifier = Modifier.weight(1f),
+                            onClick = onCheckForUpdates,
+                        )
+                        if (update.isUpdateAvailable && update.downloadUrl != null) {
+                            CompactPrimaryButton(
+                                text = s.updateNow,
+                                compact = true,
+                                squared = true,
+                                modifier = Modifier.weight(1f),
+                                onClick = onOpenUpdate,
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -2554,6 +2635,30 @@ private fun ProfileIdentitySection(
     val displayEmail = email?.takeIf { it.isNotBlank() } ?: s.noGoogleConnected
     val initial = displayName.firstOrNull()?.uppercase() ?: "G"
     val remotePhoto = rememberRemoteProfileImage(photoUrl)
+    var showSyncTooltip by remember { mutableStateOf(false) }
+    val syncBadge = if (google.isAvailable && google.isSignedIn) {
+        when (cloudSyncStatus(google)) {
+            CloudSyncStatus.UPDATED -> SyncBadgeVisual(
+                label = s.cloudSyncUpdated,
+                containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.30f),
+                borderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.30f),
+                dotColor = MaterialTheme.colorScheme.primary,
+            )
+            CloudSyncStatus.OUTDATED -> SyncBadgeVisual(
+                label = s.cloudSyncOutdated,
+                containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.45f),
+                borderColor = MaterialTheme.colorScheme.error.copy(alpha = 0.35f),
+                dotColor = MaterialTheme.colorScheme.error,
+            )
+            CloudSyncStatus.NO_BACKUP -> SyncBadgeVisual(
+                label = s.cloudSyncNoBackup,
+                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.42f),
+                borderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.22f),
+                dotColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.72f),
+            )
+            null -> null
+        }
+    } else null
 
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -2581,7 +2686,60 @@ private fun ProfileIdentitySection(
             }
         }
         Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text(displayName, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(displayName, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                if (syncBadge != null) {
+                    Box {
+                        Row(
+                            modifier = Modifier
+                                .background(syncBadge.containerColor, RoundedCornerShape(999.dp))
+                                .border(1.dp, syncBadge.borderColor, RoundedCornerShape(999.dp))
+                                .clickable { showSyncTooltip = true }
+                                .padding(horizontal = 8.dp, vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(5.dp),
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(6.dp)
+                                    .background(syncBadge.dotColor, CircleShape),
+                            )
+                            Text(
+                                text = "Sync",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                maxLines = 1,
+                            )
+                        }
+                        DropdownMenu(
+                            expanded = showSyncTooltip,
+                            onDismissRequest = { showSyncTooltip = false },
+                            modifier = Modifier
+                                .widthIn(min = 220.dp, max = 300.dp)
+                                .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.98f)),
+                        ) {
+                            DropdownMenuItem(
+                                text = {
+                                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                        Text(syncBadge.label, style = MaterialTheme.typography.labelMedium)
+                                        google.lastCloudBackupAtIso?.let {
+                                            Text("${s.cloudBackupAt}: ${formatInstantHuman(it, s.languageCode)}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        }
+                                        google.lastSyncAtIso?.let {
+                                            Text("${s.syncedAt}: ${formatInstantHuman(it, s.languageCode)}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        }
+                                    }
+                                },
+                                onClick = { showSyncTooltip = false },
+                            )
+                        }
+                    }
+                }
+            }
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -2590,85 +2748,32 @@ private fun ProfileIdentitySection(
                     displayEmail,
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 2,
-                    overflow = TextOverflow.Clip,
-                    modifier = Modifier.weight(1f, fill = false),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f),
                 )
                 if (google.isSignedIn) {
                     GoogleMark(modifier = Modifier.size(14.dp))
                 }
             }
-            if (!google.isAvailable) {
+            if (!google.isAvailable && google.lastError == null) {
                 Text(
                     s.syncUnavailable,
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 2,
-                    overflow = TextOverflow.Clip,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                 )
             } else {
                 val feedback = googleFeedbackLabel(google, s)
-                if (feedback != null) {
+                if (feedback != null && google.isSyncing) {
                     Text(
                         feedback,
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.primary,
-                        maxLines = 3,
-                        overflow = TextOverflow.Clip,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
                     )
-                }
-                val cloudSyncStatus = cloudSyncStatus(google)
-                if (cloudSyncStatus != null) {
-                    val badge = when (cloudSyncStatus) {
-                        CloudSyncStatus.NO_BACKUP -> SyncBadgeVisual(
-                            label = s.cloudSyncNoBackup,
-                            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.42f),
-                            borderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.22f),
-                            dotColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.72f),
-                        )
-                        CloudSyncStatus.OUTDATED -> SyncBadgeVisual(
-                            label = s.cloudSyncOutdated,
-                            containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.45f),
-                            borderColor = MaterialTheme.colorScheme.error.copy(alpha = 0.35f),
-                            dotColor = MaterialTheme.colorScheme.error,
-                        )
-                        CloudSyncStatus.UPDATED -> SyncBadgeVisual(
-                            label = s.cloudSyncUpdated,
-                            containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f),
-                            borderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.30f),
-                            dotColor = MaterialTheme.colorScheme.primary,
-                        )
-                    }
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(top = 2.dp)
-                            .background(
-                                color = badge.containerColor,
-                                shape = RoundedCornerShape(10.dp),
-                            )
-                            .border(
-                                width = 1.dp,
-                                color = badge.borderColor,
-                                shape = RoundedCornerShape(10.dp),
-                            )
-                            .padding(horizontal = 8.dp, vertical = 5.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(7.dp)
-                                .background(badge.dotColor, CircleShape),
-                        )
-                        Text(
-                            text = "${s.cloudSyncStatus}: ${badge.label}",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurface,
-                            maxLines = 2,
-                            overflow = TextOverflow.Clip,
-                        )
-                    }
                 }
                 if (google.isSyncing) {
                     LinearProgressIndicator(
@@ -2678,40 +2783,13 @@ private fun ProfileIdentitySection(
                         trackColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
                     )
                 }
-                if (google.lastSyncAtIso != null) {
-                    Text(
-                        "${s.syncedAt}: ${formatInstantHuman(google.lastSyncAtIso, s.languageCode)}",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 2,
-                        overflow = TextOverflow.Clip,
-                    )
-                }
-                if (google.lastCloudBackupAtIso != null) {
-                    Text(
-                        "${s.cloudBackupAt}: ${formatInstantHuman(google.lastCloudBackupAtIso, s.languageCode)}",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 2,
-                        overflow = TextOverflow.Clip,
-                    )
-                }
-                if (google.lastSyncSource != null) {
-                    Text(
-                        "${s.syncSource}: ${syncSourceLabel(google.lastSyncSource, s)}",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 2,
-                        overflow = TextOverflow.Clip,
-                    )
-                }
                 if (google.hadSyncConflict) {
                     Text(
                         s.conflictResolvedByPolicy,
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.secondary,
-                        maxLines = 3,
-                        overflow = TextOverflow.Clip,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
                     )
                 }
                 if (google.requiresAppRestart) {
@@ -2719,8 +2797,8 @@ private fun ProfileIdentitySection(
                         s.restartAppToApply,
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.secondary,
-                        maxLines = 3,
-                        overflow = TextOverflow.Clip,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
                     )
                 }
                 val localizedError = googleErrorLabel(google, s)
@@ -2729,8 +2807,8 @@ private fun ProfileIdentitySection(
                         localizedError,
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.error,
-                        maxLines = 3,
-                        overflow = TextOverflow.Clip,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
                     )
                 }
             }
@@ -3134,6 +3212,39 @@ private fun googleErrorLabel(google: GoogleSyncState, s: AppStrings): String? {
     return mapped ?: google.lastError
 }
 
+@Composable
+private fun appUpdateStatusVisual(
+    update: AppUpdateState,
+    s: AppStrings,
+): SyncBadgeVisual {
+    return when {
+        !update.isAvailable -> SyncBadgeVisual(
+            label = s.updateStatusUnavailable,
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.40f),
+            borderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.22f),
+            dotColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.72f),
+        )
+        update.isChecking -> SyncBadgeVisual(
+            label = s.updateStatusChecking,
+            containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.38f),
+            borderColor = MaterialTheme.colorScheme.secondary.copy(alpha = 0.28f),
+            dotColor = MaterialTheme.colorScheme.secondary,
+        )
+        update.isUpdateAvailable -> SyncBadgeVisual(
+            label = s.updateStatusAvailable,
+            containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.45f),
+            borderColor = MaterialTheme.colorScheme.error.copy(alpha = 0.34f),
+            dotColor = MaterialTheme.colorScheme.error,
+        )
+        else -> SyncBadgeVisual(
+            label = s.updateStatusCurrent,
+            containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f),
+            borderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.30f),
+            dotColor = MaterialTheme.colorScheme.primary,
+        )
+    }
+}
+
 private enum class CloudSyncStatus {
     UPDATED,
     OUTDATED,
@@ -3146,6 +3257,7 @@ private data class SyncBadgeVisual(
     val borderColor: Color,
     val dotColor: Color,
 )
+
 
 private fun cloudSyncStatus(google: GoogleSyncState): CloudSyncStatus? {
     if (!google.isAvailable || !google.isSignedIn) return null
