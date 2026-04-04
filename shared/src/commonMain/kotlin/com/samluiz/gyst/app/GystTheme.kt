@@ -35,6 +35,26 @@ private val GystColors: ColorScheme = darkColorScheme(
     outline = Color(0xFF4A4A52),
 )
 
+private val GystAmoledColors: ColorScheme = darkColorScheme(
+    primary = Color(0xFFE7E7EB),
+    onPrimary = Color(0xFF000000),
+    primaryContainer = Color(0xFF131316),
+    onPrimaryContainer = Color(0xFFF4F4F7),
+    secondary = Color(0xFFB9BAC3),
+    onSecondary = Color(0xFF000000),
+    tertiary = Color(0xFFCDCED7),
+    onTertiary = Color(0xFF000000),
+    background = Color(0xFF000000),
+    onBackground = Color(0xFFF5F5F7),
+    surface = Color(0xFF000000),
+    onSurface = Color(0xFFF1F1F4),
+    surfaceVariant = Color(0xFF0D0D10),
+    onSurfaceVariant = Color(0xFFD2D3DA),
+    error = Color(0xFFFFB4AB),
+    onError = Color(0xFF000000),
+    outline = Color(0xFF3A3A42),
+)
+
 private val GystLightColors: ColorScheme = lightColorScheme(
     primary = Color(0xFF1E1E22),
     onPrimary = Color(0xFFF9F9FA),
@@ -117,13 +137,17 @@ private val GystShapes = Shapes(
 
 @Composable
 fun GystTheme(themeMode: String = "system", content: @Composable () -> Unit) {
-    val isDark = when (themeMode) {
-        "light" -> false
-        "dark" -> true
-        else -> isSystemInDarkTheme()
+    val resolvedMode = when (themeMode) {
+        "light", "dark", "amoled" -> themeMode
+        else -> if (isSystemInDarkTheme()) "dark" else "light"
+    }
+    val colors = when (resolvedMode) {
+        "light" -> GystLightColors
+        "amoled" -> GystAmoledColors
+        else -> GystColors
     }
     MaterialTheme(
-        colorScheme = if (isDark) GystColors else GystLightColors,
+        colorScheme = colors,
         typography = GystTypography,
         shapes = GystShapes,
         content = content,

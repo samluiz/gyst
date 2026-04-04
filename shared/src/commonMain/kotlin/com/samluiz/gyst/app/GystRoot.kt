@@ -2393,9 +2393,9 @@ private fun ProfileTab(
         item {
             PanelCard(title = s.theme, icon = Icons.Default.Settings) {
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    AppToggleChip(selected = state.themeMode == "system", onClick = { onSetTheme("system") }, text = s.system)
                     AppToggleChip(selected = state.themeMode == "light", onClick = { onSetTheme("light") }, text = s.light)
                     AppToggleChip(selected = state.themeMode == "dark", onClick = { onSetTheme("dark") }, text = s.dark)
+                    AppToggleChip(selected = state.themeMode == "amoled", onClick = { onSetTheme("amoled") }, text = s.amoled)
                 }
             }
         }
@@ -2616,6 +2616,59 @@ private fun ProfileIdentitySection(
                         maxLines = 3,
                         overflow = TextOverflow.Clip,
                     )
+                }
+                val cloudSyncStatus = cloudSyncStatus(google)
+                if (cloudSyncStatus != null) {
+                    val badge = when (cloudSyncStatus) {
+                        CloudSyncStatus.NO_BACKUP -> SyncBadgeVisual(
+                            label = s.cloudSyncNoBackup,
+                            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.42f),
+                            borderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.22f),
+                            dotColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.72f),
+                        )
+                        CloudSyncStatus.OUTDATED -> SyncBadgeVisual(
+                            label = s.cloudSyncOutdated,
+                            containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.45f),
+                            borderColor = MaterialTheme.colorScheme.error.copy(alpha = 0.35f),
+                            dotColor = MaterialTheme.colorScheme.error,
+                        )
+                        CloudSyncStatus.UPDATED -> SyncBadgeVisual(
+                            label = s.cloudSyncUpdated,
+                            containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f),
+                            borderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.30f),
+                            dotColor = MaterialTheme.colorScheme.primary,
+                        )
+                    }
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 2.dp)
+                            .background(
+                                color = badge.containerColor,
+                                shape = RoundedCornerShape(10.dp),
+                            )
+                            .border(
+                                width = 1.dp,
+                                color = badge.borderColor,
+                                shape = RoundedCornerShape(10.dp),
+                            )
+                            .padding(horizontal = 8.dp, vertical = 5.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(7.dp)
+                                .background(badge.dotColor, CircleShape),
+                        )
+                        Text(
+                            text = "${s.cloudSyncStatus}: ${badge.label}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            maxLines = 2,
+                            overflow = TextOverflow.Clip,
+                        )
+                    }
                 }
                 if (google.isSyncing) {
                     LinearProgressIndicator(
@@ -3079,6 +3132,36 @@ private fun googleErrorLabel(google: GoogleSyncState, s: AppStrings): String? {
         GoogleSyncErrorCode.UNKNOWN, null -> null
     }
     return mapped ?: google.lastError
+}
+
+private enum class CloudSyncStatus {
+    UPDATED,
+    OUTDATED,
+    NO_BACKUP,
+}
+
+private data class SyncBadgeVisual(
+    val label: String,
+    val containerColor: Color,
+    val borderColor: Color,
+    val dotColor: Color,
+)
+
+private fun cloudSyncStatus(google: GoogleSyncState): CloudSyncStatus? {
+    if (!google.isAvailable || !google.isSignedIn) return null
+
+    val cloud = parseInstantOrNull(google.lastCloudBackupAtIso)
+    val local = parseInstantOrNull(google.lastSyncAtIso)
+    return when {
+        cloud == null -> CloudSyncStatus.NO_BACKUP
+        local == null || local < cloud -> CloudSyncStatus.OUTDATED
+        else -> CloudSyncStatus.UPDATED
+    }
+}
+
+private fun parseInstantOrNull(iso: String?): Instant? {
+    if (iso.isNullOrBlank()) return null
+    return runCatching { Instant.parse(iso) }.getOrNull()
 }
 
 private fun pad2(value: Long): String {

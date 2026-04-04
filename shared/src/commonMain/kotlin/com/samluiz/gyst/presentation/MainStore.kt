@@ -69,7 +69,7 @@ class MainStore(
     fun bootstrap() {
         scope.launchSafely {
             AppLogger.i(TAG, "Bootstrap started")
-            val theme = settingsRepository.getString("app.theme") ?: _state.value.themeMode
+            val theme = normalizeThemeMode(settingsRepository.getString("app.theme") ?: _state.value.themeMode)
             val language = settingsRepository.getString("app.language") ?: _state.value.language
             _state.value = _state.value.copy(themeMode = theme, language = language, isLoading = true)
             seedDataInitializer.ensureSeedData()
@@ -153,7 +153,7 @@ class MainStore(
 
     fun setThemeMode(mode: String) {
         scope.launchSafely {
-            settingsRepository.setString("app.theme", mode)
+            settingsRepository.setString("app.theme", normalizeThemeMode(mode))
             refreshInternal()
         }
     }
@@ -623,7 +623,7 @@ class MainStore(
         val subs = profiled("list_subscriptions") { subscriptionRepository.list() }
         val installments = profiled("list_installments") { installmentRepository.list() }
         val language = profiled("load_language") { settingsRepository.getString("app.language") ?: "system" }
-        val themeMode = profiled("load_theme") { settingsRepository.getString("app.theme") ?: "system" }
+        val themeMode = profiled("load_theme") { normalizeThemeMode(settingsRepository.getString("app.theme")) }
         val planningUsePostSavings = profiled("load_planning_use_post_savings") {
             settingsRepository.getString(PLANNING_USE_POST_SAVINGS_KEY)?.toBooleanStrictOrNull()
                 ?: _state.value.planningUsePostSavingsBudget
@@ -731,6 +731,12 @@ class MainStore(
     }
 }
 
+private fun normalizeThemeMode(mode: String?): String = when (mode) {
+    "light", "dark", "amoled" -> mode
+    "system" -> "dark"
+    else -> "dark"
+}
+
 data class MainState(
     val currentMonth: YearMonth = YearMonth(2026, 1),
     val summary: MonthlySummary? = null,
@@ -748,7 +754,7 @@ data class MainState(
     val hasMoreExpenses: Boolean = false,
     val isLoadingMoreExpenses: Boolean = false,
     val language: String = "system",
-    val themeMode: String = "system",
+    val themeMode: String = "dark",
     val slowQueries: List<String> = emptyList(),
     val googleSync: GoogleSyncState = GoogleSyncState(
         isAvailable = false,
