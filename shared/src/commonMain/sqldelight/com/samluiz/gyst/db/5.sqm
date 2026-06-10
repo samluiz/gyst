@@ -1,0 +1,9 @@
+DROP TABLE IF EXISTS safety_guard;
+
+DELETE FROM app_setting
+WHERE key IN (
+    'planning.usePostSavingsBudget',
+    'planning.monthlyContributionCents',
+    'planning.goalAmountCents',
+    'planning.desiredMarginCents'
+);

@@ -47,6 +47,7 @@ The app is functional and includes:
 - kotlinx-datetime
 - kotlinx-serialization
 - Coroutines + Flow
+- ktlint + detekt (static quality gates)
 
 ## Business Rules Implemented
 
@@ -270,6 +271,12 @@ Run shared desktop-compatible tests:
 ./gradlew :shared:desktopTest
 ```
 
+Run static quality checks:
+
+```bash
+./gradlew ktlintCheck detekt
+```
+
 Note: `:shared:allTests` may require valid Android SDK configuration in your environment.
 
 ## Environment Notes
@@ -281,6 +288,11 @@ Note: `:shared:allTests` may require valid Android SDK configuration in your env
   - never commit `google-services.json` or `.jks`
   - keep `**/google-services.json` in `.gitignore`
   - use GitHub Actions Secrets for CI/CD injection
+  - runtime SQLite files (`*.db`, `*.db-wal`, `*.db-shm`) are ignored
+
+## Architecture Notes
+
+- ADRs live in `docs/architecture/` and document key decisions for store orchestration and guardrail behavior.
 
 ## Legal
 

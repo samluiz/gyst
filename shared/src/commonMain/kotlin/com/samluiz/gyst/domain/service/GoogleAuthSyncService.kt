@@ -57,25 +57,34 @@ interface GoogleAuthSyncService {
     val state: StateFlow<GoogleSyncState>
 
     suspend fun initialize()
+
     suspend fun signIn()
+
     suspend fun signOut()
+
     suspend fun syncNow()
+
     suspend fun restoreFromCloud(overwriteLocal: Boolean = true)
 }
 
 class NoOpGoogleAuthSyncService : GoogleAuthSyncService {
-    private val internal = MutableStateFlow(
-        GoogleSyncState(
-            isAvailable = false,
-            isSignedIn = false,
+    private val internal =
+        MutableStateFlow(
+            GoogleSyncState(
+                isAvailable = false,
+                isSignedIn = false,
+            ),
         )
-    )
 
     override val state: StateFlow<GoogleSyncState> = internal.asStateFlow()
 
     override suspend fun initialize() = Unit
+
     override suspend fun signIn() = Unit
+
     override suspend fun signOut() = Unit
+
     override suspend fun syncNow() = Unit
+
     override suspend fun restoreFromCloud(overwriteLocal: Boolean) = Unit
 }

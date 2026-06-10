@@ -97,8 +97,6 @@ class FinanceUseCasesTest {
                 billingDay = 10,
                 categoryId = "cat-home",
                 active = true,
-                renewalPolicy = RenewalPolicy.MONTHLY,
-                nextDueDate = LocalDate(2026, 1, 10),
             )
         )
         installmentRepo.upsert(
@@ -113,6 +111,27 @@ class FinanceUseCasesTest {
                 active = true,
             )
         )
+        scheduleRepo.upsert(
+            PaymentScheduleItem(
+                id = "ps-sub-1",
+                kind = ScheduleKind.SUBSCRIPTION,
+                refId = "s1",
+                dueDate = LocalDate(2026, 3, 10),
+                amountCents = 120_00,
+                status = ScheduleStatus.DUE,
+            ),
+        )
+        scheduleRepo.upsert(
+            PaymentScheduleItem(
+                id = "ps-ins-1",
+                kind = ScheduleKind.INSTALLMENT,
+                refId = "i1",
+                dueDate = LocalDate(2026, 3, 1),
+                amountCents = 200_00,
+                status = ScheduleStatus.DUE,
+            ),
+        )
+        scheduleRepo.commitments[month.toString()] = 320_00
 
         val result = ComputeMonthlySummaryUseCase(
             budgetRepo,
@@ -420,8 +439,6 @@ private class FakeSubscriptionRepository : SubscriptionRepository {
 
 private class FakeSettingsRepository : SettingsRepository {
     private val values = mutableMapOf<String, String>()
-    override suspend fun getSafetyGuard(): SafetyGuard? = null
-    override suspend fun upsertSafetyGuard(guard: SafetyGuard) {}
     override suspend fun getString(key: String): String? = values[key]
     override suspend fun setString(key: String, value: String) { values[key] = value }
 }

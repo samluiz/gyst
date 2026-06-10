@@ -225,11 +225,12 @@ class AndroidGoogleAuthSyncService(
                 if (remote == null) {
                     createBackupFile(token, localBytes)
                     upsertBackupMeta(token, localUpdatedAt)
+                    val syncedCloudIso = findBackupFile(token)?.modifiedAt?.toString() ?: Clock.System.now().toString()
                     internal.update {
                         it.copy(
                             isSyncing = false,
-                            lastSyncAtIso = Clock.System.now().toString(),
-                            lastCloudBackupAtIso = Clock.System.now().toString(),
+                            lastSyncAtIso = syncedCloudIso,
+                            lastCloudBackupAtIso = syncedCloudIso,
                             lastSyncSource = SyncSource.LOCAL_TO_CLOUD,
                             lastSyncPolicy = SyncPolicy.NEWEST_WINS,
                             hadSyncConflict = false,
@@ -246,11 +247,12 @@ class AndroidGoogleAuthSyncService(
                 if (remoteUpdatedAt != null && remoteUpdatedAt > localUpdatedAt) {
                     val remoteBytes = downloadBackupFile(token, remote.id)
                     writeDatabaseBytes(remoteBytes, dbFile)
+                    val syncedCloudIso = remoteUpdatedAt.toString()
                     internal.update {
                         it.copy(
                             isSyncing = false,
-                            lastSyncAtIso = Clock.System.now().toString(),
-                            lastCloudBackupAtIso = remoteUpdatedAt?.toString(),
+                            lastSyncAtIso = syncedCloudIso,
+                            lastCloudBackupAtIso = syncedCloudIso,
                             lastSyncSource = SyncSource.CLOUD_TO_LOCAL,
                             lastSyncPolicy = SyncPolicy.NEWEST_WINS,
                             hadSyncConflict = true,
@@ -263,11 +265,12 @@ class AndroidGoogleAuthSyncService(
                 } else {
                     updateBackupFile(token, remote.id, localBytes)
                     upsertBackupMeta(token, localUpdatedAt)
+                    val syncedCloudIso = findBackupFile(token)?.modifiedAt?.toString() ?: Clock.System.now().toString()
                     internal.update {
                         it.copy(
                             isSyncing = false,
-                            lastSyncAtIso = Clock.System.now().toString(),
-                            lastCloudBackupAtIso = Clock.System.now().toString(),
+                            lastSyncAtIso = syncedCloudIso,
+                            lastCloudBackupAtIso = syncedCloudIso,
                             lastSyncSource = SyncSource.LOCAL_TO_CLOUD,
                             lastSyncPolicy = SyncPolicy.NEWEST_WINS,
                             hadSyncConflict = false,
@@ -315,10 +318,11 @@ class AndroidGoogleAuthSyncService(
                 restoredBackupAtIso = file.modifiedAt?.toString()
             }
             internal.update {
+                val syncedCloudIso = restoredBackupAtIso ?: Clock.System.now().toString()
                 it.copy(
                     isSyncing = false,
-                    lastSyncAtIso = Clock.System.now().toString(),
-                    lastCloudBackupAtIso = restoredBackupAtIso,
+                    lastSyncAtIso = syncedCloudIso,
+                    lastCloudBackupAtIso = syncedCloudIso,
                     lastSyncSource = SyncSource.CLOUD_TO_LOCAL,
                     lastSyncPolicy = SyncPolicy.OVERWRITE_LOCAL,
                     hadSyncConflict = false,

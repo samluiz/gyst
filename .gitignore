@@ -19,3 +19,6 @@ captures
 node_modules/
 *.jks
 **/google-services.json
+*.db
+*.db-wal
+*.db-shm

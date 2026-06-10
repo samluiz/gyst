@@ -162,7 +162,6 @@ private fun hasExpectedSchema(dbPath: Path): Boolean {
                 "subscription",
                 "installment_plan",
                 "payment_schedule_item",
-                "safety_guard",
                 "app_setting",
             )
             val presentTables = conn.createStatement().use { st ->
@@ -211,3 +210,5 @@ private fun deleteDbFiles(dbPath: Path) {
         runCatching { Files.deleteIfExists(source) }
     }
 }
+
+

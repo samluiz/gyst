@@ -3,7 +3,8 @@ CREATE TABLE category (
     name TEXT NOT NULL,
     type TEXT NOT NULL,
     color TEXT,
-    icon TEXT
+    icon TEXT,
+    CHECK(type IN ('ESSENTIAL', 'FIXED', 'VARIABLE', 'GOAL', 'RESERVE'))
 );
 
 CREATE TABLE budget_month (
@@ -18,7 +19,9 @@ CREATE TABLE budget_allocation (
     budget_month_id TEXT NOT NULL,
     category_id TEXT NOT NULL,
     planned_cents INTEGER NOT NULL CHECK(planned_cents >= 0),
-    UNIQUE(budget_month_id, category_id)
+    UNIQUE(budget_month_id, category_id),
+    FOREIGN KEY (budget_month_id) REFERENCES budget_month(id) ON DELETE CASCADE,
+    FOREIGN KEY (category_id) REFERENCES category(id) ON DELETE RESTRICT
 );
 
 CREATE TABLE expense (
@@ -31,7 +34,10 @@ CREATE TABLE expense (
     payment_method TEXT NOT NULL,
     recurrence_type TEXT NOT NULL DEFAULT 'ONE_TIME',
     created_at TEXT NOT NULL,
-    schedule_item_id TEXT
+    schedule_item_id TEXT,
+    CHECK(payment_method IN ('PIX', 'DEBIT', 'CASH', 'TRANSFER')),
+    CHECK(recurrence_type IN ('ONE_TIME', 'MONTHLY')),
+    FOREIGN KEY (category_id) REFERENCES category(id) ON DELETE RESTRICT
 );
 
 CREATE TABLE subscription (
@@ -41,8 +47,8 @@ CREATE TABLE subscription (
     billing_day INTEGER NOT NULL CHECK(billing_day >= 1 AND billing_day <= 31),
     category_id TEXT NOT NULL,
     active INTEGER NOT NULL,
-    renewal_policy TEXT NOT NULL,
-    next_due_date TEXT NOT NULL
+    CHECK(active IN (0, 1)),
+    FOREIGN KEY (category_id) REFERENCES category(id) ON DELETE RESTRICT
 );
 
 CREATE TABLE installment_plan (
@@ -54,26 +60,29 @@ CREATE TABLE installment_plan (
     end_year_month TEXT NOT NULL,
     category_id TEXT NOT NULL,
     active INTEGER NOT NULL,
-    CHECK(end_year_month >= start_year_month)
+    CHECK(active IN (0, 1)),
+    CHECK(end_year_month >= start_year_month),
+    FOREIGN KEY (category_id) REFERENCES category(id) ON DELETE RESTRICT
 );
 
 CREATE TABLE payment_schedule_item (
     id TEXT NOT NULL PRIMARY KEY,
     kind TEXT NOT NULL,
     ref_id TEXT NOT NULL,
+    subscription_id TEXT,
+    installment_plan_id TEXT,
     due_date TEXT NOT NULL,
     amount_cents INTEGER NOT NULL,
     status TEXT NOT NULL,
-    paid_at TEXT
-);
-
-CREATE TABLE safety_guard (
-    id TEXT NOT NULL PRIMARY KEY,
-    no_new_installments INTEGER NOT NULL,
-    discretionary_cap_cents INTEGER,
-    alert70_enabled INTEGER NOT NULL,
-    alert90_enabled INTEGER NOT NULL,
-    alert100_enabled INTEGER NOT NULL
+    paid_at TEXT,
+    CHECK(kind IN ('SUBSCRIPTION', 'INSTALLMENT')),
+    CHECK(status IN ('DUE', 'PAID', 'SKIPPED')),
+    CHECK(
+      (kind = 'SUBSCRIPTION' AND subscription_id IS NOT NULL AND installment_plan_id IS NULL) OR
+      (kind = 'INSTALLMENT' AND installment_plan_id IS NOT NULL AND subscription_id IS NULL)
+    ),
+    FOREIGN KEY (subscription_id) REFERENCES subscription(id) ON DELETE CASCADE,
+    FOREIGN KEY (installment_plan_id) REFERENCES installment_plan(id) ON DELETE CASCADE
 );
 
 CREATE TABLE app_setting (
@@ -111,9 +120,17 @@ ON installment_plan(active, end_year_month);
 selectAllCategories:
 SELECT * FROM category ORDER BY name;
 
-upsertCategory:
-INSERT OR REPLACE INTO category(id, name, type, color, icon)
+upsertCategory {
+UPDATE category
+SET name = ?,
+    type = ?,
+    color = ?,
+    icon = ?
+WHERE id = ?;
+
+INSERT OR IGNORE INTO category(id, name, type, color, icon)
 VALUES (?, ?, ?, ?, ?);
+}
 
 deleteCategory:
 DELETE FROM category WHERE id = ?;
@@ -126,9 +143,16 @@ SELECT (
   (SELECT COUNT(*) FROM budget_allocation WHERE category_id = :categoryId AND planned_cents > 0)
 ) AS usage_count;
 
-upsertBudgetMonth:
-INSERT OR REPLACE INTO budget_month(id, year_month, total_income_cents, created_at)
+upsertBudgetMonth {
+UPDATE budget_month
+SET year_month = ?,
+    total_income_cents = ?,
+    created_at = ?
+WHERE id = ?;
+
+INSERT OR IGNORE INTO budget_month(id, year_month, total_income_cents, created_at)
 VALUES (?, ?, ?, ?);
+}
 
 findBudgetMonthByYearMonth:
 SELECT * FROM budget_month WHERE year_month = ? LIMIT 1;
@@ -143,18 +167,38 @@ JOIN category c ON c.id = ba.category_id
 WHERE ba.budget_month_id = ?
 ORDER BY c.name;
 
-upsertBudgetAllocation:
-INSERT OR REPLACE INTO budget_allocation(id, budget_month_id, category_id, planned_cents)
+upsertBudgetAllocation {
+UPDATE budget_allocation
+SET budget_month_id = ?,
+    category_id = ?,
+    planned_cents = ?
+WHERE id = ?;
+
+INSERT OR IGNORE INTO budget_allocation(id, budget_month_id, category_id, planned_cents)
 VALUES (?, ?, ?, ?);
+}
 
 deleteBudgetAllocationsByMonth:
 DELETE FROM budget_allocation WHERE budget_month_id = ?;
 
-upsertExpense:
-INSERT OR REPLACE INTO expense(
+upsertExpense {
+UPDATE expense
+SET occurred_at = ?,
+    amount_cents = ?,
+    category_id = ?,
+    note = ?,
+    merchant = ?,
+    payment_method = ?,
+    recurrence_type = ?,
+    created_at = ?,
+    schedule_item_id = ?
+WHERE id = ?;
+
+INSERT OR IGNORE INTO expense(
     id, occurred_at, amount_cents, category_id, note, merchant, payment_method, recurrence_type, created_at, schedule_item_id
 )
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+}
 
 deleteExpense:
 DELETE FROM expense WHERE id = ?;
@@ -222,9 +266,18 @@ FROM expense
 WHERE occurred_at >= :fromDate AND occurred_at <= :toDate
 GROUP BY category_id;
 
-upsertSubscription:
-INSERT OR REPLACE INTO subscription(id, name, amount_cents, billing_day, category_id, active, renewal_policy, next_due_date)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+upsertSubscription {
+UPDATE subscription
+SET name = ?,
+    amount_cents = ?,
+    billing_day = ?,
+    category_id = ?,
+    active = ?
+WHERE id = ?;
+
+INSERT OR IGNORE INTO subscription(id, name, amount_cents, billing_day, category_id, active)
+VALUES (?, ?, ?, ?, ?, ?);
+}
 
 selectSubscriptions:
 SELECT * FROM subscription ORDER BY active DESC, amount_cents DESC;
@@ -235,11 +288,22 @@ SELECT * FROM subscription WHERE active = 1 ORDER BY amount_cents DESC;
 deleteSubscription:
 DELETE FROM subscription WHERE id = ?;
 
-upsertInstallmentPlan:
-INSERT OR REPLACE INTO installment_plan(
+upsertInstallmentPlan {
+UPDATE installment_plan
+SET name = ?,
+    total_installments = ?,
+    monthly_amount_cents = ?,
+    start_year_month = ?,
+    end_year_month = ?,
+    category_id = ?,
+    active = ?
+WHERE id = ?;
+
+INSERT OR IGNORE INTO installment_plan(
     id, name, total_installments, monthly_amount_cents, start_year_month, end_year_month, category_id, active
 )
 VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+}
 
 selectInstallmentPlans:
 SELECT * FROM installment_plan ORDER BY active DESC, end_year_month ASC;
@@ -250,9 +314,23 @@ SELECT * FROM installment_plan WHERE active = 1 ORDER BY end_year_month ASC;
 deleteInstallmentPlan:
 DELETE FROM installment_plan WHERE id = ?;
 
-upsertScheduleItem:
-INSERT OR REPLACE INTO payment_schedule_item(id, kind, ref_id, due_date, amount_cents, status, paid_at)
-VALUES (?, ?, ?, ?, ?, ?, ?);
+upsertScheduleItem {
+UPDATE payment_schedule_item
+SET kind = ?,
+    ref_id = ?,
+    subscription_id = ?,
+    installment_plan_id = ?,
+    due_date = ?,
+    amount_cents = ?,
+    status = ?,
+    paid_at = ?
+WHERE id = ?;
+
+INSERT OR IGNORE INTO payment_schedule_item(
+    id, kind, ref_id, subscription_id, installment_plan_id, due_date, amount_cents, status, paid_at
+)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
+}
 
 selectScheduleByDateRange:
 SELECT * FROM payment_schedule_item WHERE due_date >= :fromDate AND due_date <= :toDate ORDER BY due_date ASC;
@@ -280,20 +358,16 @@ SELECT COALESCE(SUM(amount_cents), 0)
 FROM payment_schedule_item
 WHERE due_date >= :fromDate AND due_date <= :toDate
   AND kind IN (:firstKind, :secondKind)
-  AND status != 'SKIPPED';
+  AND status = 'DUE';
 
-upsertSafetyGuard:
-INSERT OR REPLACE INTO safety_guard(
-    id, no_new_installments, discretionary_cap_cents, alert70_enabled, alert90_enabled, alert100_enabled
-)
-VALUES (?, ?, ?, ?, ?, ?);
+upsertAppSetting {
+UPDATE app_setting
+SET value = ?
+WHERE key = ?;
 
-getSafetyGuard:
-SELECT * FROM safety_guard LIMIT 1;
-
-upsertAppSetting:
-INSERT OR REPLACE INTO app_setting(key, value)
+INSERT OR IGNORE INTO app_setting(key, value)
 VALUES (?, ?);
+}
 
 getAppSetting:
 SELECT value FROM app_setting WHERE key = ? LIMIT 1;
@@ -319,8 +393,6 @@ DELETE FROM budget_month;
 deleteAllCategories:
 DELETE FROM category;
 
-deleteAllSafetyGuards:
-DELETE FROM safety_guard;
-
 deleteAllSettings:
 DELETE FROM app_setting;
+

@@ -1,3 +1,4 @@
+import org.jlleitschuh.gradle.ktlint.KtlintExtension
 import kotlin.math.max
 
 fun normalizeSemVerOrNull(raw: String?): String? {
@@ -47,4 +48,28 @@ plugins {
     alias(libs.plugins.kotlinMultiplatform) apply false
     alias(libs.plugins.kotlinSerialization) apply false
     alias(libs.plugins.sqldelight) apply false
+    alias(libs.plugins.ktlint) apply false
+    alias(libs.plugins.detekt) apply false
+}
+
+subprojects {
+    plugins.withId("org.jetbrains.kotlin.multiplatform") {
+        apply(plugin = "org.jlleitschuh.gradle.ktlint")
+        apply(plugin = "io.gitlab.arturbosch.detekt")
+    }
+    plugins.withId("org.jetbrains.kotlin.android") {
+        apply(plugin = "org.jlleitschuh.gradle.ktlint")
+        apply(plugin = "io.gitlab.arturbosch.detekt")
+    }
+
+    plugins.withId("org.jlleitschuh.gradle.ktlint") {
+        extensions.configure(KtlintExtension::class.java) {
+            android.set(true)
+            outputToConsole.set(true)
+            ignoreFailures.set(true)
+            filter {
+                exclude("**/build/generated/**")
+            }
+        }
+    }
 }

@@ -79,6 +79,9 @@ kotlin {
             implementation(libs.kotlinx.coroutines.swing)
             implementation(libs.sqldelight.jvm.driver)
         }
+        getByName("desktopTest").dependencies {
+            implementation(libs.sqldelight.jvm.driver)
+        }
         iosMain.dependencies {
             implementation(libs.sqldelight.native.driver)
         }
@@ -147,6 +150,14 @@ tasks.withType<KotlinCompilationTask<*>>().configureEach {
 }
 
 tasks.matching { it.name == "compileAndroidMain" }.configureEach {
+    dependsOn(generateBuildInfo)
+}
+
+tasks.matching {
+    it.name.startsWith("runKtlintCheckOver") ||
+        it.name.startsWith("runKtlintFormatOver") ||
+        it.name.startsWith("ktlint")
+}.configureEach {
     dependsOn(generateBuildInfo)
 }
 

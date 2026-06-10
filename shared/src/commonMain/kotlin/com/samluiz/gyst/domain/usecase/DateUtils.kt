@@ -18,13 +18,19 @@ internal fun monthBounds(yearMonth: YearMonth): Pair<LocalDate, LocalDate> {
 
 internal fun nowInstantUtc() = Clock.System.now()
 
-internal fun clampBillingDay(yearMonth: YearMonth, billingDay: Int): Int {
+internal fun clampBillingDay(
+    yearMonth: YearMonth,
+    billingDay: Int,
+): Int {
     val (_, last) = monthBounds(yearMonth)
     val maxDay = last.day
     return billingDay.coerceIn(1, maxDay)
 }
 
-internal fun dueDateForMonth(yearMonth: YearMonth, billingDay: Int): LocalDate {
+internal fun dueDateForMonth(
+    yearMonth: YearMonth,
+    billingDay: Int,
+): LocalDate {
     val day = clampBillingDay(yearMonth, billingDay)
     return LocalDate(yearMonth.year, yearMonth.month, day)
 }

@@ -7,9 +7,9 @@ import com.samluiz.gyst.domain.repository.*
 import com.samluiz.gyst.domain.usecase.id
 import com.samluiz.gyst.domain.usecase.monthBounds
 import com.samluiz.gyst.domain.usecase.nowInstantUtc
-import kotlinx.datetime.LocalDate
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.datetime.LocalDate
 import kotlin.time.Clock
 import kotlin.time.Instant
 
@@ -42,18 +42,30 @@ class DatabaseHolder(
 class SqlCategoryRepository(private val holder: DatabaseHolder) : CategoryRepository {
     private val q get() = holder.db.financeQueries
 
-    override suspend fun list(): List<Category> = q.selectAllCategories().executeAsList().map {
-        Category(
-            id = it.id,
-            name = it.name,
-            type = CategoryType.valueOf(it.type),
-            color = it.color,
-            icon = it.icon,
-        )
-    }
+    override suspend fun list(): List<Category> =
+        q.selectAllCategories().executeAsList().map {
+            Category(
+                id = it.id,
+                name = it.name,
+                type = CategoryType.valueOf(it.type),
+                color = it.color,
+                icon = it.icon,
+            )
+        }
 
     override suspend fun upsert(category: Category) {
-        q.upsertCategory(category.id, category.name, category.type.name, category.color, category.icon)
+        q.upsertCategory(
+            name = category.name,
+            type = category.type.name,
+            color = category.color,
+            icon = category.icon,
+            id = category.id,
+            id_ = category.id,
+            name_ = category.name,
+            type_ = category.type.name,
+            color_ = category.color,
+            icon_ = category.icon,
+        )
     }
 
     override suspend fun delete(id: String) {
@@ -66,16 +78,29 @@ class SqlCategoryRepository(private val holder: DatabaseHolder) : CategoryReposi
 class SqlBudgetRepository(private val holder: DatabaseHolder) : BudgetRepository {
     private val q get() = holder.db.financeQueries
 
-    override suspend fun createOrUpdateMonth(yearMonth: YearMonth, incomeCents: Long): BudgetMonth {
+    override suspend fun createOrUpdateMonth(
+        yearMonth: YearMonth,
+        incomeCents: Long,
+    ): BudgetMonth {
         val existing = findByYearMonth(yearMonth)
-        val budget = existing?.copy(totalIncomeCents = incomeCents)
-            ?: BudgetMonth(
-                id = id("bud"),
-                yearMonth = yearMonth,
-                totalIncomeCents = incomeCents,
-                createdAt = nowInstantUtc(),
-            )
-        q.upsertBudgetMonth(budget.id, budget.yearMonth.toString(), budget.totalIncomeCents, budget.createdAt.toString())
+        val budget =
+            existing?.copy(totalIncomeCents = incomeCents)
+                ?: BudgetMonth(
+                    id = id("bud"),
+                    yearMonth = yearMonth,
+                    totalIncomeCents = incomeCents,
+                    createdAt = nowInstantUtc(),
+                )
+        q.upsertBudgetMonth(
+            year_month = budget.yearMonth.toString(),
+            total_income_cents = budget.totalIncomeCents,
+            created_at = budget.createdAt.toString(),
+            id = budget.id,
+            id_ = budget.id,
+            year_month_ = budget.yearMonth.toString(),
+            total_income_cents_ = budget.totalIncomeCents,
+            created_at_ = budget.createdAt.toString(),
+        )
         return budget
     }
 
@@ -90,14 +115,21 @@ class SqlBudgetRepository(private val holder: DatabaseHolder) : BudgetRepository
         }
     }
 
-    override suspend fun setAllocations(budgetMonthId: String, allocations: List<BudgetAllocation>) {
+    override suspend fun setAllocations(
+        budgetMonthId: String,
+        allocations: List<BudgetAllocation>,
+    ) {
         q.deleteBudgetAllocationsByMonth(budgetMonthId)
         allocations.forEach {
             q.upsertBudgetAllocation(
-                id = it.id,
                 budget_month_id = it.budgetMonthId,
                 category_id = it.categoryId,
                 planned_cents = it.plannedCents,
+                id = it.id,
+                id_ = it.id,
+                budget_month_id_ = it.budgetMonthId,
+                category_id_ = it.categoryId,
+                planned_cents_ = it.plannedCents,
             )
         }
     }
@@ -123,7 +155,6 @@ class SqlExpenseRepository(private val holder: DatabaseHolder) : ExpenseReposito
 
     override suspend fun upsert(expense: Expense) {
         q.upsertExpense(
-            id = expense.id,
             occurred_at = expense.occurredAt.toString(),
             amount_cents = expense.amountCents,
             category_id = expense.categoryId,
@@ -133,6 +164,17 @@ class SqlExpenseRepository(private val holder: DatabaseHolder) : ExpenseReposito
             recurrence_type = expense.recurrenceType.name,
             created_at = expense.createdAt.toString(),
             schedule_item_id = expense.scheduleItemId,
+            id = expense.id,
+            id_ = expense.id,
+            occurred_at_ = expense.occurredAt.toString(),
+            amount_cents_ = expense.amountCents,
+            category_id_ = expense.categoryId,
+            note_ = expense.note,
+            merchant_ = expense.merchant,
+            payment_method_ = expense.paymentMethod.name,
+            recurrence_type_ = expense.recurrenceType.name,
+            created_at_ = expense.createdAt.toString(),
+            schedule_item_id_ = expense.scheduleItemId,
         )
     }
 
@@ -175,7 +217,11 @@ class SqlExpenseRepository(private val holder: DatabaseHolder) : ExpenseReposito
         }
     }
 
-    override suspend fun byMonthPaged(yearMonth: YearMonth, limit: Long, offset: Long): List<Expense> {
+    override suspend fun byMonthPaged(
+        yearMonth: YearMonth,
+        limit: Long,
+        offset: Long,
+    ): List<Expense> {
         val (from, to) = monthBounds(yearMonth)
         return q.selectExpensesByMonthPaged(
             fromDate = from.toString(),
@@ -198,7 +244,11 @@ class SqlExpenseRepository(private val holder: DatabaseHolder) : ExpenseReposito
         }
     }
 
-    override suspend fun search(yearMonth: YearMonth, categoryId: String?, query: String?): List<Expense> {
+    override suspend fun search(
+        yearMonth: YearMonth,
+        categoryId: String?,
+        query: String?,
+    ): List<Expense> {
         val (from, to) = monthBounds(yearMonth)
         return q.searchExpenses(
             fromDate = from.toString(),
@@ -221,7 +271,10 @@ class SqlExpenseRepository(private val holder: DatabaseHolder) : ExpenseReposito
         }
     }
 
-    override suspend fun deleteFutureRecurringByTemplate(fromDateExclusive: LocalDate, template: Expense) {
+    override suspend fun deleteFutureRecurringByTemplate(
+        fromDateExclusive: LocalDate,
+        template: Expense,
+    ) {
         q.deleteFutureRecurringByTemplate(
             fromDate = fromDateExclusive.toString(),
             categoryId = template.categoryId,
@@ -232,7 +285,11 @@ class SqlExpenseRepository(private val holder: DatabaseHolder) : ExpenseReposito
         )
     }
 
-    override suspend fun updateFutureRecurringByTemplate(fromDateExclusive: LocalDate, oldTemplate: Expense, newTemplate: Expense) {
+    override suspend fun updateFutureRecurringByTemplate(
+        fromDateExclusive: LocalDate,
+        oldTemplate: Expense,
+        newTemplate: Expense,
+    ) {
         q.updateFutureRecurringByTemplate(
             fromDate = fromDateExclusive.toString(),
             oldCategoryId = oldTemplate.categoryId,
@@ -271,42 +328,44 @@ class SqlSubscriptionRepository(private val holder: DatabaseHolder) : Subscripti
 
     override suspend fun upsert(subscription: Subscription) {
         q.upsertSubscription(
-            id = subscription.id,
             name = subscription.name,
             amount_cents = subscription.amountCents,
             billing_day = subscription.billingDay.toLong(),
             category_id = subscription.categoryId,
             active = if (subscription.active) 1 else 0,
-            renewal_policy = subscription.renewalPolicy.name,
-            next_due_date = subscription.nextDueDate.toString(),
+            id = subscription.id,
+            id_ = subscription.id,
+            name_ = subscription.name,
+            amount_cents_ = subscription.amountCents,
+            billing_day_ = subscription.billingDay.toLong(),
+            category_id_ = subscription.categoryId,
+            active_ = if (subscription.active) 1 else 0,
         )
     }
 
-    override suspend fun list(): List<Subscription> = q.selectSubscriptions().executeAsList().map {
-        Subscription(
-            id = it.id,
-            name = it.name,
-            amountCents = it.amount_cents,
-            billingDay = it.billing_day.toInt(),
-            categoryId = it.category_id,
-            active = it.active == 1L,
-            renewalPolicy = RenewalPolicy.valueOf(it.renewal_policy),
-            nextDueDate = LocalDate.parse(it.next_due_date),
-        )
-    }
+    override suspend fun list(): List<Subscription> =
+        q.selectSubscriptions().executeAsList().map {
+            Subscription(
+                id = it.id,
+                name = it.name,
+                amountCents = it.amount_cents,
+                billingDay = it.billing_day.toInt(),
+                categoryId = it.category_id,
+                active = it.active == 1L,
+            )
+        }
 
-    override suspend fun listActive(): List<Subscription> = q.selectActiveSubscriptions().executeAsList().map {
-        Subscription(
-            id = it.id,
-            name = it.name,
-            amountCents = it.amount_cents,
-            billingDay = it.billing_day.toInt(),
-            categoryId = it.category_id,
-            active = it.active == 1L,
-            renewalPolicy = RenewalPolicy.valueOf(it.renewal_policy),
-            nextDueDate = LocalDate.parse(it.next_due_date),
-        )
-    }
+    override suspend fun listActive(): List<Subscription> =
+        q.selectActiveSubscriptions().executeAsList().map {
+            Subscription(
+                id = it.id,
+                name = it.name,
+                amountCents = it.amount_cents,
+                billingDay = it.billing_day.toInt(),
+                categoryId = it.category_id,
+                active = it.active == 1L,
+            )
+        }
 
     override suspend fun delete(id: String) {
         q.deleteSubscription(id)
@@ -318,7 +377,6 @@ class SqlInstallmentRepository(private val holder: DatabaseHolder) : Installment
 
     override suspend fun upsert(plan: InstallmentPlan) {
         q.upsertInstallmentPlan(
-            id = plan.id,
             name = plan.name,
             total_installments = plan.totalInstallments.toLong(),
             monthly_amount_cents = plan.monthlyAmountCents,
@@ -326,34 +384,45 @@ class SqlInstallmentRepository(private val holder: DatabaseHolder) : Installment
             end_year_month = plan.endYearMonth.toString(),
             category_id = plan.categoryId,
             active = if (plan.active) 1 else 0,
+            id = plan.id,
+            id_ = plan.id,
+            name_ = plan.name,
+            total_installments_ = plan.totalInstallments.toLong(),
+            monthly_amount_cents_ = plan.monthlyAmountCents,
+            start_year_month_ = plan.startYearMonth.toString(),
+            end_year_month_ = plan.endYearMonth.toString(),
+            category_id_ = plan.categoryId,
+            active_ = if (plan.active) 1 else 0,
         )
     }
 
-    override suspend fun list(): List<InstallmentPlan> = q.selectInstallmentPlans().executeAsList().map {
-        InstallmentPlan(
-            id = it.id,
-            name = it.name,
-            totalInstallments = it.total_installments.toInt(),
-            monthlyAmountCents = it.monthly_amount_cents,
-            startYearMonth = YearMonth.parse(it.start_year_month),
-            endYearMonth = YearMonth.parse(it.end_year_month),
-            categoryId = it.category_id,
-            active = it.active == 1L,
-        )
-    }
+    override suspend fun list(): List<InstallmentPlan> =
+        q.selectInstallmentPlans().executeAsList().map {
+            InstallmentPlan(
+                id = it.id,
+                name = it.name,
+                totalInstallments = it.total_installments.toInt(),
+                monthlyAmountCents = it.monthly_amount_cents,
+                startYearMonth = YearMonth.parse(it.start_year_month),
+                endYearMonth = YearMonth.parse(it.end_year_month),
+                categoryId = it.category_id,
+                active = it.active == 1L,
+            )
+        }
 
-    override suspend fun listActive(): List<InstallmentPlan> = q.selectActiveInstallments().executeAsList().map {
-        InstallmentPlan(
-            id = it.id,
-            name = it.name,
-            totalInstallments = it.total_installments.toInt(),
-            monthlyAmountCents = it.monthly_amount_cents,
-            startYearMonth = YearMonth.parse(it.start_year_month),
-            endYearMonth = YearMonth.parse(it.end_year_month),
-            categoryId = it.category_id,
-            active = it.active == 1L,
-        )
-    }
+    override suspend fun listActive(): List<InstallmentPlan> =
+        q.selectActiveInstallments().executeAsList().map {
+            InstallmentPlan(
+                id = it.id,
+                name = it.name,
+                totalInstallments = it.total_installments.toInt(),
+                monthlyAmountCents = it.monthly_amount_cents,
+                startYearMonth = YearMonth.parse(it.start_year_month),
+                endYearMonth = YearMonth.parse(it.end_year_month),
+                categoryId = it.category_id,
+                active = it.active == 1L,
+            )
+        }
 
     override suspend fun delete(id: String) {
         q.deleteInstallmentPlan(id)
@@ -365,17 +434,31 @@ class SqlScheduleRepository(private val holder: DatabaseHolder) : ScheduleReposi
 
     override suspend fun upsert(item: PaymentScheduleItem) {
         q.upsertScheduleItem(
-            id = item.id,
             kind = item.kind.name,
             ref_id = item.refId,
+            subscription_id = item.refId.takeIf { item.kind == ScheduleKind.SUBSCRIPTION },
+            installment_plan_id = item.refId.takeIf { item.kind == ScheduleKind.INSTALLMENT },
             due_date = item.dueDate.toString(),
             amount_cents = item.amountCents,
             status = item.status.name,
             paid_at = item.paidAt?.toString(),
+            id = item.id,
+            id_ = item.id,
+            kind_ = item.kind.name,
+            ref_id_ = item.refId,
+            subscription_id_ = item.refId.takeIf { item.kind == ScheduleKind.SUBSCRIPTION },
+            installment_plan_id_ = item.refId.takeIf { item.kind == ScheduleKind.INSTALLMENT },
+            due_date_ = item.dueDate.toString(),
+            amount_cents_ = item.amountCents,
+            status_ = item.status.name,
+            paid_at_ = item.paidAt?.toString(),
         )
     }
 
-    override suspend fun byDateRange(from: LocalDate, to: LocalDate): List<PaymentScheduleItem> {
+    override suspend fun byDateRange(
+        from: LocalDate,
+        to: LocalDate,
+    ): List<PaymentScheduleItem> {
         return q.selectScheduleByDateRange(fromDate = from.toString(), toDate = to.toString()).executeAsList().map {
             PaymentScheduleItem(
                 id = it.id,
@@ -389,7 +472,10 @@ class SqlScheduleRepository(private val holder: DatabaseHolder) : ScheduleReposi
         }
     }
 
-    override suspend fun findByRefAndDate(refId: String, dueDate: LocalDate): PaymentScheduleItem? {
+    override suspend fun findByRefAndDate(
+        refId: String,
+        dueDate: LocalDate,
+    ): PaymentScheduleItem? {
         return q.selectDueScheduleItemsByRefAndDate(refId = refId, dueDate = dueDate.toString()).executeAsOneOrNull()?.let {
             PaymentScheduleItem(
                 id = it.id,
@@ -417,11 +503,18 @@ class SqlScheduleRepository(private val holder: DatabaseHolder) : ScheduleReposi
         }
     }
 
-    override suspend fun deleteByRefAndKind(refId: String, kind: ScheduleKind) {
+    override suspend fun deleteByRefAndKind(
+        refId: String,
+        kind: ScheduleKind,
+    ) {
         q.deleteScheduleItemsByRefAndKind(refId, kind.name)
     }
 
-    override suspend fun deleteByRefAndKindFromDate(refId: String, kind: ScheduleKind, fromDateInclusive: LocalDate) {
+    override suspend fun deleteByRefAndKindFromDate(
+        refId: String,
+        kind: ScheduleKind,
+        fromDateInclusive: LocalDate,
+    ) {
         q.deleteScheduleItemsByRefAndKindFromDate(
             refId = refId,
             kind = kind.name,
@@ -429,7 +522,11 @@ class SqlScheduleRepository(private val holder: DatabaseHolder) : ScheduleReposi
         )
     }
 
-    override suspend fun markStatus(id: String, status: ScheduleStatus, paidAtIso: String?) {
+    override suspend fun markStatus(
+        id: String,
+        status: ScheduleStatus,
+        paidAtIso: String?,
+    ) {
         q.updateScheduleStatus(status.name, paidAtIso, id)
     }
 
@@ -448,33 +545,10 @@ class SqlScheduleRepository(private val holder: DatabaseHolder) : ScheduleReposi
 class SqlSettingsRepository(private val holder: DatabaseHolder) : SettingsRepository {
     private val q get() = holder.db.financeQueries
 
-    override suspend fun getSafetyGuard(): SafetyGuard? {
-        return q.getSafetyGuard().executeAsOneOrNull()?.let {
-            SafetyGuard(
-                id = it.id,
-                discretionaryCapCents = it.discretionary_cap_cents,
-                alert70Enabled = it.alert70_enabled == 1L,
-                alert90Enabled = it.alert90_enabled == 1L,
-                alert100Enabled = it.alert100_enabled == 1L,
-            )
-        }
-    }
-
-    override suspend fun upsertSafetyGuard(guard: SafetyGuard) {
-        q.upsertSafetyGuard(
-            id = guard.id,
-            no_new_installments = 0,
-            discretionary_cap_cents = guard.discretionaryCapCents,
-            alert70_enabled = if (guard.alert70Enabled) 1 else 0,
-            alert90_enabled = if (guard.alert90Enabled) 1 else 0,
-            alert100_enabled = if (guard.alert100Enabled) 1 else 0,
-        )
-    }
-
     override suspend fun getString(key: String): String? = q.getAppSetting(key).executeAsOneOrNull()
 
     override suspend fun setString(key: String, value: String) {
-        q.upsertAppSetting(key, value)
+        q.upsertAppSetting(value_ = value, key = key, key_ = key, value__ = value)
     }
 }
 
@@ -490,9 +564,9 @@ class SqlCommitmentPaymentRepository(private val holder: DatabaseHolder) : Commi
         holder.db.transaction {
             val item = q.selectScheduleItemById(scheduleItemId).executeAsOneOrNull() ?: return@transaction
             val paidAt = Clock.System.now().toString()
+            val expenseId = id("exp-sch")
             q.updateScheduleStatus(ScheduleStatus.PAID.name, paidAt, scheduleItemId)
             q.upsertExpense(
-                id = id("exp-sch"),
                 occurred_at = item.due_date,
                 amount_cents = item.amount_cents,
                 category_id = categoryId,
@@ -502,6 +576,17 @@ class SqlCommitmentPaymentRepository(private val holder: DatabaseHolder) : Commi
                 recurrence_type = RecurrenceType.ONE_TIME.name,
                 created_at = paidAt,
                 schedule_item_id = scheduleItemId,
+                id = expenseId,
+                id_ = expenseId,
+                occurred_at_ = item.due_date,
+                amount_cents_ = item.amount_cents,
+                category_id_ = categoryId,
+                note_ = note,
+                merchant_ = null,
+                payment_method_ = paymentMethod.name,
+                recurrence_type_ = RecurrenceType.ONE_TIME.name,
+                created_at_ = paidAt,
+                schedule_item_id_ = scheduleItemId,
             )
         }
     }
@@ -519,7 +604,6 @@ class SqlLocalDataMaintenanceRepository(private val holder: DatabaseHolder) : Lo
             q.deleteAllBudgetAllocations()
             q.deleteAllBudgetMonths()
             q.deleteAllCategories()
-            q.deleteAllSafetyGuards()
             q.deleteAllSettings()
         }
     }

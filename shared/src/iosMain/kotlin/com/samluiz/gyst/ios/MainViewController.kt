@@ -9,3 +9,5 @@ fun MainViewController(): UIViewController {
     initKoin(platformModule = iosPlatformModule())
     return ComposeUIViewController { GystRoot() }
 }
+
+

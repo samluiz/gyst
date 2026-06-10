@@ -59,8 +59,13 @@ private fun hardenLegacySchema(context: Context) {
         backupAndResetCorruptDatabase(context, "quick_check_failed")
     }
     val db = context.openOrCreateDatabase("gyst.db", Context.MODE_PRIVATE, null)
-    db.beginTransaction()
     try {
+        // Apply connection-level pragmas before schema transaction.
+        db.execSQL("PRAGMA foreign_keys=ON")
+        db.execSQL("PRAGMA journal_mode=WAL")
+        db.execSQL("PRAGMA synchronous=NORMAL")
+
+        db.beginTransaction()
         if (!db.tableExists("expense")) {
             db.setTransactionSuccessful()
             return
@@ -78,15 +83,14 @@ private fun hardenLegacySchema(context: Context) {
         if (version < 2) {
             db.execSQL("PRAGMA user_version = 2")
         }
-        db.execSQL("PRAGMA foreign_keys=ON")
-        db.execSQL("PRAGMA journal_mode=WAL")
-        db.execSQL("PRAGMA synchronous=NORMAL")
 
         db.setTransactionSuccessful()
     } catch (t: Throwable) {
         Log.e("GystDb", "Legacy schema hardening failed", t)
     } finally {
-        db.endTransaction()
+        if (db.inTransaction()) {
+            db.endTransaction()
+        }
         db.close()
     }
 }

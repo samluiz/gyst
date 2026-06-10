@@ -95,6 +95,8 @@ jobs:
         run: |
           chmod +x gradlew
           ./gradlew \
+            ktlintCheck \
+            detekt \
             :shared:compileKotlinDesktop \
             :shared:desktopTest \
             :androidApp:lintDebug \

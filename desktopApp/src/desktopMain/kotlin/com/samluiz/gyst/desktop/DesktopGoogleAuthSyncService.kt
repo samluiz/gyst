@@ -282,12 +282,13 @@ class DesktopGoogleAuthSyncService(
                         AppLogger.i(TAG, "Sync path: LOCAL_TO_CLOUD create")
                         val localBytes = readDatabaseBytes()
                         createBackupFile(token, localBytes)
+                        val syncedCloudIso = findBackupFile(token)?.modifiedAt?.toString() ?: Clock.System.now().toString()
                         Files.copy(dbPath, backupPath, StandardCopyOption.REPLACE_EXISTING)
                         internal.update {
                             it.copy(
                                 isSyncing = false,
-                                lastSyncAtIso = Clock.System.now().toString(),
-                                lastCloudBackupAtIso = Clock.System.now().toString(),
+                                lastSyncAtIso = syncedCloudIso,
+                                lastCloudBackupAtIso = syncedCloudIso,
                                 lastSyncSource = SyncSource.LOCAL_TO_CLOUD,
                                 lastSyncPolicy = SyncPolicy.NEWEST_WINS,
                                 hadSyncConflict = false,
@@ -301,12 +302,13 @@ class DesktopGoogleAuthSyncService(
                         AppLogger.i(TAG, "Sync path: CLOUD_TO_LOCAL local missing")
                         val remoteBytes = downloadBackupFile(token, remote.id)
                         writeDatabaseBytes(remoteBytes)
+                        val syncedCloudIso = remoteUpdatedAt.toString()
                         Files.copy(dbPath, backupPath, StandardCopyOption.REPLACE_EXISTING)
                         internal.update {
                             it.copy(
                                 isSyncing = false,
-                                lastSyncAtIso = Clock.System.now().toString(),
-                                lastCloudBackupAtIso = remoteUpdatedAt.toString(),
+                                lastSyncAtIso = syncedCloudIso,
+                                lastCloudBackupAtIso = syncedCloudIso,
                                 lastSyncSource = SyncSource.CLOUD_TO_LOCAL,
                                 lastSyncPolicy = SyncPolicy.NEWEST_WINS,
                                 hadSyncConflict = false,
@@ -321,12 +323,13 @@ class DesktopGoogleAuthSyncService(
                         AppLogger.w(TAG, "Sync conflict resolved by cloud newer timestamp")
                         val remoteBytes = downloadBackupFile(token, remote.id)
                         writeDatabaseBytes(remoteBytes)
+                        val syncedCloudIso = remoteUpdatedAt.toString()
                         Files.copy(dbPath, backupPath, StandardCopyOption.REPLACE_EXISTING)
                         internal.update {
                             it.copy(
                                 isSyncing = false,
-                                lastSyncAtIso = Clock.System.now().toString(),
-                                lastCloudBackupAtIso = remoteUpdatedAt.toString(),
+                                lastSyncAtIso = syncedCloudIso,
+                                lastCloudBackupAtIso = syncedCloudIso,
                                 lastSyncSource = SyncSource.CLOUD_TO_LOCAL,
                                 lastSyncPolicy = SyncPolicy.NEWEST_WINS,
                                 hadSyncConflict = true,
@@ -341,12 +344,13 @@ class DesktopGoogleAuthSyncService(
                         AppLogger.i(TAG, "Sync path: LOCAL_TO_CLOUD update")
                         val localBytes = readDatabaseBytes()
                         updateBackupFile(token, remote!!.id, localBytes)
+                        val syncedCloudIso = findBackupFile(token)?.modifiedAt?.toString() ?: Clock.System.now().toString()
                         Files.copy(dbPath, backupPath, StandardCopyOption.REPLACE_EXISTING)
                         internal.update {
                             it.copy(
                                 isSyncing = false,
-                                lastSyncAtIso = Clock.System.now().toString(),
-                                lastCloudBackupAtIso = Clock.System.now().toString(),
+                                lastSyncAtIso = syncedCloudIso,
+                                lastCloudBackupAtIso = syncedCloudIso,
                                 lastSyncSource = SyncSource.LOCAL_TO_CLOUD,
                                 lastSyncPolicy = SyncPolicy.NEWEST_WINS,
                                 hadSyncConflict = false,
@@ -393,12 +397,13 @@ class DesktopGoogleAuthSyncService(
                 val remote = findBackupFile(token) ?: error("No backup found on Google Drive.")
                 val remoteBytes = downloadBackupFile(token, remote.id)
                 writeDatabaseBytes(remoteBytes)
+                val syncedCloudIso = remote.modifiedAt?.toString() ?: Clock.System.now().toString()
                 Files.copy(dbPath, backupPath, StandardCopyOption.REPLACE_EXISTING)
                 internal.update {
                     it.copy(
                         isSyncing = false,
-                        lastSyncAtIso = Clock.System.now().toString(),
-                        lastCloudBackupAtIso = remote.modifiedAt?.toString(),
+                        lastSyncAtIso = syncedCloudIso,
+                        lastCloudBackupAtIso = syncedCloudIso,
                         lastSyncSource = SyncSource.CLOUD_TO_LOCAL,
                         lastSyncPolicy = SyncPolicy.OVERWRITE_LOCAL,
                         hadSyncConflict = false,

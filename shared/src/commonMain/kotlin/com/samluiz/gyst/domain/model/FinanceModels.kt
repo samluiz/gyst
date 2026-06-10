@@ -28,6 +28,7 @@ data class BudgetAllocation(
 )
 
 enum class PaymentMethod { PIX, DEBIT, CASH, TRANSFER }
+
 enum class RecurrenceType { ONE_TIME, MONTHLY }
 
 data class Expense(
@@ -43,8 +44,6 @@ data class Expense(
     val scheduleItemId: String? = null,
 )
 
-enum class RenewalPolicy { MONTHLY }
-
 data class Subscription(
     val id: String,
     val name: String,
@@ -52,8 +51,6 @@ data class Subscription(
     val billingDay: Int,
     val categoryId: String,
     val active: Boolean,
-    val renewalPolicy: RenewalPolicy,
-    val nextDueDate: LocalDate,
 )
 
 data class InstallmentPlan(
@@ -79,14 +76,6 @@ data class PaymentScheduleItem(
     val amountCents: Long,
     val status: ScheduleStatus,
     val paidAt: Instant? = null,
-)
-
-data class SafetyGuard(
-    val id: String,
-    val discretionaryCapCents: Long? = null,
-    val alert70Enabled: Boolean = true,
-    val alert90Enabled: Boolean = true,
-    val alert100Enabled: Boolean = true,
 )
 
 data class CategorySummary(

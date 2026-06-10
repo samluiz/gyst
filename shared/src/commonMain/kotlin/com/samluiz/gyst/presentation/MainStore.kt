@@ -1,22 +1,24 @@
 package com.samluiz.gyst.presentation
 
-import com.samluiz.gyst.domain.model.*
-import com.samluiz.gyst.logging.AppLogger
 import com.samluiz.gyst.data.repository.DatabaseRuntimeController
+import com.samluiz.gyst.domain.model.*
 import com.samluiz.gyst.domain.repository.*
-import com.samluiz.gyst.domain.service.GoogleAuthSyncService
-import com.samluiz.gyst.domain.service.GoogleSyncState
 import com.samluiz.gyst.domain.service.AppUpdateService
-import com.samluiz.gyst.domain.service.AppUpdateState
+import com.samluiz.gyst.domain.service.GoogleAuthSyncService
 import com.samluiz.gyst.domain.usecase.*
+import com.samluiz.gyst.logging.AppLogger
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.datetime.DatePeriod
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.TimeZone
@@ -28,12 +30,12 @@ private const val EXPENSES_PAGE_SIZE = 50L
 private const val SLOW_QUERY_MS = 120L
 private const val RETRO_BUDGET_FILL_MONTHS = 24
 private const val EXPLICIT_BUDGET_KEY_PREFIX = "budget.explicit."
-private const val PLANNING_USE_POST_SAVINGS_KEY = "planning.usePostSavingsBudget"
-private const val PLANNING_MONTHLY_CONTRIBUTION_KEY = "planning.monthlyContributionCents"
-private const val PLANNING_GOAL_AMOUNT_KEY = "planning.goalAmountCents"
-private const val PLANNING_DESIRED_MARGIN_KEY = "planning.desiredMarginCents"
 private const val BLOCKING_RESTORE_TOKEN = "sync.restore.applying"
 private const val BLOCKING_RELOAD_TOKEN = "sync.reload.applying"
+private const val MAX_TEXT_FIELD_LENGTH = 120
+private const val MAX_INSTALLMENTS = 360
+private const val ERROR_REQUIRED_CATEGORY = "Categoria obrigatoria"
+private const val ERROR_REQUIRED_DESCRIPTION = "Descricao obrigatoria"
 
 class MainStore(
     private val seedDataInitializer: SeedDataInitializer,
@@ -48,6 +50,12 @@ class MainStore(
     private val googleAuthSyncService: GoogleAuthSyncService,
     private val appUpdateService: AppUpdateService,
     private val databaseRuntimeController: DatabaseRuntimeController,
+    private val createBudgetMonthUseCase: CreateBudgetMonthUseCase,
+    private val setBudgetAllocationsUseCase: SetBudgetAllocationsUseCase,
+    private val addOrUpdateExpenseUseCase: AddOrUpdateExpenseUseCase,
+    private val deleteExpenseUseCase: DeleteExpenseUseCase,
+    private val upsertSubscriptionUseCase: UpsertSubscriptionUseCase,
+    private val createInstallmentPlanUseCase: CreateInstallmentPlanUseCase,
     private val computeMonthlySummaryUseCase: ComputeMonthlySummaryUseCase,
     private val computeCashFlowForecastUseCase: ComputeCashFlowForecastUseCase,
     private val handleMonthRolloverUseCase: HandleMonthRolloverUseCase,
@@ -57,9 +65,33 @@ class MainStore(
     }
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private val actionMutex = Mutex()
 
     private val _state = MutableStateFlow(MainState())
     val state: StateFlow<MainState> = _state.asStateFlow()
+    private val syncActions =
+        StoreSyncActions(
+            googleAuthSyncService = googleAuthSyncService,
+            appUpdateService = appUpdateService,
+            databaseRuntimeController = databaseRuntimeController,
+            seedDataInitializer = seedDataInitializer,
+            setState = { _state.value = it },
+            getState = { _state.value },
+            refresh = { showSkeleton -> refreshInternal(showSkeleton) },
+        )
+    private val expenseActions =
+        StoreExpenseActions(
+            expenseRepository = expenseRepository,
+            subscriptionRepository = subscriptionRepository,
+            installmentRepository = installmentRepository,
+            scheduleRepository = scheduleRepository,
+            addOrUpdateExpenseUseCase = addOrUpdateExpenseUseCase,
+            upsertSubscriptionUseCase = upsertSubscriptionUseCase,
+            createInstallmentPlanUseCase = createInstallmentPlanUseCase,
+            getState = { _state.value },
+            setState = { _state.value = it },
+            refresh = { showSkeleton -> refreshInternal(showSkeleton) },
+        )
 
     init {
         scope.launch {
@@ -128,19 +160,24 @@ class MainStore(
             val snapshot = _state.value
             if (snapshot.isLoadingMoreExpenses || !snapshot.hasMoreExpenses) return@launchSafely
             _state.value = snapshot.copy(isLoadingMoreExpenses = true)
-            val nextPage = snapshot.expensesPage + 1
-            val batch = expenseRepository.byMonthPaged(
-                yearMonth = snapshot.currentMonth,
-                limit = EXPENSES_PAGE_SIZE,
-                offset = nextPage * EXPENSES_PAGE_SIZE,
-            )
-            val merged = (snapshot.expenses + batch).distinctBy { it.id }
-            _state.value = _state.value.copy(
-                expenses = merged,
-                expensesPage = nextPage,
-                hasMoreExpenses = batch.size.toLong() == EXPENSES_PAGE_SIZE,
-                isLoadingMoreExpenses = false,
-            )
+            try {
+                val nextPage = snapshot.expensesPage + 1
+                val batch =
+                    expenseRepository.byMonthPaged(
+                        yearMonth = snapshot.currentMonth,
+                        limit = EXPENSES_PAGE_SIZE,
+                        offset = nextPage * EXPENSES_PAGE_SIZE,
+                    )
+                val merged = (snapshot.expenses + batch).distinctBy { it.id }
+                _state.value =
+                    _state.value.copy(
+                        expenses = merged,
+                        expensesPage = nextPage,
+                        hasMoreExpenses = batch.size.toLong() == EXPENSES_PAGE_SIZE,
+                    )
+            } finally {
+                _state.value = _state.value.copy(isLoadingMoreExpenses = false)
+            }
         }
     }
 
@@ -155,6 +192,7 @@ class MainStore(
 
     fun setLanguage(language: String) {
         scope.launchSafely {
+            if (_state.value.language == language) return@launchSafely
             settingsRepository.setString("app.language", language)
             refreshInternal()
         }
@@ -162,57 +200,50 @@ class MainStore(
 
     fun setThemeMode(mode: String) {
         scope.launchSafely {
-            settingsRepository.setString("app.theme", normalizeThemeMode(mode))
+            val normalized = normalizeThemeMode(mode)
+            if (_state.value.themeMode == normalized) return@launchSafely
+            settingsRepository.setString("app.theme", normalized)
             refreshInternal()
         }
     }
 
     fun signInGoogle() {
         scope.launchSafely {
-            googleAuthSyncService.signIn()
+            syncActions.signInGoogle()
         }
     }
 
     fun signOutGoogle() {
         scope.launchSafely {
-            googleAuthSyncService.signOut()
+            syncActions.signOutGoogle()
         }
     }
 
     fun checkForUpdates() {
         scope.launchSafely {
-            appUpdateService.checkForUpdates(silent = false)
+            syncActions.checkForUpdates()
         }
     }
 
     fun openUpdate() {
         scope.launchSafely {
-            appUpdateService.openUpdate()
+            syncActions.openUpdate()
         }
     }
 
     fun syncGoogleDrive() {
         scope.launchSafely(allowDuringBlocking = true) {
-            googleAuthSyncService.syncNow()
-            applyHotReloadIfNeeded("sync")
-            refreshInternal()
+            syncActions.syncGoogleDrive(::applyHotReloadIfNeeded)
         }
     }
 
     fun restoreFromGoogleDrive(overwriteLocal: Boolean) {
         scope.launchSafely(allowDuringBlocking = true) {
-            _state.value = _state.value.copy(
-                isLoading = true,
-                blockingMessage = BLOCKING_RESTORE_TOKEN,
+            syncActions.restoreFromGoogleDrive(
+                overwriteLocal = overwriteLocal,
+                blockingRestoreToken = BLOCKING_RESTORE_TOKEN,
+                applyHotReloadIfNeeded = ::applyHotReloadIfNeeded,
             )
-            try {
-                googleAuthSyncService.restoreFromCloud(overwriteLocal)
-                applyHotReloadIfNeeded(reason = "restore", force = true)
-                seedDataInitializer.ensureSeedData()
-                refreshInternal()
-            } finally {
-                _state.value = _state.value.copy(blockingMessage = null)
-            }
         }
     }
 
@@ -226,88 +257,62 @@ class MainStore(
         }
     }
 
-    fun saveIncome(cents: Long, applyForward: Boolean = false) {
+    fun saveIncome(
+        cents: Long,
+        applyForward: Boolean = false,
+    ) {
         scope.launchSafely {
             val currentMonth = _state.value.currentMonth
             if (applyForward) {
                 saveIncomeForwardFrom(currentMonth, cents)
             } else {
-                CreateBudgetMonthUseCase(budgetRepository)(currentMonth, cents)
+                createBudgetMonthUseCase(currentMonth, cents)
                 markExplicitBudgetMonth(currentMonth)
             }
             refreshInternal()
         }
     }
 
-    fun setPlanningUsePostSavingsBudget(enabled: Boolean) {
-        scope.launchSafely {
-            settingsRepository.setString(PLANNING_USE_POST_SAVINGS_KEY, enabled.toString())
-            _state.value = _state.value.copy(planningUsePostSavingsBudget = enabled)
-        }
-    }
-
-    fun setPlanningMonthlyContribution(cents: Long) {
-        scope.launchSafely {
-            val safe = cents.coerceAtLeast(0L)
-            settingsRepository.setString(PLANNING_MONTHLY_CONTRIBUTION_KEY, safe.toString())
-            _state.value = _state.value.copy(planningMonthlyContributionCents = safe)
-        }
-    }
-
-    fun setPlanningGoalAmount(cents: Long) {
-        scope.launchSafely {
-            val safe = cents.coerceAtLeast(0L)
-            settingsRepository.setString(PLANNING_GOAL_AMOUNT_KEY, safe.toString())
-            _state.value = _state.value.copy(planningGoalAmountCents = safe)
-        }
-    }
-
-    fun setPlanningDesiredMargin(cents: Long) {
-        scope.launchSafely {
-            val safe = cents.coerceAtLeast(0L)
-            settingsRepository.setString(PLANNING_DESIRED_MARGIN_KEY, safe.toString())
-            _state.value = _state.value.copy(planningDesiredMarginCents = safe)
-        }
-    }
-
     fun saveAllocations(values: Map<String, Long>) {
         scope.launchSafely {
             val currentMonth = _state.value.currentMonth
-            val month = budgetRepository.findByYearMonth(currentMonth)
-                ?: CreateBudgetMonthUseCase(budgetRepository)(currentMonth, 0)
-            val allocations = values.map { (categoryId, amount) ->
-                BudgetAllocation(id("alloc"), month.id, categoryId, amount)
-            }
-            SetBudgetAllocationsUseCase(budgetRepository)(month.id, allocations)
+            val month =
+                budgetRepository.findByYearMonth(currentMonth)
+                    ?: createBudgetMonthUseCase(currentMonth, 0)
+            val allocations =
+                values.map { (categoryId, amount) ->
+                    BudgetAllocation(id("alloc"), month.id, categoryId, amount)
+                }
+            setBudgetAllocationsUseCase(month.id, allocations)
             refreshInternal()
         }
     }
 
-    fun addExpense(amountCents: Long, categoryId: String, note: String?, recurringMonthly: Boolean) {
+    fun addExpense(
+        amountCents: Long,
+        categoryId: String,
+        note: String?,
+        recurringMonthly: Boolean,
+    ) {
         scope.launchSafely {
-            requireNonNegative(amountCents)
-            require(categoryId.isNotBlank()) { "Categoria obrigatoria" }
-            val nowDate = Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault()).date
-            val targetMonth = _state.value.currentMonth
-            val day = nowDate.day.coerceAtMost(monthBounds(targetMonth).second.day)
-            val occurredAt = LocalDate(targetMonth.year, targetMonth.month, day)
-            AddOrUpdateExpenseUseCase(expenseRepository)(
-                Expense(
-                    id = id("exp"),
-                    occurredAt = occurredAt,
-                    amountCents = amountCents,
-                    categoryId = categoryId,
-                    note = note?.trim()?.takeIf { it.isNotBlank() }?.take(120),
-                    paymentMethod = PaymentMethod.DEBIT,
-                    recurrenceType = if (recurringMonthly) RecurrenceType.MONTHLY else RecurrenceType.ONE_TIME,
-                    createdAt = Clock.System.now(),
-                )
+            expenseActions.addExpense(
+                draft =
+                    ExpenseDraft(
+                        amountCents = amountCents,
+                        categoryId = categoryId,
+                        note = note,
+                        recurringMonthly = recurringMonthly,
+                    ),
+                sanitizeNote = ::sanitizeOptionalNote,
+                requireCategoryId = ::requireCategoryId,
             )
-            refreshInternal()
         }
     }
 
-    fun addCategory(name: String, onCreated: ((String) -> Unit)? = null) {
+    fun addCategory(
+        name: String,
+        onCreated: ((String) -> Unit)? = null,
+    ) {
         scope.launchSafely {
             val normalized = name.trim()
             if (normalized.isBlank()) return@launchSafely
@@ -323,14 +328,18 @@ class MainStore(
                     id = categoryId,
                     name = normalized,
                     type = CategoryType.VARIABLE,
-                )
+                ),
             )
             onCreated?.invoke(categoryId)
             refreshInternal()
         }
     }
 
-    fun updateCategoryName(categoryId: String, name: String, onDone: ((Boolean) -> Unit)? = null) {
+    fun updateCategoryName(
+        categoryId: String,
+        name: String,
+        onDone: ((Boolean) -> Unit)? = null,
+    ) {
         scope.launchSafely {
             val normalized = name.trim()
             if (normalized.isBlank()) {
@@ -354,7 +363,10 @@ class MainStore(
         }
     }
 
-    fun deleteCategory(categoryId: String, onDone: ((Boolean, Long) -> Unit)? = null) {
+    fun deleteCategory(
+        categoryId: String,
+        onDone: ((Boolean, Long) -> Unit)? = null,
+    ) {
         scope.launchSafely {
             val inUse = categoryRepository.usageCount(categoryId)
             if (inUse > 0L) {
@@ -367,66 +379,67 @@ class MainStore(
         }
     }
 
-    fun addSubscription(name: String, amountCents: Long, billingDay: Int, categoryId: String) {
+    fun addSubscription(
+        name: String,
+        amountCents: Long,
+        billingDay: Int,
+        categoryId: String,
+    ) {
         scope.launchSafely {
-            requireNonNegative(amountCents)
-            require(categoryId.isNotBlank()) { "Categoria obrigatoria" }
-            val safeName = name.trim().take(120)
-            require(safeName.isNotBlank()) { "Descricao obrigatoria" }
-            val safeDay = billingDay.coerceIn(1, 31)
-            UpsertSubscriptionUseCase(subscriptionRepository, scheduleRepository)(
-                Subscription(
-                    id = id("sub"),
-                    name = safeName,
-                    amountCents = amountCents,
-                    billingDay = safeDay,
-                    categoryId = categoryId,
-                    active = true,
-                    renewalPolicy = RenewalPolicy.MONTHLY,
-                    nextDueDate = dueDateForMonth(_state.value.currentMonth, safeDay),
-                )
+            expenseActions.addSubscription(
+                draft =
+                    SubscriptionDraft(
+                        name = name,
+                        amountCents = amountCents,
+                        billingDay = billingDay,
+                        categoryId = categoryId,
+                    ),
+                requireCategoryId = ::requireCategoryId,
+                requireName = ::requireName,
             )
-            refreshInternal()
         }
     }
 
-    fun addInstallment(name: String, amountCents: Long, totalInstallments: Int, categoryId: String) {
+    fun addInstallment(
+        name: String,
+        amountCents: Long,
+        totalInstallments: Int,
+        categoryId: String,
+    ) {
         scope.launchSafely {
-            requireNonNegative(amountCents)
-            require(categoryId.isNotBlank()) { "Categoria obrigatoria" }
-            val safeName = name.trim().take(120)
-            require(safeName.isNotBlank()) { "Descricao obrigatoria" }
-            val safeInstallments = totalInstallments.coerceIn(1, 360)
-            val monthlyAmountCents = toMonthlyInstallmentCents(amountCents, safeInstallments)
-            val start = _state.value.currentMonth
-            val end = start.plusMonths(safeInstallments - 1)
-            CreateInstallmentPlanUseCase(installmentRepository, scheduleRepository)(
-                InstallmentPlan(
-                    id = id("inst"),
-                    name = safeName,
-                    totalInstallments = safeInstallments,
-                    monthlyAmountCents = monthlyAmountCents,
-                    startYearMonth = start,
-                    endYearMonth = end,
-                    categoryId = categoryId,
-                    active = true,
-                )
+            expenseActions.addInstallment(
+                draft =
+                    InstallmentDraft(
+                        name = name,
+                        amountCents = amountCents,
+                        totalInstallments = totalInstallments,
+                        categoryId = categoryId,
+                    ),
+                requireCategoryId = ::requireCategoryId,
+                requireName = ::requireName,
+                toMonthlyInstallmentCents = ::toMonthlyInstallmentCents,
             )
-            refreshInternal()
         }
     }
 
-    fun updateExpense(expenseId: String, amountCents: Long, categoryId: String, description: String?, recurringMonthly: Boolean) {
+    fun updateExpense(
+        expenseId: String,
+        amountCents: Long,
+        categoryId: String,
+        description: String?,
+        recurringMonthly: Boolean,
+    ) {
         scope.launchSafely {
             requireNonNegative(amountCents)
-            require(categoryId.isNotBlank()) { "Categoria obrigatoria" }
+            requireCategoryId(categoryId)
             val current = expenseRepository.getById(expenseId) ?: return@launchSafely
-            val updated = current.copy(
-                amountCents = amountCents,
-                categoryId = categoryId,
-                note = description?.trim()?.takeIf { it.isNotBlank() }?.take(120),
-                recurrenceType = if (recurringMonthly) RecurrenceType.MONTHLY else RecurrenceType.ONE_TIME,
-            )
+            val updated =
+                current.copy(
+                    amountCents = amountCents,
+                    categoryId = categoryId,
+                    note = sanitizeOptionalNote(description),
+                    recurrenceType = if (recurringMonthly) RecurrenceType.MONTHLY else RecurrenceType.ONE_TIME,
+                )
             if (current.recurrenceType == RecurrenceType.MONTHLY && current.scheduleItemId == null) {
                 if (recurringMonthly) {
                     expenseRepository.updateFutureRecurringByTemplate(
@@ -441,7 +454,7 @@ class MainStore(
                     )
                 }
             }
-            AddOrUpdateExpenseUseCase(expenseRepository)(updated)
+            addOrUpdateExpenseUseCase(updated)
             refreshInternal()
         }
     }
@@ -455,22 +468,27 @@ class MainStore(
                     template = current,
                 )
             }
-            DeleteExpenseUseCase(expenseRepository)(expenseId)
+            deleteExpenseUseCase(expenseId)
             refreshInternal()
         }
     }
 
-    fun updateSubscription(subscriptionId: String, name: String, amountCents: Long, billingDay: Int, categoryId: String) {
+    fun updateSubscription(
+        subscriptionId: String,
+        name: String,
+        amountCents: Long,
+        billingDay: Int,
+        categoryId: String,
+    ) {
         scope.launchSafely {
             requireNonNegative(amountCents)
-            require(categoryId.isNotBlank()) { "Categoria obrigatoria" }
-            val safeName = name.trim().take(120)
-            require(safeName.isNotBlank()) { "Descricao obrigatoria" }
+            requireCategoryId(categoryId)
+            val safeName = requireName(name)
             val safeDay = billingDay.coerceIn(1, 31)
             val currentMonth = _state.value.currentMonth
             val monthStart = LocalDate(currentMonth.year, currentMonth.month, 1)
             scheduleRepository.deleteByRefAndKindFromDate(subscriptionId, ScheduleKind.SUBSCRIPTION, monthStart)
-            UpsertSubscriptionUseCase(subscriptionRepository, scheduleRepository)(
+            upsertSubscriptionUseCase(
                 Subscription(
                     id = subscriptionId,
                     name = safeName,
@@ -478,9 +496,8 @@ class MainStore(
                     billingDay = safeDay,
                     categoryId = categoryId,
                     active = true,
-                    renewalPolicy = RenewalPolicy.MONTHLY,
-                    nextDueDate = dueDateForMonth(currentMonth, safeDay),
-                )
+                ),
+                scheduleStartYearMonth = currentMonth,
             )
             refreshInternal()
         }
@@ -494,20 +511,25 @@ class MainStore(
         }
     }
 
-    fun updateInstallment(installmentId: String, name: String, amountCents: Long, totalInstallments: Int, categoryId: String) {
+    fun updateInstallment(
+        installmentId: String,
+        name: String,
+        amountCents: Long,
+        totalInstallments: Int,
+        categoryId: String,
+    ) {
         scope.launchSafely {
             requireNonNegative(amountCents)
-            require(categoryId.isNotBlank()) { "Categoria obrigatoria" }
-            val safeName = name.trim().take(120)
-            require(safeName.isNotBlank()) { "Descricao obrigatoria" }
-            val safeInstallments = totalInstallments.coerceIn(1, 360)
+            requireCategoryId(categoryId)
+            val safeName = requireName(name)
+            val safeInstallments = totalInstallments.coerceIn(1, MAX_INSTALLMENTS)
             val monthlyAmountCents = toMonthlyInstallmentCents(amountCents, safeInstallments)
             val current = installmentRepository.list().firstOrNull { it.id == installmentId } ?: return@launchSafely
             val currentMonth = _state.value.currentMonth
             val start = current.startYearMonth
             val monthStart = LocalDate(currentMonth.year, currentMonth.month, 1)
             scheduleRepository.deleteByRefAndKindFromDate(installmentId, ScheduleKind.INSTALLMENT, monthStart)
-            CreateInstallmentPlanUseCase(installmentRepository, scheduleRepository)(
+            createInstallmentPlanUseCase(
                 InstallmentPlan(
                     id = installmentId,
                     name = safeName,
@@ -517,7 +539,7 @@ class MainStore(
                     endYearMonth = start.plusMonths(safeInstallments - 1),
                     categoryId = categoryId,
                     active = true,
-                )
+                ),
             )
             refreshInternal()
         }
@@ -536,13 +558,13 @@ class MainStore(
             val current = expenseRepository.getById(expenseId) ?: return@launchSafely
             val targetMonth = _state.value.currentMonth
             val day = current.occurredAt.day.coerceAtMost(monthBounds(targetMonth).second.day)
-            AddOrUpdateExpenseUseCase(expenseRepository)(
+            addOrUpdateExpenseUseCase(
                 current.copy(
                     id = id("exp"),
                     occurredAt = LocalDate(targetMonth.year, targetMonth.month, day),
                     createdAt = Clock.System.now(),
                     scheduleItemId = null,
-                )
+                ),
             )
             refreshInternal()
         }
@@ -551,11 +573,11 @@ class MainStore(
     fun duplicateSubscription(subscriptionId: String) {
         scope.launchSafely {
             val current = subscriptionRepository.list().firstOrNull { it.id == subscriptionId } ?: return@launchSafely
-            UpsertSubscriptionUseCase(subscriptionRepository, scheduleRepository)(
+            upsertSubscriptionUseCase(
                 current.copy(
                     id = id("sub"),
-                    nextDueDate = dueDateForMonth(_state.value.currentMonth, current.billingDay),
-                )
+                ),
+                scheduleStartYearMonth = _state.value.currentMonth,
             )
             refreshInternal()
         }
@@ -565,16 +587,16 @@ class MainStore(
         scope.launchSafely {
             val current = installmentRepository.list().firstOrNull { it.id == installmentId } ?: return@launchSafely
             val start = _state.value.currentMonth
-            val safeInstallments = current.totalInstallments.coerceIn(1, 360)
+            val safeInstallments = current.totalInstallments.coerceIn(1, MAX_INSTALLMENTS)
             val totalAmountCents = current.monthlyAmountCents * safeInstallments.toLong()
             val monthlyAmountCents = toMonthlyInstallmentCents(totalAmountCents, safeInstallments)
-            CreateInstallmentPlanUseCase(installmentRepository, scheduleRepository)(
+            createInstallmentPlanUseCase(
                 current.copy(
                     id = id("inst"),
                     monthlyAmountCents = monthlyAmountCents,
                     startYearMonth = start,
                     endYearMonth = start.plusMonths(safeInstallments - 1),
-                )
+                ),
             )
             refreshInternal()
         }
@@ -596,8 +618,12 @@ class MainStore(
             if (!allowDuringBlocking && _state.value.blockingMessage != null) {
                 return@launch
             }
-            _state.value = _state.value.copy(errorMessage = null)
-            runCatching { block() }
+            runCatching {
+                actionMutex.withLock {
+                    _state.value = _state.value.copy(errorMessage = null)
+                    block()
+                }
+            }
                 .onFailure {
                     AppLogger.e(TAG, "Unhandled store error", it)
                     _state.value = _state.value.copy(errorMessage = it.message ?: "Erro inesperado")
@@ -605,7 +631,10 @@ class MainStore(
         }
     }
 
-    private suspend fun applyHotReloadIfNeeded(reason: String, force: Boolean = false): Boolean {
+    private suspend fun applyHotReloadIfNeeded(
+        reason: String,
+        force: Boolean = false,
+    ): Boolean {
         if (!force && !googleAuthSyncService.state.value.requiresAppRestart) return false
         AppLogger.i(TAG, "Applying hot DB reload after $reason")
         _state.value = _state.value.copy(isLoading = true, blockingMessage = BLOCKING_RELOAD_TOKEN)
@@ -623,7 +652,11 @@ class MainStore(
             _state.value = _state.value.copy(isLoading = true)
         }
         val perf = mutableListOf<Pair<String, Long>>()
-        suspend fun <T> profiled(name: String, block: suspend () -> T): T {
+
+        suspend fun <T> profiled(
+            name: String,
+            block: suspend () -> T,
+        ): T {
             val started = Clock.System.now()
             val value = block()
             val elapsed = (Clock.System.now() - started).inWholeMilliseconds
@@ -634,97 +667,119 @@ class MainStore(
         val now = profiled("now_date") { Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault()).date }
         handleMonthRolloverUseCase(currentMonth)
         ensureFutureSchedulesFrom(currentMonth, 24)
-        val summary = profiled("compute_monthly_summary") { computeMonthlySummaryUseCase(currentMonth) }
-        val forecast = profiled("compute_forecast") { computeCashFlowForecastUseCase(LocalDate(currentMonth.year, currentMonth.month, 1), 12) }
-        val categories = profiled("list_categories") { categoryRepository.list() }
-        val monthBudget = profiled("find_budget_month") { budgetRepository.findByYearMonth(currentMonth) }
+        val data =
+            coroutineScope {
+                val summaryDeferred = async { profiled("compute_monthly_summary") { computeMonthlySummaryUseCase(currentMonth) } }
+                val forecastDeferred =
+                    async {
+                        profiled(
+                            "compute_forecast",
+                        ) { computeCashFlowForecastUseCase(LocalDate(currentMonth.year, currentMonth.month, 1), 12) }
+                    }
+                val categoriesDeferred = async { profiled("list_categories") { categoryRepository.list() } }
+                val monthBudgetDeferred = async { profiled("find_budget_month") { budgetRepository.findByYearMonth(currentMonth) } }
+                val expensesDeferred =
+                    async { profiled("list_expenses_page_1") { expenseRepository.byMonthPaged(currentMonth, EXPENSES_PAGE_SIZE, 0) } }
+                val duesDeferred =
+                    async { profiled("list_dues_14d") { scheduleRepository.byDateRange(now, now.plus(DatePeriod(days = 14))) } }
+                val subsDeferred = async { profiled("list_subscriptions") { subscriptionRepository.list() } }
+                val installmentsDeferred = async { profiled("list_installments") { installmentRepository.list() } }
+                val languageDeferred = async { profiled("load_language") { settingsRepository.getString("app.language") ?: "system" } }
+                val themeModeDeferred = async { profiled("load_theme") { normalizeThemeMode(settingsRepository.getString("app.theme")) } }
+                val historyDeferred =
+                    async { profiled("list_history_months") { budgetRepository.listMonths().ifEmpty { listOf(currentMonth) } } }
+                RefreshBundle(
+                    summary = summaryDeferred.await(),
+                    forecast = forecastDeferred.await(),
+                    categories = categoriesDeferred.await(),
+                    monthBudget = monthBudgetDeferred.await(),
+                    expenses = expensesDeferred.await(),
+                    dues = duesDeferred.await(),
+                    subscriptions = subsDeferred.await(),
+                    installments = installmentsDeferred.await(),
+                    language = languageDeferred.await(),
+                    themeMode = themeModeDeferred.await(),
+                    history = historyDeferred.await(),
+                )
+            }
+        val summary = data.summary
+        val forecast = data.forecast
+        val categories = data.categories
+        val monthBudget = data.monthBudget
+        val expenses = data.expenses
+        val dues = data.dues
+        val subs = data.subscriptions
+        val installments = data.installments
+        val language = data.language
+        val themeMode = data.themeMode
+        val history = data.history
         val allocations = profiled("list_allocations") { monthBudget?.let { budgetRepository.allocationsByBudgetMonth(it.id) }.orEmpty() }
-        val expenses = profiled("list_expenses_page_1") { expenseRepository.byMonthPaged(currentMonth, EXPENSES_PAGE_SIZE, 0) }
-        val dues = profiled("list_dues_14d") { scheduleRepository.byDateRange(now, now.plus(DatePeriod(days = 14))) }
-        val subs = profiled("list_subscriptions") { subscriptionRepository.list() }
-        val installments = profiled("list_installments") { installmentRepository.list() }
-        val language = profiled("load_language") { settingsRepository.getString("app.language") ?: "system" }
-        val themeMode = profiled("load_theme") { normalizeThemeMode(settingsRepository.getString("app.theme")) }
-        val planningUsePostSavings = profiled("load_planning_use_post_savings") {
-            settingsRepository.getString(PLANNING_USE_POST_SAVINGS_KEY)?.toBooleanStrictOrNull()
-                ?: _state.value.planningUsePostSavingsBudget
-        }
-        val planningMonthlyContribution = profiled("load_planning_monthly_contribution") {
-            settingsRepository.getString(PLANNING_MONTHLY_CONTRIBUTION_KEY)?.toLongOrNull()
-                ?: _state.value.planningMonthlyContributionCents
-        }
-        val planningGoalAmount = profiled("load_planning_goal_amount") {
-            settingsRepository.getString(PLANNING_GOAL_AMOUNT_KEY)?.toLongOrNull()
-                ?: _state.value.planningGoalAmountCents
-        }
-        val planningDesiredMargin = profiled("load_planning_desired_margin") {
-            settingsRepository.getString(PLANNING_DESIRED_MARGIN_KEY)?.toLongOrNull()
-                ?: _state.value.planningDesiredMarginCents
-        }
-        val history = profiled("list_history_months") { budgetRepository.listMonths().ifEmpty { listOf(currentMonth) } }
         val previousMonth = currentMonth.plusMonths(-1)
         val previousSummary = profiled("compute_previous_summary") { computeMonthlySummaryUseCase(previousMonth) }
-        val comparison = MonthComparison(
-            previousMonth = previousMonth,
-            spentDeltaCents = summary.spentTotalCents - previousSummary.spentTotalCents,
-            commitmentsDeltaCents = summary.commitmentsCents - previousSummary.commitmentsCents,
-        )
-        val slowQueries = perf
-            .filter { it.second >= SLOW_QUERY_MS }
-            .sortedByDescending { it.second }
-            .map { "${it.first}: ${it.second}ms" }
+        val comparison =
+            MonthComparison(
+                previousMonth = previousMonth,
+                spentDeltaCents = summary.spentTotalCents - previousSummary.spentTotalCents,
+                commitmentsDeltaCents = summary.commitmentsCents - previousSummary.commitmentsCents,
+            )
+        val slowQueries =
+            perf
+                .filter { it.second >= SLOW_QUERY_MS }
+                .sortedByDescending { it.second }
+                .map { "${it.first}: ${it.second}ms" }
         if (slowQueries.isNotEmpty()) {
-            AppLogger.w("Perf", "Slow queries (${currentMonth}): ${slowQueries.joinToString(" | ")}")
+            AppLogger.w("Perf", "Slow queries ($currentMonth): ${slowQueries.joinToString(" | ")}")
         }
 
         val previous = _state.value
-        _state.value = MainState(
-            currentMonth = currentMonth,
-            summary = summary,
-            forecast = forecast,
-            categories = categories,
-            allocations = allocations,
-            expenses = expenses,
-            upcomingDues = dues,
-            subscriptions = subs,
-            installments = installments,
-            monthHistory = history,
-            comparison = comparison,
-            canGoNextMonth = true,
-            expensesPage = 0,
-            hasMoreExpenses = expenses.size.toLong() == EXPENSES_PAGE_SIZE,
-            isLoadingMoreExpenses = false,
-            language = language,
-            themeMode = themeMode,
-            slowQueries = slowQueries,
-            googleSync = googleAuthSyncService.state.value,
-            appUpdate = appUpdateService.state.value,
-            errorMessage = previous.errorMessage,
-            blockingMessage = previous.blockingMessage,
-            infoMessage = previous.infoMessage,
-            isLoading = false,
-            planningUsePostSavingsBudget = planningUsePostSavings,
-            planningMonthlyContributionCents = planningMonthlyContribution,
-            planningGoalAmountCents = planningGoalAmount,
-            planningDesiredMarginCents = planningDesiredMargin,
-        )
+        _state.value =
+            MainState(
+                currentMonth = currentMonth,
+                summary = summary,
+                forecast = forecast,
+                categories = categories,
+                allocations = allocations,
+                expenses = expenses,
+                upcomingDues = dues,
+                subscriptions = subs,
+                installments = installments,
+                monthHistory = history,
+                comparison = comparison,
+                canGoNextMonth = true,
+                expensesPage = 0,
+                hasMoreExpenses = expenses.size.toLong() == EXPENSES_PAGE_SIZE,
+                isLoadingMoreExpenses = false,
+                language = language,
+                themeMode = themeMode,
+                slowQueries = slowQueries,
+                googleSync = googleAuthSyncService.state.value,
+                appUpdate = appUpdateService.state.value,
+                errorMessage = previous.errorMessage,
+                blockingMessage = previous.blockingMessage,
+                infoMessage = previous.infoMessage,
+                isLoading = false,
+            )
     }
 
-    private suspend fun ensureFutureSchedulesFrom(startMonth: YearMonth, monthsAhead: Int) {
+    private suspend fun ensureFutureSchedulesFrom(
+        startMonth: YearMonth,
+        monthsAhead: Int,
+    ) {
         subscriptionRepository.listActive().forEach { sub ->
-            val originMonth = YearMonth.fromDate(sub.nextDueDate)
-            val generationStart = if (startMonth < originMonth) originMonth else startMonth
-            UpsertSubscriptionUseCase(subscriptionRepository, scheduleRepository)(
+            upsertSubscriptionUseCase(
                 sub,
                 monthsAhead = monthsAhead,
-                scheduleStartYearMonth = generationStart,
+                scheduleStartYearMonth = startMonth,
                 persistSubscription = false,
             )
         }
     }
 
-    private suspend fun saveIncomeForwardFrom(startMonth: YearMonth, cents: Long) {
-        CreateBudgetMonthUseCase(budgetRepository)(startMonth, cents)
+    private suspend fun saveIncomeForwardFrom(
+        startMonth: YearMonth,
+        cents: Long,
+    ) {
+        createBudgetMonthUseCase(startMonth, cents)
         markExplicitBudgetMonth(startMonth)
         var cursor = startMonth.plusMonths(1)
         var filled = 0
@@ -738,7 +793,10 @@ class MainStore(
         }
     }
 
-    private fun toMonthlyInstallmentCents(totalAmountCents: Long, totalInstallments: Int): Long {
+    private fun toMonthlyInstallmentCents(
+        totalAmountCents: Long,
+        totalInstallments: Int,
+    ): Long {
         if (totalInstallments <= 0) return totalAmountCents.coerceAtLeast(0L)
         val split = totalAmountCents / totalInstallments.toLong()
         return split.coerceAtLeast(if (totalAmountCents > 0L) 1L else 0L)
@@ -751,46 +809,33 @@ class MainStore(
     private suspend fun isExplicitBudgetMonth(month: YearMonth): Boolean {
         return settingsRepository.getString("$EXPLICIT_BUDGET_KEY_PREFIX$month") == "1"
     }
+
+    private fun requireCategoryId(categoryId: String) {
+        require(categoryId.isNotBlank()) { ERROR_REQUIRED_CATEGORY }
+    }
+
+    private fun requireName(name: String): String {
+        val safeName = name.trim().take(MAX_TEXT_FIELD_LENGTH)
+        require(safeName.isNotBlank()) { ERROR_REQUIRED_DESCRIPTION }
+        return safeName
+    }
+
+    private fun sanitizeOptionalNote(value: String?): String? {
+        return value?.trim()?.takeIf { it.isNotBlank() }?.take(MAX_TEXT_FIELD_LENGTH)
+    }
+
 }
 
-private fun normalizeThemeMode(mode: String?): String = when (mode) {
-    "light", "dark", "amoled" -> mode
-    "system" -> "dark"
-    else -> "dark"
-}
-
-data class MainState(
-    val currentMonth: YearMonth = YearMonth(2026, 1),
-    val summary: MonthlySummary? = null,
-    val forecast: List<ForecastMonth> = emptyList(),
-    val categories: List<Category> = emptyList(),
-    val allocations: List<BudgetAllocation> = emptyList(),
-    val expenses: List<Expense> = emptyList(),
-    val upcomingDues: List<PaymentScheduleItem> = emptyList(),
-    val subscriptions: List<Subscription> = emptyList(),
-    val installments: List<InstallmentPlan> = emptyList(),
-    val monthHistory: List<YearMonth> = emptyList(),
-    val comparison: MonthComparison? = null,
-    val canGoNextMonth: Boolean = true,
-    val expensesPage: Long = 0,
-    val hasMoreExpenses: Boolean = false,
-    val isLoadingMoreExpenses: Boolean = false,
-    val language: String = "system",
-    val themeMode: String = "dark",
-    val slowQueries: List<String> = emptyList(),
-    val googleSync: GoogleSyncState = GoogleSyncState(
-        isAvailable = false,
-        isSignedIn = false,
-    ),
-    val appUpdate: AppUpdateState = AppUpdateState(
-        isAvailable = false,
-    ),
-    val planningUsePostSavingsBudget: Boolean = true,
-    val planningMonthlyContributionCents: Long = 50_000L,
-    val planningGoalAmountCents: Long = 1_000_000L,
-    val planningDesiredMarginCents: Long = 0L,
-    val blockingMessage: String? = null,
-    val infoMessage: String? = null,
-    val errorMessage: String? = null,
-    val isLoading: Boolean = true,
+private data class RefreshBundle(
+    val summary: MonthlySummary,
+    val forecast: List<ForecastMonth>,
+    val categories: List<Category>,
+    val monthBudget: BudgetMonth?,
+    val expenses: List<Expense>,
+    val dues: List<PaymentScheduleItem>,
+    val subscriptions: List<Subscription>,
+    val installments: List<InstallmentPlan>,
+    val language: String,
+    val themeMode: String,
+    val history: List<YearMonth>,
 )

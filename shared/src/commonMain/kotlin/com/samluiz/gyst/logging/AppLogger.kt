@@ -33,19 +33,44 @@ object AppLogger {
         sinks = if (includeConsole) listOf(ConsoleSink) else emptyList()
     }
 
-    fun d(tag: String, message: String, throwable: Throwable? = null) = log(AppLogLevel.DEBUG, tag, message, throwable)
-    fun i(tag: String, message: String, throwable: Throwable? = null) = log(AppLogLevel.INFO, tag, message, throwable)
-    fun w(tag: String, message: String, throwable: Throwable? = null) = log(AppLogLevel.WARN, tag, message, throwable)
-    fun e(tag: String, message: String, throwable: Throwable? = null) = log(AppLogLevel.ERROR, tag, message, throwable)
+    fun d(
+        tag: String,
+        message: String,
+        throwable: Throwable? = null,
+    ) = log(AppLogLevel.DEBUG, tag, message, throwable)
 
-    private fun log(level: AppLogLevel, tag: String, message: String, throwable: Throwable?) {
-        val entry = AppLogEntry(
-            timestampIso = Clock.System.now().toString(),
-            level = level,
-            tag = tag,
-            message = message,
-            throwable = throwable,
-        )
+    fun i(
+        tag: String,
+        message: String,
+        throwable: Throwable? = null,
+    ) = log(AppLogLevel.INFO, tag, message, throwable)
+
+    fun w(
+        tag: String,
+        message: String,
+        throwable: Throwable? = null,
+    ) = log(AppLogLevel.WARN, tag, message, throwable)
+
+    fun e(
+        tag: String,
+        message: String,
+        throwable: Throwable? = null,
+    ) = log(AppLogLevel.ERROR, tag, message, throwable)
+
+    private fun log(
+        level: AppLogLevel,
+        tag: String,
+        message: String,
+        throwable: Throwable?,
+    ) {
+        val entry =
+            AppLogEntry(
+                timestampIso = Clock.System.now().toString(),
+                level = level,
+                tag = tag,
+                message = message,
+                throwable = throwable,
+            )
         val snapshot = sinks
         snapshot.forEach { sink ->
             runCatching { sink.log(entry) }

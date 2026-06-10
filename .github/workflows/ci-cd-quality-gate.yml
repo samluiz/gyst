@@ -47,6 +47,8 @@ jobs:
           chmod +x gradlew
           for attempt in 1 2 3; do
             ./gradlew \
+              ktlintCheck \
+              detekt \
               :shared:compileKotlinDesktop \
               :shared:desktopTest \
               :androidApp:lintDebug \

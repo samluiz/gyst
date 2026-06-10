@@ -23,23 +23,29 @@ interface AppUpdateService {
     val state: StateFlow<AppUpdateState>
 
     suspend fun checkForUpdates(silent: Boolean = true)
+
     suspend fun openUpdate()
 }
 
 class NoOpAppUpdateService : AppUpdateService {
-    private val internal = MutableStateFlow(
-        AppUpdateState(
-            isAvailable = false,
+    private val internal =
+        MutableStateFlow(
+            AppUpdateState(
+                isAvailable = false,
+            ),
         )
-    )
 
     override val state: StateFlow<AppUpdateState> = internal.asStateFlow()
 
     override suspend fun checkForUpdates(silent: Boolean) = Unit
+
     override suspend fun openUpdate() = Unit
 }
 
-fun compareSemVer(a: String, b: String): Int {
+fun compareSemVer(
+    a: String,
+    b: String,
+): Int {
     fun parse(raw: String): Triple<Int, Int, Int> {
         val cleaned = raw.trim().removePrefix("v").substringBefore('-')
         val parts = cleaned.split(".")
@@ -56,4 +62,3 @@ fun compareSemVer(a: String, b: String): Int {
         else -> pa.third.compareTo(pb.third)
     }
 }
-
