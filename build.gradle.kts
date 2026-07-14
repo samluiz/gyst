@@ -66,9 +66,16 @@ subprojects {
         extensions.configure(KtlintExtension::class.java) {
             android.set(true)
             outputToConsole.set(true)
-            ignoreFailures.set(true)
+            ignoreFailures.set(false)
             filter {
-                exclude("**/build/generated/**")
+                // Generated KMP/Compose/SQLDelight sources are registered as source-set
+                // inputs. Gradle pattern filters are not reliably applied to those
+                // generated directories, so filter them using their absolute path.
+                exclude { element ->
+                    element.file.path
+                        .replace('\\', '/')
+                        .contains("/build/generated/")
+                }
             }
         }
     }

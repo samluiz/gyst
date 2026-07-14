@@ -4,13 +4,13 @@ import com.samluiz.gyst.domain.service.GoogleAuthSyncService
 import com.samluiz.gyst.domain.service.GoogleSyncState
 import com.samluiz.gyst.domain.service.SyncPolicy
 import com.samluiz.gyst.domain.service.SyncSource
+import kotlinx.cinterop.ExperimentalForeignApi
+import kotlinx.cinterop.addressOf
+import kotlinx.cinterop.usePinned
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
-import kotlinx.cinterop.ExperimentalForeignApi
-import kotlinx.cinterop.addressOf
-import kotlinx.cinterop.usePinned
 import platform.Foundation.NSData
 import platform.Foundation.NSDate
 import platform.Foundation.NSFileManager
@@ -25,14 +25,15 @@ class IosLocalSyncService(
     private val dbPath: String,
     private val backupPath: String,
 ) : GoogleAuthSyncService {
-    private val internal = MutableStateFlow(
-        GoogleSyncState(
-            isAvailable = true,
-            isSignedIn = true,
-            accountName = "iOS Local",
-            accountEmail = "local@ios",
+    private val internal =
+        MutableStateFlow(
+            GoogleSyncState(
+                isAvailable = true,
+                isSignedIn = true,
+                accountName = "iOS Local",
+                accountEmail = "local@ios",
+            ),
         )
-    )
     override val state: StateFlow<GoogleSyncState> = internal.asStateFlow()
 
     override suspend fun initialize() {

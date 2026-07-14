@@ -9,6 +9,3 @@ fun initGystIos() {
 }
 
 fun GystMainViewController() = ComposeUIViewController { GystRoot() }
-
-
-

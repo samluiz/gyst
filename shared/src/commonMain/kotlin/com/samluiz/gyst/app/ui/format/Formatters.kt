@@ -46,7 +46,7 @@ internal fun formatYearMonthHuman(
     yearMonth: YearMonth,
     languageCode: String,
 ): String {
-    val month = monthShortName(yearMonth.month, languageCode)
+    val month = dateLocale(languageCode).months[yearMonth.month - 1]
     return "$month ${yearMonth.year}"
 }
 
@@ -56,12 +56,8 @@ internal fun formatLocalDateHuman(
 ): String {
     val relative = relativeDateLabel(date, languageCode)
     if (relative != null) return relative
-    val month = monthShortName(date.month.ordinal + 1, languageCode)
-    return if (languageCode == "pt") {
-        "${pad2(date.day)} $month ${date.year}"
-    } else {
-        "$month ${date.day}, ${date.year}"
-    }
+    val locale = dateLocale(languageCode)
+    return locale.absoluteDate(date)
 }
 
 internal fun formatInstantHuman(
@@ -87,15 +83,13 @@ internal fun relativeDateLabel(
 ): String? {
     val today = Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault()).date
     val diff = date.toEpochDays() - today.toEpochDays()
+    val locale = dateLocale(languageCode)
     return when {
-        diff == 0L -> if (languageCode == "pt") "Hoje" else "Today"
-        diff == -1L -> if (languageCode == "pt") "Ontem" else "Yesterday"
-        diff == 1L -> if (languageCode == "pt") "Amanha" else "Tomorrow"
-        diff in 2L..7L -> if (languageCode == "pt") "Em $diff dias" else "In $diff days"
-        diff in -7L..-2L -> {
-            val days = -diff
-            if (languageCode == "pt") "Ha $days dias" else "$days days ago"
-        }
+        diff == 0L -> locale.today
+        diff == -1L -> locale.yesterday
+        diff == 1L -> locale.tomorrow
+        diff in 2L..7L -> locale.inDays(diff)
+        diff in -7L..-2L -> locale.daysAgo(-diff)
         else -> null
     }
 }
@@ -104,18 +98,44 @@ internal fun monthShortName(
     month: Int,
     languageCode: String,
 ): String {
-    val pt =
-        listOf(
-            "jan", "fev", "mar", "abr", "mai", "jun",
-            "jul", "ago", "set", "out", "nov", "dez",
-        )
-    val en =
-        listOf(
-            "Jan", "Feb", "Mar", "Apr", "May", "Jun",
-            "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
-        )
     val safeIndex = (month - 1).coerceIn(0, 11)
-    return if (languageCode == "pt") pt[safeIndex] else en[safeIndex]
+    return dateLocale(languageCode).months[safeIndex]
 }
 
+private data class DateLocale(
+    val months: List<String>,
+    val today: String,
+    val yesterday: String,
+    val tomorrow: String,
+    val absoluteDate: (LocalDate) -> String,
+    val inDays: (Long) -> String,
+    val daysAgo: (Long) -> String,
+)
 
+private val portugueseDateLocale =
+    DateLocale(
+        months = listOf("jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"),
+        today = "Hoje",
+        yesterday = "Ontem",
+        tomorrow = "Amanhã",
+        absoluteDate = { date -> "${pad2(date.day)} ${monthShortName(date.month.ordinal + 1, "pt")} ${date.year}" },
+        inDays = { days -> "Em $days dias" },
+        daysAgo = { days -> "Há $days dias" },
+    )
+
+private val englishDateLocale =
+    DateLocale(
+        months = listOf("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"),
+        today = "Today",
+        yesterday = "Yesterday",
+        tomorrow = "Tomorrow",
+        absoluteDate = { date -> "${monthShortName(date.month.ordinal + 1, "en")} ${date.day}, ${date.year}" },
+        inDays = { days -> "In $days days" },
+        daysAgo = { days -> "$days days ago" },
+    )
+
+private fun dateLocale(languageCode: String): DateLocale =
+    when (languageCode.lowercase()) {
+        "pt", "pt-br" -> portugueseDateLocale
+        else -> englishDateLocale
+    }

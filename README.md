@@ -112,6 +112,23 @@ Write is dialog-based:
 - **Projeção de meta**:
   - goal amount + monthly contribution inputs
   - projected completion month
+- **Consultor (BYOK)**:
+  - deterministic priority insights and what-if previews
+  - conversational advice grounded in the app's 12-month forecast
+  - configurable OpenAI-compatible base URL, model, and API key
+  - only aggregated totals and projections are sent; descriptions, identity, and the raw database are excluded
+  - conversation history is in-memory and can be cleared at any time
+
+### Advisor provider setup
+
+Open `Planejamento > Consultor` and configure:
+
+1. Select a preset for OpenAI, OpenCode Zen, Gemini, OpenRouter, or Groq.
+2. Enter the user's own API key.
+
+The preset supplies the verified base URL, model, and API format. Advanced settings remain available for a different model or any custom OpenAI-compatible provider. User-entered URLs are preserved exactly; endpoint normalization happens only when constructing a request.
+
+The protocol adapters call either `<base-url>/chat/completions` or `<base-url>/responses`. This supports both OpenAI-compatible protocols. Defaults favor free access where the provider offers it: OpenCode Zen uses `deepseek-v4-flash-free`, OpenRouter uses `openrouter/free`, Gemini uses the free-tier-eligible `gemini-3.5-flash`, and Groq uses the free-plan-eligible `openai/gpt-oss-120b`. OpenAI API models require paid API credits, so its preset remains `gpt-5.4-mini`. Provider and model settings are stored in the local app database. The API key is stored separately: Android encrypts it with Android Keystore and excludes it from backup; desktop stores it in a user-only file outside the database; iOS stores it in platform preferences. Keys and advisor prompts are never written to application logs or Google Drive backups.
 
 ### `Perfil`
 - **Guardrails**: no-new-installments switch

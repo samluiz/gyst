@@ -42,6 +42,20 @@ data class Expense(
     val recurrenceType: RecurrenceType = RecurrenceType.ONE_TIME,
     val createdAt: Instant,
     val scheduleItemId: String? = null,
+    val recurrenceSeriesId: String? = null,
+)
+
+data class RecurringExpenseSeries(
+    val id: String,
+    val startYearMonth: YearMonth,
+    val endYearMonth: YearMonth?,
+    val dayOfMonth: Int,
+    val amountCents: Long,
+    val categoryId: String,
+    val note: String?,
+    val merchant: String?,
+    val paymentMethod: PaymentMethod,
+    val active: Boolean,
 )
 
 data class Subscription(
@@ -51,12 +65,14 @@ data class Subscription(
     val billingDay: Int,
     val categoryId: String,
     val active: Boolean,
+    val startYearMonth: YearMonth,
 )
 
 data class InstallmentPlan(
     val id: String,
     val name: String,
     val totalInstallments: Int,
+    val totalAmountCents: Long,
     val monthlyAmountCents: Long,
     val startYearMonth: YearMonth,
     val endYearMonth: YearMonth,
@@ -72,6 +88,7 @@ data class PaymentScheduleItem(
     val id: String,
     val kind: ScheduleKind,
     val refId: String,
+    val categoryId: String,
     val dueDate: LocalDate,
     val amountCents: Long,
     val status: ScheduleStatus,

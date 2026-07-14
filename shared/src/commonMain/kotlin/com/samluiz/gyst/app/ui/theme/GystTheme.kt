@@ -171,5 +171,3 @@ fun GystTheme(
         content = content,
     )
 }
-
-

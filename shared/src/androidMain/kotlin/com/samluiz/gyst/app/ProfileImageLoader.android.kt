@@ -11,16 +11,18 @@ import java.net.URL
 
 @Composable
 actual fun rememberRemoteProfileImage(photoUrl: String?): ImageBitmap? {
-    val state = produceState<ImageBitmap?>(initialValue = null, key1 = photoUrl) {
-        value = null
-        if (photoUrl.isNullOrBlank()) return@produceState
-        value = runCatching {
-            withContext(Dispatchers.IO) {
-                URL(photoUrl).openStream().use { stream ->
-                    BitmapFactory.decodeStream(stream)?.asImageBitmap()
-                }
-            }
-        }.getOrNull()
-    }
+    val state =
+        produceState<ImageBitmap?>(initialValue = null, key1 = photoUrl) {
+            value = null
+            if (photoUrl.isNullOrBlank()) return@produceState
+            value =
+                runCatching {
+                    withContext(Dispatchers.IO) {
+                        URL(photoUrl).openStream().use { stream ->
+                            BitmapFactory.decodeStream(stream)?.asImageBitmap()
+                        }
+                    }
+                }.getOrNull()
+        }
     return state.value
 }

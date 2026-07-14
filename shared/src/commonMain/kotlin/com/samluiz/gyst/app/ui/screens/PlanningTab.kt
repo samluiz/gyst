@@ -30,7 +30,6 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -56,10 +55,47 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.samluiz.gyst.domain.model.YearMonth
+import com.samluiz.gyst.domain.service.AdvisorApiFormat
 import com.samluiz.gyst.presentation.MainState
 
 @Composable
 internal fun PlanningTab(
+    s: AppStrings,
+    state: MainState,
+    onConfigureAdvisor: (String, String, AdvisorApiFormat, String?) -> Unit,
+    onAskAdvisor: (String) -> Unit,
+    onEnsureAdvisorOverview: (Boolean) -> Unit,
+    onClearAdvisor: () -> Unit,
+    onDisconnectAdvisor: () -> Unit,
+) {
+    var selectedView by remember { mutableStateOf(0) }
+    val labels = listOf(s.planningFuture, s.planningAdvisor)
+    Column(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            labels.forEachIndexed { index, label ->
+                AppToggleChip(selected = selectedView == index, onClick = { selectedView = index }, text = label)
+            }
+        }
+        Box(modifier = Modifier.weight(1f)) {
+            if (selectedView == 0) {
+                FuturePlanningTab(s, state)
+            } else {
+                AdvisorPlanningContent(
+                    s = s,
+                    state = state,
+                    onConfigure = onConfigureAdvisor,
+                    onAsk = onAskAdvisor,
+                    onEnsureOverview = onEnsureAdvisorOverview,
+                    onClear = onClearAdvisor,
+                    onDisconnect = onDisconnectAdvisor,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun FuturePlanningTab(
     s: AppStrings,
     state: MainState,
 ) {
@@ -409,5 +445,3 @@ internal fun MiniMetric(
 }
 
 internal enum class ExpensesSection { DESPESAS, ASSINATURAS, PARCELAMENTOS }
-
-

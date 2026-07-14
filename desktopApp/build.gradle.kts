@@ -1,5 +1,5 @@
-import org.jetbrains.compose.desktop.application.dsl.TargetFormat
 import org.gradle.api.tasks.JavaExec
+import org.jetbrains.compose.desktop.application.dsl.TargetFormat
 
 plugins {
     alias(libs.plugins.kotlinMultiplatform)

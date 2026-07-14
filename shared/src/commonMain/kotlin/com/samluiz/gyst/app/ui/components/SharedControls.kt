@@ -147,7 +147,13 @@ internal fun CompactInput(
                     .fillMaxWidth()
                     .onFocusChanged {
                         focused = it.isFocused
-                        if (it.isFocused && !focusHandled && fieldValue.text.isNotEmpty() && fieldValue.selection.start == 0 && fieldValue.selection.end == 0) {
+                        val shouldMoveCursorToEnd =
+                            it.isFocused &&
+                                !focusHandled &&
+                                fieldValue.text.isNotEmpty() &&
+                                fieldValue.selection.start == 0 &&
+                                fieldValue.selection.end == 0
+                        if (shouldMoveCursorToEnd) {
                             fieldValue = fieldValue.copy(selection = TextRange(fieldValue.text.length))
                         }
                         focusHandled = it.isFocused
@@ -163,8 +169,11 @@ internal fun CompactInput(
                         RoundedCornerShape(8.dp),
                     )
                     .background(
-                        if (focused) MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.92f)
-                        else MaterialTheme.colorScheme.surface.copy(alpha = 0.94f),
+                        if (focused) {
+                            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.92f)
+                        } else {
+                            MaterialTheme.colorScheme.surface.copy(alpha = 0.94f)
+                        },
                         RoundedCornerShape(8.dp),
                     ),
             decorationBox = { innerTextField ->
@@ -226,8 +235,11 @@ internal fun CompactMoneyInput(
                         RoundedCornerShape(8.dp),
                     )
                     .background(
-                        if (focused) MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.96f)
-                        else MaterialTheme.colorScheme.surface.copy(alpha = 0.98f),
+                        if (focused) {
+                            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.96f)
+                        } else {
+                            MaterialTheme.colorScheme.surface.copy(alpha = 0.98f)
+                        },
                         RoundedCornerShape(8.dp),
                     ),
             decorationBox = { innerTextField ->

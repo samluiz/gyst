@@ -7,3 +7,9 @@ Current ADRs:
 - `ADR-0001-store-splitting-and-state-loading.md`
 - `ADR-0002-safety-guard-no-new-installments.md`
 
+Current shared-code boundaries:
+
+- `presentation/MainStore.kt`: lifecycle, navigation, serialized action execution, and state publication.
+- `presentation/Store*Actions.kt`: capability-specific mutations and external-service actions.
+- `app/ui/screens/`: screen entry points plus focused dialog and identity/category subflows.
+- `data/repository/Sql*Repository.kt`: one SQLDelight repository implementation per file.

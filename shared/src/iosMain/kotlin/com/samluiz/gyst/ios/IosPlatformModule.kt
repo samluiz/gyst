@@ -4,6 +4,7 @@ import app.cash.sqldelight.db.SqlDriver
 import app.cash.sqldelight.driver.native.NativeSqliteDriver
 import com.samluiz.gyst.data.repository.SqlDriverFactory
 import com.samluiz.gyst.db.GystDatabase
+import com.samluiz.gyst.domain.service.AdvisorSecretStore
 import com.samluiz.gyst.domain.service.AppUpdateService
 import com.samluiz.gyst.domain.service.GoogleAuthSyncService
 import com.samluiz.gyst.domain.service.NoOpAppUpdateService
@@ -16,23 +17,25 @@ import platform.Foundation.NSSearchPathForDirectoriesInDomains
 import platform.Foundation.NSUserDomainMask
 
 @OptIn(ExperimentalForeignApi::class)
-fun iosPlatformModule(): Module = module {
-    single<SqlDriverFactory> {
-        object : SqlDriverFactory {
-            override fun createDriver(): SqlDriver = NativeSqliteDriver(GystDatabase.Schema, iosDbPath())
+fun iosPlatformModule(): Module =
+    module {
+        single<SqlDriverFactory> {
+            object : SqlDriverFactory {
+                override fun createDriver(): SqlDriver = NativeSqliteDriver(GystDatabase.Schema, iosDbPath())
+            }
         }
+        single<SqlDriver> {
+            get<SqlDriverFactory>().createDriver()
+        }
+        single<GoogleAuthSyncService> {
+            IosLocalSyncService(
+                dbPath = iosDbPath(),
+                backupPath = iosBackupPath(),
+            )
+        }
+        single<AppUpdateService> { NoOpAppUpdateService() }
+        single<AdvisorSecretStore> { IosAdvisorSecretStore() }
     }
-    single<SqlDriver> {
-        get<SqlDriverFactory>().createDriver()
-    }
-    single<GoogleAuthSyncService> {
-        IosLocalSyncService(
-            dbPath = iosDbPath(),
-            backupPath = iosBackupPath(),
-        )
-    }
-    single<AppUpdateService> { NoOpAppUpdateService() }
-}
 
 @OptIn(ExperimentalForeignApi::class)
 private fun iosDocumentsDir(): String {

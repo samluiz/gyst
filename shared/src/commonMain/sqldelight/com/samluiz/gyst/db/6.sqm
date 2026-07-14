@@ -1,0 +1,148 @@
+ALTER TABLE expense ADD COLUMN recurrence_series_id TEXT;
+
+UPDATE expense AS current
+SET recurrence_series_id = (
+    SELECT 'legacy-rec-' || MIN(candidate.id)
+    FROM expense AS candidate
+    WHERE candidate.recurrence_type = 'MONTHLY'
+      AND candidate.schedule_item_id IS NULL
+      AND candidate.category_id = current.category_id
+      AND candidate.amount_cents = current.amount_cents
+      AND candidate.payment_method = current.payment_method
+      AND ((candidate.note IS NULL AND current.note IS NULL) OR candidate.note = current.note)
+      AND ((candidate.merchant IS NULL AND current.merchant IS NULL) OR candidate.merchant = current.merchant)
+)
+WHERE current.recurrence_type = 'MONTHLY' AND current.schedule_item_id IS NULL;
+
+CREATE TABLE recurring_expense_series (
+    id TEXT NOT NULL PRIMARY KEY,
+    start_year_month TEXT NOT NULL,
+    end_year_month TEXT,
+    day_of_month INTEGER NOT NULL CHECK(day_of_month >= 1 AND day_of_month <= 31),
+    amount_cents INTEGER NOT NULL CHECK(amount_cents >= 0),
+    category_id TEXT NOT NULL,
+    note TEXT,
+    merchant TEXT,
+    payment_method TEXT NOT NULL,
+    active INTEGER NOT NULL CHECK(active IN (0, 1)),
+    CHECK(payment_method IN ('PIX', 'DEBIT', 'CASH', 'TRANSFER')),
+    CHECK(end_year_month IS NULL OR end_year_month >= start_year_month),
+    FOREIGN KEY (category_id) REFERENCES category(id) ON DELETE RESTRICT
+);
+
+INSERT INTO recurring_expense_series(
+    id, start_year_month, end_year_month, day_of_month, amount_cents, category_id, note, merchant, payment_method, active
+)
+SELECT recurrence_series_id,
+       MIN(substr(occurred_at, 1, 7)),
+       NULL,
+       CAST(substr(MIN(occurred_at), 9, 2) AS INTEGER),
+       amount_cents,
+       category_id,
+       note,
+       merchant,
+       payment_method,
+       1
+FROM expense
+WHERE recurrence_series_id IS NOT NULL
+GROUP BY recurrence_series_id, amount_cents, category_id, note, merchant, payment_method;
+
+CREATE TABLE expense_v6 (
+    id TEXT NOT NULL PRIMARY KEY,
+    occurred_at TEXT NOT NULL,
+    amount_cents INTEGER NOT NULL CHECK(amount_cents >= 0),
+    category_id TEXT NOT NULL,
+    note TEXT,
+    merchant TEXT,
+    payment_method TEXT NOT NULL,
+    recurrence_type TEXT NOT NULL DEFAULT 'ONE_TIME',
+    created_at TEXT NOT NULL,
+    schedule_item_id TEXT,
+    recurrence_series_id TEXT,
+    CHECK(payment_method IN ('PIX', 'DEBIT', 'CASH', 'TRANSFER')),
+    CHECK(recurrence_type IN ('ONE_TIME', 'MONTHLY')),
+    FOREIGN KEY (category_id) REFERENCES category(id) ON DELETE RESTRICT,
+    FOREIGN KEY (recurrence_series_id) REFERENCES recurring_expense_series(id) ON DELETE SET NULL
+);
+
+INSERT INTO expense_v6(
+    id, occurred_at, amount_cents, category_id, note, merchant, payment_method,
+    recurrence_type, created_at, schedule_item_id, recurrence_series_id
+)
+SELECT id, occurred_at, amount_cents, category_id, note, merchant, payment_method,
+       recurrence_type, created_at, schedule_item_id, recurrence_series_id
+FROM expense;
+
+DROP TABLE expense;
+
+ALTER TABLE expense_v6 RENAME TO expense;
+
+CREATE INDEX idx_expense_occurred_at ON expense(occurred_at);
+CREATE INDEX idx_expense_category_occurred ON expense(category_id, occurred_at);
+CREATE INDEX idx_expense_recurring_lookup ON expense(recurrence_type, schedule_item_id, occurred_at);
+
+CREATE INDEX idx_expense_recurrence_month
+ON expense(recurrence_series_id, substr(occurred_at, 1, 7))
+WHERE recurrence_series_id IS NOT NULL;
+
+CREATE INDEX idx_recurring_expense_active_range
+ON recurring_expense_series(active, start_year_month, end_year_month);
+
+ALTER TABLE subscription ADD COLUMN start_year_month TEXT NOT NULL DEFAULT '1970-01';
+
+UPDATE subscription
+SET start_year_month = COALESCE(
+    (SELECT MIN(substr(due_date, 1, 7)) FROM payment_schedule_item WHERE subscription_id = subscription.id),
+    strftime('%Y-%m', 'now')
+);
+
+ALTER TABLE installment_plan ADD COLUMN total_amount_cents INTEGER NOT NULL DEFAULT 0;
+
+UPDATE installment_plan
+SET total_amount_cents = monthly_amount_cents * total_installments;
+
+ALTER TABLE payment_schedule_item ADD COLUMN category_id TEXT;
+
+UPDATE payment_schedule_item
+SET category_id = CASE kind
+    WHEN 'SUBSCRIPTION' THEN (SELECT category_id FROM subscription WHERE id = payment_schedule_item.subscription_id)
+    WHEN 'INSTALLMENT' THEN (SELECT category_id FROM installment_plan WHERE id = payment_schedule_item.installment_plan_id)
+END;
+
+CREATE TABLE payment_schedule_item_v6 (
+    id TEXT NOT NULL PRIMARY KEY,
+    kind TEXT NOT NULL,
+    ref_id TEXT NOT NULL,
+    category_id TEXT NOT NULL,
+    subscription_id TEXT,
+    installment_plan_id TEXT,
+    due_date TEXT NOT NULL,
+    amount_cents INTEGER NOT NULL,
+    status TEXT NOT NULL,
+    paid_at TEXT,
+    CHECK(kind IN ('SUBSCRIPTION', 'INSTALLMENT')),
+    CHECK(status IN ('DUE', 'PAID', 'SKIPPED')),
+    CHECK(
+      (kind = 'SUBSCRIPTION' AND subscription_id IS NOT NULL AND installment_plan_id IS NULL) OR
+      (kind = 'INSTALLMENT' AND installment_plan_id IS NOT NULL AND subscription_id IS NULL)
+    ),
+    FOREIGN KEY (subscription_id) REFERENCES subscription(id) ON DELETE CASCADE,
+    FOREIGN KEY (installment_plan_id) REFERENCES installment_plan(id) ON DELETE CASCADE,
+    FOREIGN KEY (category_id) REFERENCES category(id) ON DELETE RESTRICT
+);
+
+INSERT INTO payment_schedule_item_v6(
+    id, kind, ref_id, category_id, subscription_id, installment_plan_id, due_date, amount_cents, status, paid_at
+)
+SELECT id, kind, ref_id, category_id, subscription_id, installment_plan_id, due_date, amount_cents, status, paid_at
+FROM payment_schedule_item;
+
+DROP TABLE payment_schedule_item;
+
+ALTER TABLE payment_schedule_item_v6 RENAME TO payment_schedule_item;
+
+CREATE UNIQUE INDEX idx_schedule_unique_ref_kind_due
+ON payment_schedule_item(ref_id, kind, due_date);
+
+CREATE INDEX idx_schedule_due_date
+ON payment_schedule_item(due_date);

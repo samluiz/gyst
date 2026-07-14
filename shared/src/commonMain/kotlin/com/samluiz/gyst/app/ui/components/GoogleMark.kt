@@ -5,5 +5,3 @@ import androidx.compose.ui.Modifier
 
 @Composable
 expect fun GoogleMark(modifier: Modifier = Modifier)
-
-

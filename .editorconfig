@@ -8,3 +8,9 @@ ij_kotlin_allow_trailing_comma = true
 ij_kotlin_allow_trailing_comma_on_call_site = true
 ktlint_function_naming_ignore_when_annotated_with = Composable
 ktlint_standard_filename = disabled
+# Wildcard imports are used intentionally for cohesive domain model/repository APIs.
+ktlint_standard_no-wildcard-imports = disabled
+
+[shared/src/iosMain/**/*.kt]
+# Swift/Objective-C entry points conventionally use exported PascalCase names.
+ktlint_standard_function-naming = disabled

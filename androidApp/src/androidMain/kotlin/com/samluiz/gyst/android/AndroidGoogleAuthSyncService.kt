@@ -25,17 +25,17 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
-import kotlin.coroutines.resume
-import kotlin.coroutines.resumeWithException
-import kotlin.random.Random
-import kotlin.time.Clock
-import kotlin.time.Instant
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.InputStream
 import java.net.HttpURLConnection
 import java.net.URL
 import java.net.URLEncoder
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
+import kotlin.random.Random
+import kotlin.time.Clock
+import kotlin.time.Instant
 
 private const val DRIVE_APPDATA_SCOPE = "https://www.googleapis.com/auth/drive.appdata"
 private const val BACKUP_FILE_NAME = "gyst-backup.db"
@@ -49,18 +49,20 @@ class AndroidGoogleAuthSyncService(
         const val TAG = "AndroidGoogleSync"
     }
 
-    private val internal = MutableStateFlow(
-        GoogleSyncState(
-            isAvailable = true,
-            isSignedIn = false,
+    private val internal =
+        MutableStateFlow(
+            GoogleSyncState(
+                isAvailable = true,
+                isSignedIn = false,
+            ),
         )
-    )
     override val state: StateFlow<GoogleSyncState> = internal.asStateFlow()
 
-    private val signInOptions = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
-        .requestEmail()
-        .requestScopes(Scope(DRIVE_APPDATA_SCOPE))
-        .build()
+    private val signInOptions =
+        GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
+            .requestEmail()
+            .requestScopes(Scope(DRIVE_APPDATA_SCOPE))
+            .build()
 
     private val signInClient = runCatching { GoogleSignIn.getClient(appContext, signInOptions) }.getOrNull()
 
@@ -69,14 +71,15 @@ class AndroidGoogleAuthSyncService(
 
     fun bind(activity: ComponentActivity) {
         if (signInLauncher != null) return
-        signInLauncher = activity.registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
-            val callback = pendingSignIn ?: return@registerForActivityResult
-            pendingSignIn = null
-            val task = GoogleSignIn.getSignedInAccountFromIntent(result.data)
-            runCatching { task.getResult(ApiException::class.java) }
-                .onSuccess { callback(Result.success(it)) }
-                .onFailure { callback(Result.failure(it)) }
-        }
+        signInLauncher =
+            activity.registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+                val callback = pendingSignIn ?: return@registerForActivityResult
+                pendingSignIn = null
+                val task = GoogleSignIn.getSignedInAccountFromIntent(result.data)
+                runCatching { task.getResult(ApiException::class.java) }
+                    .onSuccess { callback(Result.success(it)) }
+                    .onFailure { callback(Result.failure(it)) }
+            }
     }
 
     override suspend fun initialize() {
@@ -345,9 +348,13 @@ class AndroidGoogleAuthSyncService(
         }
     }
 
-    private fun refreshState(lastError: String?, lastErrorCode: GoogleSyncErrorCode?) {
-        val signedAccount = runCatching { GoogleSignIn.getLastSignedInAccount(appContext) }.getOrNull()
-            ?.takeIf { GoogleSignIn.hasPermissions(it, Scope(DRIVE_APPDATA_SCOPE)) }
+    private fun refreshState(
+        lastError: String?,
+        lastErrorCode: GoogleSyncErrorCode?,
+    ) {
+        val signedAccount =
+            runCatching { GoogleSignIn.getLastSignedInAccount(appContext) }.getOrNull()
+                ?.takeIf { GoogleSignIn.hasPermissions(it, Scope(DRIVE_APPDATA_SCOPE)) }
         val signed = signedAccount != null
         internal.update {
             it.copy(
@@ -395,7 +402,10 @@ class AndroidGoogleAuthSyncService(
         return dbFile.readBytes()
     }
 
-    private fun writeDatabaseBytes(content: ByteArray, dbFile: File = localDbFile()) {
+    private fun writeDatabaseBytes(
+        content: ByteArray,
+        dbFile: File = localDbFile(),
+    ) {
         verifySqliteContent(content)
         dbFile.parentFile?.mkdirs()
         val tmp = File(dbFile.parentFile, "${dbFile.name}.tmp")
@@ -436,40 +446,49 @@ class AndroidGoogleAuthSyncService(
     }
 
     private fun checkpointWal(dbFile: File) {
-        SQLiteDatabase.openDatabase(dbFile.path, null, SQLiteDatabase.OPEN_READWRITE).use { db ->
-            runCatching {
-                db.rawQuery("PRAGMA wal_checkpoint(FULL)", null).use { }
+        SQLiteDatabase
+            .openDatabase(dbFile.path, null, SQLiteDatabase.OPEN_READWRITE)
+            .use { db ->
+                runCatching {
+                    db.rawQuery("PRAGMA wal_checkpoint(FULL)", null).use { }
+                }
             }
-        }
     }
 
     private fun findBackupFile(token: String): RemoteBackupFile? {
         val query = "name='$BACKUP_FILE_NAME' and 'appDataFolder' in parents and trashed=false"
         val encodedQuery = URLEncoder.encode(query, "UTF-8")
         val url =
-            "https://www.googleapis.com/drive/v3/files?q=$encodedQuery&spaces=appDataFolder&orderBy=modifiedTime desc&fields=files(id,name,modifiedTime)"
+            "https://www.googleapis.com/drive/v3/files?q=$encodedQuery" +
+                "&spaces=appDataFolder&orderBy=modifiedTime desc" +
+                "&fields=files(id,name,modifiedTime)"
         val response = requestText(url, "GET", token)
         val root = JSONObject(response)
         val files = root.optJSONArray("files") ?: return null
         if (files.length() == 0) return null
-        val candidates = buildList {
-            for (i in 0 until files.length()) {
-                val file = files.optJSONObject(i) ?: continue
-                val id = file.optString("id").takeIf { it.isNotBlank() } ?: continue
-                val modifiedAt = file.optString("modifiedTime")
-                    .takeIf { it.isNotBlank() }
-                    ?.let { runCatching { Instant.parse(it) }.getOrNull() }
-                add(RemoteBackupFile(id = id, modifiedAt = modifiedAt))
+        val candidates =
+            buildList {
+                for (i in 0 until files.length()) {
+                    val file = files.optJSONObject(i) ?: continue
+                    val id = file.optString("id").takeIf { it.isNotBlank() } ?: continue
+                    val modifiedAt =
+                        file.optString("modifiedTime")
+                            .takeIf { it.isNotBlank() }
+                            ?.let { runCatching { Instant.parse(it) }.getOrNull() }
+                    add(RemoteBackupFile(id = id, modifiedAt = modifiedAt))
+                }
             }
-        }
         if (candidates.isEmpty()) return null
         return candidates.maxWithOrNull(
             compareBy<RemoteBackupFile> { it.modifiedAt ?: Instant.DISTANT_PAST }
-                .thenBy { it.id }
+                .thenBy { it.id },
         )
     }
 
-    private fun createBackupFile(token: String, data: ByteArray) {
+    private fun createBackupFile(
+        token: String,
+        data: ByteArray,
+    ) {
         val metadata = """{"name":"$BACKUP_FILE_NAME","parents":["appDataFolder"]}"""
         multipartUpload(
             url = "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart",
@@ -480,7 +499,11 @@ class AndroidGoogleAuthSyncService(
         )
     }
 
-    private fun updateBackupFile(token: String, fileId: String, data: ByteArray) {
+    private fun updateBackupFile(
+        token: String,
+        fileId: String,
+        data: ByteArray,
+    ) {
         val metadata = """{"name":"$BACKUP_FILE_NAME"}"""
         multipartUpload(
             url = "https://www.googleapis.com/upload/drive/v3/files/$fileId?uploadType=multipart",
@@ -492,13 +515,17 @@ class AndroidGoogleAuthSyncService(
         )
     }
 
-    private fun upsertBackupMeta(token: String, localUpdatedAt: Instant) {
-        val metadata = JSONObject().apply {
-            put("lastLocalUpdatedAtIso", localUpdatedAt.toString())
-            put("savedAtIso", Clock.System.now().toString())
-            put("policy", SyncPolicy.NEWEST_WINS.name)
-            put("source", SyncSource.LOCAL_TO_CLOUD.name)
-        }.toString()
+    private fun upsertBackupMeta(
+        token: String,
+        localUpdatedAt: Instant,
+    ) {
+        val metadata =
+            JSONObject().apply {
+                put("lastLocalUpdatedAtIso", localUpdatedAt.toString())
+                put("savedAtIso", Clock.System.now().toString())
+                put("policy", SyncPolicy.NEWEST_WINS.name)
+                put("source", SyncSource.LOCAL_TO_CLOUD.name)
+            }.toString()
 
         val existing = findMetaFileId(token)
         if (existing == null) {
@@ -519,7 +546,10 @@ class AndroidGoogleAuthSyncService(
         return files.optJSONObject(0)?.optString("id")?.takeIf { it.isNotBlank() }
     }
 
-    private fun createMetaFile(token: String, data: ByteArray) {
+    private fun createMetaFile(
+        token: String,
+        data: ByteArray,
+    ) {
         val metadata = """{"name":"$BACKUP_META_FILE_NAME","parents":["appDataFolder"]}"""
         multipartUpload(
             url = "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart",
@@ -530,7 +560,11 @@ class AndroidGoogleAuthSyncService(
         )
     }
 
-    private fun updateMetaFile(token: String, fileId: String, data: ByteArray) {
+    private fun updateMetaFile(
+        token: String,
+        fileId: String,
+        data: ByteArray,
+    ) {
         val metadata = """{"name":"$BACKUP_META_FILE_NAME"}"""
         multipartUpload(
             url = "https://www.googleapis.com/upload/drive/v3/files/$fileId?uploadType=multipart",
@@ -542,7 +576,10 @@ class AndroidGoogleAuthSyncService(
         )
     }
 
-    private fun downloadBackupFile(token: String, fileId: String): ByteArray {
+    private fun downloadBackupFile(
+        token: String,
+        fileId: String,
+    ): ByteArray {
         val url = "https://www.googleapis.com/drive/v3/files/$fileId?alt=media"
         return requestBytes(url = url, method = "GET", token = token, contentType = null, body = null)
     }
@@ -557,17 +594,18 @@ class AndroidGoogleAuthSyncService(
     ) {
         val boundary = "gyst-${Random.nextInt(100_000, 999_999)}"
         val newline = "\r\n"
-        val body = ByteArrayOutputStream().apply {
-            write("--$boundary$newline".toByteArray())
-            write("Content-Type: application/json; charset=UTF-8$newline$newline".toByteArray())
-            write(metadataJson.toByteArray())
-            write(newline.toByteArray())
-            write("--$boundary$newline".toByteArray())
-            write("Content-Type: application/octet-stream$newline$newline".toByteArray())
-            write(media)
-            write(newline.toByteArray())
-            write("--$boundary--$newline".toByteArray())
-        }.toByteArray()
+        val body =
+            ByteArrayOutputStream().apply {
+                write("--$boundary$newline".toByteArray())
+                write("Content-Type: application/json; charset=UTF-8$newline$newline".toByteArray())
+                write(metadataJson.toByteArray())
+                write(newline.toByteArray())
+                write("--$boundary$newline".toByteArray())
+                write("Content-Type: application/octet-stream$newline$newline".toByteArray())
+                write(media)
+                write(newline.toByteArray())
+                write("--$boundary--$newline".toByteArray())
+            }.toByteArray()
 
         requestBytes(
             url = url,
@@ -579,7 +617,11 @@ class AndroidGoogleAuthSyncService(
         )
     }
 
-    private fun requestText(url: String, method: String, token: String): String {
+    private fun requestText(
+        url: String,
+        method: String,
+        token: String,
+    ): String {
         val bytes = requestBytes(url, method, token, contentType = null, body = null)
         return bytes.toString(Charsets.UTF_8)
     }
@@ -592,16 +634,17 @@ class AndroidGoogleAuthSyncService(
         body: ByteArray?,
         extraHeaders: Map<String, String> = emptyMap(),
     ): ByteArray {
-        val connection = (URL(url).openConnection() as HttpURLConnection).apply {
-            requestMethod = method
-            connectTimeout = 15_000
-            readTimeout = 20_000
-            setRequestProperty("Authorization", "Bearer $token")
-            setRequestProperty("Accept", "application/json")
-            contentType?.let { setRequestProperty("Content-Type", it) }
-            extraHeaders.forEach { (k, v) -> setRequestProperty(k, v) }
-            doInput = true
-        }
+        val connection =
+            (URL(url).openConnection() as HttpURLConnection).apply {
+                requestMethod = method
+                connectTimeout = 15_000
+                readTimeout = 20_000
+                setRequestProperty("Authorization", "Bearer $token")
+                setRequestProperty("Accept", "application/json")
+                contentType?.let { setRequestProperty("Content-Type", it) }
+                extraHeaders.forEach { (k, v) -> setRequestProperty(k, v) }
+                doInput = true
+            }
 
         if (body != null) {
             connection.doOutput = true
@@ -638,7 +681,10 @@ private fun InputStream.readAllBytesCompat(): ByteArray {
     return buffer.toByteArray()
 }
 
-private fun classifyGoogleError(t: Throwable, isRestore: Boolean = false): GoogleSyncErrorCode {
+private fun classifyGoogleError(
+    t: Throwable,
+    isRestore: Boolean = false,
+): GoogleSyncErrorCode {
     if (t is ApiException) {
         return when (t.statusCode) {
             7 -> GoogleSyncErrorCode.NETWORK

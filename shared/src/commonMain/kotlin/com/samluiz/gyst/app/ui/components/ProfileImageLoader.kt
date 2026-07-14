@@ -5,5 +5,3 @@ import androidx.compose.ui.graphics.ImageBitmap
 
 @Composable
 expect fun rememberRemoteProfileImage(photoUrl: String?): ImageBitmap?
-
-

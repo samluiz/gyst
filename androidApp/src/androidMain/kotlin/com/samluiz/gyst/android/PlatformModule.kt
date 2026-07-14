@@ -8,27 +8,30 @@ import app.cash.sqldelight.db.SqlDriver
 import app.cash.sqldelight.driver.android.AndroidSqliteDriver
 import com.samluiz.gyst.data.repository.SqlDriverFactory
 import com.samluiz.gyst.db.GystDatabase
+import com.samluiz.gyst.domain.service.AdvisorSecretStore
 import com.samluiz.gyst.domain.service.AppUpdateService
 import com.samluiz.gyst.domain.service.GoogleAuthSyncService
 import org.koin.dsl.module
 import java.io.File
 
-fun androidPlatformModule(context: Context): org.koin.core.module.Module = module {
-    single<SqlDriverFactory> {
-        object : SqlDriverFactory {
-            override fun createDriver(): SqlDriver = createAndroidDriver(context)
+fun androidPlatformModule(context: Context): org.koin.core.module.Module =
+    module {
+        single<SqlDriverFactory> {
+            object : SqlDriverFactory {
+                override fun createDriver(): SqlDriver = createAndroidDriver(context)
+            }
         }
+        single<SqlDriver> {
+            get<SqlDriverFactory>().createDriver()
+        }
+        single<GoogleAuthSyncService> {
+            AndroidGoogleAuthSyncService(context.applicationContext)
+        }
+        single<AppUpdateService> {
+            AndroidAppUpdateService(context.applicationContext)
+        }
+        single<AdvisorSecretStore> { AndroidAdvisorSecretStore(context.applicationContext) }
     }
-    single<SqlDriver> {
-        get<SqlDriverFactory>().createDriver()
-    }
-    single<GoogleAuthSyncService> {
-        AndroidGoogleAuthSyncService(context.applicationContext)
-    }
-    single<AppUpdateService> {
-        AndroidAppUpdateService(context.applicationContext)
-    }
-}
 
 private fun createAndroidDriver(context: Context): SqlDriver {
     hardenLegacySchema(context)
@@ -36,21 +39,22 @@ private fun createAndroidDriver(context: Context): SqlDriver {
         schema = GystDatabase.Schema,
         context = context,
         name = "gyst.db",
-        callback = object : AndroidSqliteDriver.Callback(GystDatabase.Schema) {
-            override fun onOpen(db: SupportSQLiteDatabase) {
-                super.onOpen(db)
-                runCatching {
-                    db.execSQL("PRAGMA foreign_keys=ON")
-                    db.execSQL("PRAGMA journal_mode=WAL")
-                    db.execSQL("PRAGMA synchronous=NORMAL")
-                }.onFailure { Log.e("GystDb", "Failed to apply SQLite PRAGMA on open", it) }
-            }
+        callback =
+            object : AndroidSqliteDriver.Callback(GystDatabase.Schema) {
+                override fun onOpen(db: SupportSQLiteDatabase) {
+                    super.onOpen(db)
+                    runCatching {
+                        db.execSQL("PRAGMA foreign_keys=ON")
+                        db.execSQL("PRAGMA journal_mode=WAL")
+                        db.execSQL("PRAGMA synchronous=NORMAL")
+                    }.onFailure { Log.e("GystDb", "Failed to apply SQLite PRAGMA on open", it) }
+                }
 
-            override fun onCorruption(db: SupportSQLiteDatabase) {
-                backupAndResetCorruptDatabase(context, "callback_corruption")
-                super.onCorruption(db)
-            }
-        },
+                override fun onCorruption(db: SupportSQLiteDatabase) {
+                    backupAndResetCorruptDatabase(context, "callback_corruption")
+                    super.onCorruption(db)
+                }
+            },
     )
 }
 
@@ -98,12 +102,13 @@ private fun hardenLegacySchema(context: Context) {
 private fun isDatabaseHealthy(context: Context): Boolean {
     val dbFile = context.getDatabasePath("gyst.db")
     if (!dbFile.exists()) return true
-    val db = runCatching {
-        SQLiteDatabase.openDatabase(dbFile.absolutePath, null, SQLiteDatabase.OPEN_READONLY)
-    }.getOrElse {
-        Log.e("GystDb", "Failed opening database for health check", it)
-        return false
-    }
+    val db =
+        runCatching {
+            SQLiteDatabase.openDatabase(dbFile.absolutePath, null, SQLiteDatabase.OPEN_READONLY)
+        }.getOrElse {
+            Log.e("GystDb", "Failed opening database for health check", it)
+            return false
+        }
     return db.use {
         runCatching {
             it.rawQuery("PRAGMA quick_check(1)", null).use { cursor ->
@@ -116,17 +121,21 @@ private fun isDatabaseHealthy(context: Context): Boolean {
     }
 }
 
-private fun backupAndResetCorruptDatabase(context: Context, reason: String) {
+private fun backupAndResetCorruptDatabase(
+    context: Context,
+    reason: String,
+) {
     val dbFile = context.getDatabasePath("gyst.db")
     if (!dbFile.exists()) return
     val backupDir = File(context.filesDir, "backup")
     runCatching { backupDir.mkdirs() }
     val stamp = System.currentTimeMillis()
-    val backups = listOf(
-        dbFile,
-        File("${dbFile.absolutePath}-wal"),
-        File("${dbFile.absolutePath}-shm"),
-    )
+    val backups =
+        listOf(
+            dbFile,
+            File("${dbFile.absolutePath}-wal"),
+            File("${dbFile.absolutePath}-shm"),
+        )
     backups.forEach { source ->
         if (!source.exists()) return@forEach
         val target = File(backupDir, "${source.name}.$reason.$stamp.bak")

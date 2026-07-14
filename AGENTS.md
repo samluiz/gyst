@@ -31,6 +31,7 @@
   - constants: `UPPER_SNAKE_CASE`
 - Money values must remain `Long` cents (never floating-point).
 - Prefer small, focused composables and immutable UI state.
+- Do not use shortcuts that bypass established architecture, even temporarily. If a change seems to require duplicated logic, hardcoded localization, provider-specific branching in UI, or another workaround, improve the abstraction first. Treat a perceived need for a shortcut as a signal of an architectural gap, and ask for guidance when the correct design materially changes scope.
 
 ## Testing Guidelines
 - Framework: `kotlin.test` with coroutine test utilities.

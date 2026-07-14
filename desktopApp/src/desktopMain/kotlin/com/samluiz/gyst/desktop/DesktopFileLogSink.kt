@@ -14,23 +14,24 @@ class DesktopFileLogSink(
     }
 
     override fun log(entry: AppLogEntry) {
-        val line = buildString {
-            append(entry.timestampIso)
-            append(" [")
-            append(entry.level.name)
-            append("] ")
-            append(entry.tag)
-            append(": ")
-            append(entry.message)
-            entry.throwable?.let {
-                append(" | ")
-                append(it::class.simpleName ?: "Throwable")
+        val line =
+            buildString {
+                append(entry.timestampIso)
+                append(" [")
+                append(entry.level.name)
+                append("] ")
+                append(entry.tag)
                 append(": ")
-                append(it.message ?: "no-message")
+                append(entry.message)
+                entry.throwable?.let {
+                    append(" | ")
+                    append(it::class.simpleName ?: "Throwable")
+                    append(": ")
+                    append(it.message ?: "no-message")
+                }
+                appendLine()
+                entry.throwable?.stackTraceToString()?.let { appendLine(it) }
             }
-            appendLine()
-            entry.throwable?.stackTraceToString()?.let { appendLine(it) }
-        }
         Files.writeString(
             logPath,
             line,

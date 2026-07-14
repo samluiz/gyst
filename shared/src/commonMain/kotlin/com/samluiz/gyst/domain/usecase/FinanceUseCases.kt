@@ -43,15 +43,11 @@ class ComputeMonthlySummaryUseCase(
     private val budgetRepository: BudgetRepository,
     private val expenseRepository: ExpenseRepository,
     private val scheduleRepository: ScheduleRepository,
-    private val subscriptionRepository: SubscriptionRepository,
-    private val installmentRepository: InstallmentRepository,
 ) {
     suspend operator fun invoke(yearMonth: YearMonth): MonthlySummary {
         val budget = budgetRepository.findByYearMonth(yearMonth)
         val allocations = budget?.let { budgetRepository.allocationsByBudgetMonth(it.id) }.orEmpty()
         val spentMap = expenseRepository.monthlySpentByCategory(yearMonth)
-        val subscriptionsById = subscriptionRepository.list().associateBy { it.id }
-        val installmentsById = installmentRepository.list().associateBy { it.id }
         val monthRange = monthBounds(yearMonth)
         val monthScheduleItems =
             scheduleRepository
@@ -63,26 +59,8 @@ class ComputeMonthlySummaryUseCase(
         val commitments = scheduleRepository.commitmentsForMonth(yearMonth)
         val commitmentsByCategory = mutableMapOf<String, Long>()
         monthScheduleItems.forEach { item ->
-            val categoryId =
-                when (item.kind) {
-                    ScheduleKind.SUBSCRIPTION -> subscriptionsById[item.refId]?.categoryId
-                    ScheduleKind.INSTALLMENT -> installmentsById[item.refId]?.categoryId
-                } ?: return@forEach
-            commitmentsByCategory[categoryId] = (commitmentsByCategory[categoryId] ?: 0L) + item.amountCents
-        }
-
-        if (commitmentsByCategory.values.sum() != commitments) {
-            // Fallback: preserve previous behavior if schedule metadata is partially inconsistent.
-            subscriptionRepository.listActive().forEach { sub ->
-                commitmentsByCategory[sub.categoryId] =
-                    (commitmentsByCategory[sub.categoryId] ?: 0L) + sub.amountCents
-            }
-            installmentRepository.listActive()
-                .filter { it.startYearMonth <= yearMonth && it.endYearMonth >= yearMonth }
-                .forEach { plan ->
-                    commitmentsByCategory[plan.categoryId] =
-                        (commitmentsByCategory[plan.categoryId] ?: 0L) + plan.monthlyAmountCents
-                }
+            commitmentsByCategory[item.categoryId] =
+                (commitmentsByCategory[item.categoryId] ?: 0L) + item.amountCents
         }
 
         val plannedByCategory = allocations.associate { it.categoryId to it.plannedCents }
@@ -106,7 +84,7 @@ class ComputeMonthlySummaryUseCase(
             totalIncomeCents = budget?.totalIncomeCents ?: 0L,
             plannedTotalCents = plannedTotal,
             spentTotalCents = spentTotal,
-            remainingTotalCents = (budget?.totalIncomeCents ?: 0L) - spentTotal,
+            remainingTotalCents = (budget?.totalIncomeCents ?: 0L) - spentTotal - commitments,
             commitmentsCents = commitments,
             perCategory = categories,
         )
@@ -116,14 +94,13 @@ class ComputeMonthlySummaryUseCase(
 class ComputeCashFlowForecastUseCase(
     private val budgetRepository: BudgetRepository,
     private val scheduleRepository: ScheduleRepository,
-    private val expenseRepository: ExpenseRepository,
+    private val recurringExpenseRepository: RecurringExpenseRepository,
 ) {
     suspend operator fun invoke(
         fromDate: LocalDate,
         monthsAhead: Int,
     ): List<ForecastMonth> {
         val start = YearMonth.fromDate(fromDate)
-        val baselineRecurring = expenseRepository.monthlyRecurringTotal(start)
         var carryIncome = budgetRepository.findByYearMonth(start)?.totalIncomeCents ?: 0L
         var carryPlanned =
             budgetRepository.findByYearMonth(start)
@@ -140,7 +117,7 @@ class ComputeCashFlowForecastUseCase(
                     else -> allocations.sumOf { it.plannedCents }
                 }
             val commitments = scheduleRepository.commitmentsForMonth(ym)
-            val recurring = expenseRepository.monthlyRecurringTotal(ym).takeIf { it > 0L } ?: baselineRecurring
+            val recurring = recurringExpenseRepository.activeForMonth(ym).sumOf { it.amountCents }
             val income = budget?.totalIncomeCents ?: carryIncome
             if (budget != null) {
                 carryIncome = income
@@ -176,7 +153,12 @@ class UpsertSubscriptionUseCase(
         }
 
         if (!subscription.active) return
-        val nowYm = scheduleStartYearMonth
+        val nowYm =
+            if (scheduleStartYearMonth < subscription.startYearMonth) {
+                subscription.startYearMonth
+            } else {
+                scheduleStartYearMonth
+            }
         repeat(monthsAhead) { offset ->
             val ym = nowYm.plusMonths(offset)
             val due = dueDateForMonth(ym, subscription.billingDay)
@@ -187,6 +169,7 @@ class UpsertSubscriptionUseCase(
                         id = id("sch-sub"),
                         kind = ScheduleKind.SUBSCRIPTION,
                         refId = subscription.id,
+                        categoryId = subscription.categoryId,
                         dueDate = due,
                         amountCents = subscription.amountCents,
                         status = ScheduleStatus.DUE,
@@ -202,12 +185,13 @@ class CreateInstallmentPlanUseCase(
     private val scheduleRepository: ScheduleRepository,
 ) {
     suspend operator fun invoke(plan: InstallmentPlan) {
-        requireNonNegative(plan.monthlyAmountCents)
+        requireNonNegative(plan.totalAmountCents)
+        require(plan.totalInstallments > 0)
 
         installmentRepository.upsert(plan)
 
-        var month = plan.startYearMonth
-        while (month <= plan.endYearMonth) {
+        repeat(plan.totalInstallments) { index ->
+            val month = plan.startYearMonth.plusMonths(index)
             val due = LocalDate(month.year, month.month, 1)
             val existing = scheduleRepository.findByRefAndDate(plan.id, due)
             if (existing == null) {
@@ -216,15 +200,28 @@ class CreateInstallmentPlanUseCase(
                         id = id("sch-ins"),
                         kind = ScheduleKind.INSTALLMENT,
                         refId = plan.id,
+                        categoryId = plan.categoryId,
                         dueDate = due,
-                        amountCents = plan.monthlyAmountCents,
+                        amountCents = installmentAmountAt(plan.totalAmountCents, plan.totalInstallments, index),
                         status = ScheduleStatus.DUE,
                     ),
                 )
             }
-            month = month.plusMonths(1)
         }
     }
+}
+
+fun installmentAmountAt(
+    totalAmountCents: Long,
+    totalInstallments: Int,
+    index: Int,
+): Long {
+    require(totalAmountCents >= 0L)
+    require(totalInstallments > 0)
+    require(index in 0 until totalInstallments)
+    val base = totalAmountCents / totalInstallments
+    val remainder = totalAmountCents % totalInstallments
+    return base + if (index.toLong() < remainder) 1L else 0L
 }
 
 class MarkSchedulePaidUseCase(
@@ -247,7 +244,7 @@ class MarkSchedulePaidUseCase(
 class HandleMonthRolloverUseCase(
     private val budgetRepository: BudgetRepository,
     private val expenseRepository: ExpenseRepository,
-    private val settingsRepository: SettingsRepository,
+    private val recurringExpenseRepository: RecurringExpenseRepository,
 ) {
     suspend operator fun invoke(targetMonth: YearMonth) {
         val previousMonth = targetMonth.plusMonths(-1)
@@ -269,33 +266,26 @@ class HandleMonthRolloverUseCase(
             }
         }
 
-        val previousRecurring =
-            expenseRepository.byMonth(previousMonth)
-                .filter { it.recurrenceType == RecurrenceType.MONTHLY && it.scheduleItemId == null }
-
-        val existingInTarget = expenseRepository.byMonth(targetMonth)
-        previousRecurring.forEach { source ->
-            val alreadyCopied =
-                existingInTarget.any {
-                    it.categoryId == source.categoryId &&
-                        it.amountCents == source.amountCents &&
-                        it.note == source.note &&
-                        it.merchant == source.merchant &&
-                        it.recurrenceType == RecurrenceType.MONTHLY
-                }
-            if (!alreadyCopied) {
-                val newDay = source.occurredAt.day.coerceAtMost(monthBounds(targetMonth).second.day)
+        val existingSeriesIds = expenseRepository.byMonth(targetMonth).mapNotNullTo(mutableSetOf()) { it.recurrenceSeriesId }
+        recurringExpenseRepository.activeForMonth(targetMonth).forEach { series ->
+            if (series.id !in existingSeriesIds) {
+                val newDay = series.dayOfMonth.coerceAtMost(monthBounds(targetMonth).second.day)
                 expenseRepository.upsert(
-                    source.copy(
+                    Expense(
                         id = id("exp-rec"),
                         occurredAt = LocalDate(targetMonth.year, targetMonth.month, newDay),
+                        amountCents = series.amountCents,
+                        categoryId = series.categoryId,
+                        note = series.note,
+                        merchant = series.merchant,
+                        paymentMethod = series.paymentMethod,
+                        recurrenceType = RecurrenceType.MONTHLY,
                         createdAt = nowInstantUtc(),
+                        recurrenceSeriesId = series.id,
                     ),
                 )
             }
         }
-
-        settingsRepository.setString("rollover_done_$targetMonth", "true")
     }
 }
 

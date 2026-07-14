@@ -2,8 +2,8 @@ package com.samluiz.gyst.desktop
 
 import com.google.api.client.extensions.java6.auth.oauth2.AuthorizationCodeInstalledApp
 import com.google.api.client.extensions.jetty.auth.oauth2.LocalServerReceiver
-import com.google.api.client.googleapis.javanet.GoogleNetHttpTransport
 import com.google.api.client.googleapis.auth.oauth2.GoogleAuthorizationCodeFlow
+import com.google.api.client.googleapis.javanet.GoogleNetHttpTransport
 import com.google.api.client.json.gson.GsonFactory
 import com.google.api.client.util.store.FileDataStoreFactory
 import com.samluiz.gyst.domain.service.GoogleAuthSyncService
@@ -50,12 +50,14 @@ class DesktopGoogleAuthSyncService(
     private companion object {
         const val TAG = "DesktopGoogleSync"
     }
-    private val internal = MutableStateFlow(
-        GoogleSyncState(
-            isAvailable = false,
-            isSignedIn = false,
+
+    private val internal =
+        MutableStateFlow(
+            GoogleSyncState(
+                isAvailable = false,
+                isSignedIn = false,
+            ),
         )
-    )
     override val state: StateFlow<GoogleSyncState> = internal.asStateFlow()
 
     private val json = Json { ignoreUnknownKeys = true }
@@ -71,24 +73,25 @@ class DesktopGoogleAuthSyncService(
     override suspend fun initialize() {
         AppLogger.i(TAG, "Initialize requested")
         withContext(Dispatchers.IO) {
-            val authFlow = runCatching { ensureFlow() }.getOrElse { throwable ->
-                AppLogger.e(TAG, "Initialize failed: OAuth flow unavailable", throwable)
-                initError = throwable.message ?: "Desktop Google OAuth is not configured."
-                internal.update {
-                    it.copy(
-                        isAvailable = false,
-                        isSignedIn = false,
-                        isAuthInProgress = false,
-                        isSyncing = false,
-                        accountName = null,
-                        accountEmail = null,
-                        accountPhotoUrl = null,
-                        lastError = initError,
-                        lastErrorCode = GoogleSyncErrorCode.OAUTH_NOT_CONFIGURED,
-                    )
+            val authFlow =
+                runCatching { ensureFlow() }.getOrElse { throwable ->
+                    AppLogger.e(TAG, "Initialize failed: OAuth flow unavailable", throwable)
+                    initError = throwable.message ?: "Desktop Google OAuth is not configured."
+                    internal.update {
+                        it.copy(
+                            isAvailable = false,
+                            isSignedIn = false,
+                            isAuthInProgress = false,
+                            isSyncing = false,
+                            accountName = null,
+                            accountEmail = null,
+                            accountPhotoUrl = null,
+                            lastError = initError,
+                            lastErrorCode = GoogleSyncErrorCode.OAUTH_NOT_CONFIGURED,
+                        )
+                    }
+                    return@withContext
                 }
-                return@withContext
-            }
 
             val credential = authFlow.loadCredential(OAUTH_USER_ID)
             if (credential?.accessToken.isNullOrBlank()) {
@@ -109,23 +112,24 @@ class DesktopGoogleAuthSyncService(
                 return@withContext
             }
 
-            val token = runCatching { requireAccessToken(authFlow) }.getOrElse { throwable ->
-                AppLogger.e(TAG, "Initialize failed: token refresh", throwable)
-                internal.update {
-                    it.copy(
-                        isAvailable = true,
-                        isSignedIn = false,
-                        isAuthInProgress = false,
-                        isSyncing = false,
-                        accountName = null,
-                        accountEmail = null,
-                        accountPhotoUrl = null,
-                        lastError = throwable.message ?: "Failed to refresh Google session.",
-                        lastErrorCode = GoogleSyncErrorCode.SESSION_EXPIRED,
-                    )
+            val token =
+                runCatching { requireAccessToken(authFlow) }.getOrElse { throwable ->
+                    AppLogger.e(TAG, "Initialize failed: token refresh", throwable)
+                    internal.update {
+                        it.copy(
+                            isAvailable = true,
+                            isSignedIn = false,
+                            isAuthInProgress = false,
+                            isSyncing = false,
+                            accountName = null,
+                            accountEmail = null,
+                            accountPhotoUrl = null,
+                            lastError = throwable.message ?: "Failed to refresh Google session.",
+                            lastErrorCode = GoogleSyncErrorCode.SESSION_EXPIRED,
+                        )
+                    }
+                    return@withContext
                 }
-                return@withContext
-            }
             val profile = runCatching { fetchProfile(token) }.getOrNull()
             val remoteBackup = runCatching { findBackupFile(token) }.getOrNull()
             AppLogger.i(TAG, "Initialize completed. signedIn=${profile != null}")
@@ -151,28 +155,31 @@ class DesktopGoogleAuthSyncService(
         AppLogger.i(TAG, "Sign-in requested")
         internal.update { it.copy(isAuthInProgress = true, lastError = null, lastErrorCode = null, statusMessage = null) }
         withContext(Dispatchers.IO) {
-            val authFlow = runCatching { ensureFlow() }.getOrElse { throwable ->
-                AppLogger.e(TAG, "Sign-in failed: OAuth flow unavailable", throwable)
-                internal.update {
-                    it.copy(
-                        isAvailable = false,
-                        isSignedIn = false,
-                        isAuthInProgress = false,
-                        lastError = throwable.message ?: "Desktop Google OAuth is not configured.",
-                        lastErrorCode = GoogleSyncErrorCode.OAUTH_NOT_CONFIGURED,
-                    )
+            val authFlow =
+                runCatching { ensureFlow() }.getOrElse { throwable ->
+                    AppLogger.e(TAG, "Sign-in failed: OAuth flow unavailable", throwable)
+                    internal.update {
+                        it.copy(
+                            isAvailable = false,
+                            isSignedIn = false,
+                            isAuthInProgress = false,
+                            lastError = throwable.message ?: "Desktop Google OAuth is not configured.",
+                            lastErrorCode = GoogleSyncErrorCode.OAUTH_NOT_CONFIGURED,
+                        )
+                    }
+                    return@withContext
                 }
-                return@withContext
-            }
 
-            val receiver = LocalServerReceiver.Builder()
-                .setHost("127.0.0.1")
-                .setPort(findAvailablePort())
-                .build()
+            val receiver =
+                LocalServerReceiver.Builder()
+                    .setHost("127.0.0.1")
+                    .setPort(findAvailablePort())
+                    .build()
 
-            val authResult = runCatching {
-                AuthorizationCodeInstalledApp(authFlow, receiver).authorize(OAUTH_USER_ID)
-            }
+            val authResult =
+                runCatching {
+                    AuthorizationCodeInstalledApp(authFlow, receiver).authorize(OAUTH_USER_ID)
+                }
             receiver.stop()
             authResult.onFailure { throwable ->
                 AppLogger.e(TAG, "Sign-in failed during authorization", throwable)
@@ -187,19 +194,20 @@ class DesktopGoogleAuthSyncService(
                 return@withContext
             }
 
-            val token = runCatching { requireAccessToken(authFlow) }.getOrElse { throwable ->
-                AppLogger.e(TAG, "Sign-in failed during token fetch", throwable)
-                internal.update {
-                    it.copy(
-                        isAvailable = true,
-                        isSignedIn = false,
-                        isAuthInProgress = false,
-                        lastError = throwable.message ?: "Failed to complete Google sign-in.",
-                        lastErrorCode = GoogleSyncErrorCode.ACCESS_TOKEN_FAILED,
-                    )
+            val token =
+                runCatching { requireAccessToken(authFlow) }.getOrElse { throwable ->
+                    AppLogger.e(TAG, "Sign-in failed during token fetch", throwable)
+                    internal.update {
+                        it.copy(
+                            isAvailable = true,
+                            isSignedIn = false,
+                            isAuthInProgress = false,
+                            lastError = throwable.message ?: "Failed to complete Google sign-in.",
+                            lastErrorCode = GoogleSyncErrorCode.ACCESS_TOKEN_FAILED,
+                        )
+                    }
+                    return@withContext
                 }
-                return@withContext
-            }
 
             val profile = runCatching { fetchProfile(token) }.getOrNull()
             val remoteBackup = runCatching { findBackupFile(token) }.getOrNull()
@@ -255,18 +263,40 @@ class DesktopGoogleAuthSyncService(
 
     override suspend fun syncNow() {
         AppLogger.i(TAG, "Sync requested")
-        internal.update { it.copy(isSyncing = true, lastError = null, lastErrorCode = null, statusMessage = null, requiresAppRestart = false) }
+        internal.update {
+            it.copy(
+                isSyncing = true,
+                lastError = null,
+                lastErrorCode = null,
+                statusMessage = null,
+                requiresAppRestart = false,
+            )
+        }
         withContext(Dispatchers.IO) {
-            val authFlow = runCatching { ensureFlow() }.getOrElse { throwable ->
-                AppLogger.e(TAG, "Sync failed: OAuth flow unavailable", throwable)
-                internal.update { it.copy(isSyncing = false, lastError = throwable.message ?: "Google OAuth not configured.", lastErrorCode = GoogleSyncErrorCode.OAUTH_NOT_CONFIGURED) }
-                return@withContext
-            }
-            val token = runCatching { requireAccessToken(authFlow) }.getOrElse { throwable ->
-                AppLogger.e(TAG, "Sync failed: token unavailable", throwable)
-                internal.update { it.copy(isSyncing = false, lastError = throwable.message ?: "Google session expired.", lastErrorCode = GoogleSyncErrorCode.SESSION_EXPIRED) }
-                return@withContext
-            }
+            val authFlow =
+                runCatching { ensureFlow() }.getOrElse { throwable ->
+                    AppLogger.e(TAG, "Sync failed: OAuth flow unavailable", throwable)
+                    internal.update {
+                        it.copy(
+                            isSyncing = false,
+                            lastError = throwable.message ?: "Google OAuth not configured.",
+                            lastErrorCode = GoogleSyncErrorCode.OAUTH_NOT_CONFIGURED,
+                        )
+                    }
+                    return@withContext
+                }
+            val token =
+                runCatching { requireAccessToken(authFlow) }.getOrElse { throwable ->
+                    AppLogger.e(TAG, "Sync failed: token unavailable", throwable)
+                    internal.update {
+                        it.copy(
+                            isSyncing = false,
+                            lastError = throwable.message ?: "Google session expired.",
+                            lastErrorCode = GoogleSyncErrorCode.SESSION_EXPIRED,
+                        )
+                    }
+                    return@withContext
+                }
             runCatching {
                 Files.createDirectories(backupPath.parent)
                 val localExists = dbPath.exists()
@@ -383,16 +413,30 @@ class DesktopGoogleAuthSyncService(
         }
         internal.update { it.copy(isSyncing = true, lastError = null, lastErrorCode = null, statusMessage = null) }
         withContext(Dispatchers.IO) {
-            val authFlow = runCatching { ensureFlow() }.getOrElse { throwable ->
-                AppLogger.e(TAG, "Restore failed: OAuth flow unavailable", throwable)
-                internal.update { it.copy(isSyncing = false, lastError = throwable.message ?: "Google OAuth not configured.", lastErrorCode = GoogleSyncErrorCode.OAUTH_NOT_CONFIGURED) }
-                return@withContext
-            }
-            val token = runCatching { requireAccessToken(authFlow) }.getOrElse { throwable ->
-                AppLogger.e(TAG, "Restore failed: token unavailable", throwable)
-                internal.update { it.copy(isSyncing = false, lastError = throwable.message ?: "Google session expired.", lastErrorCode = GoogleSyncErrorCode.SESSION_EXPIRED) }
-                return@withContext
-            }
+            val authFlow =
+                runCatching { ensureFlow() }.getOrElse { throwable ->
+                    AppLogger.e(TAG, "Restore failed: OAuth flow unavailable", throwable)
+                    internal.update {
+                        it.copy(
+                            isSyncing = false,
+                            lastError = throwable.message ?: "Google OAuth not configured.",
+                            lastErrorCode = GoogleSyncErrorCode.OAUTH_NOT_CONFIGURED,
+                        )
+                    }
+                    return@withContext
+                }
+            val token =
+                runCatching { requireAccessToken(authFlow) }.getOrElse { throwable ->
+                    AppLogger.e(TAG, "Restore failed: token unavailable", throwable)
+                    internal.update {
+                        it.copy(
+                            isSyncing = false,
+                            lastError = throwable.message ?: "Google session expired.",
+                            lastErrorCode = GoogleSyncErrorCode.SESSION_EXPIRED,
+                        )
+                    }
+                    return@withContext
+                }
             runCatching {
                 val remote = findBackupFile(token) ?: error("No backup found on Google Drive.")
                 val remoteBytes = downloadBackupFile(token, remote.id)
@@ -432,31 +476,35 @@ class DesktopGoogleAuthSyncService(
         Files.createDirectories(googleDir)
         Files.createDirectories(tokenStoreDir)
 
-        val configJson = loadDesktopOAuthJson()
-            ?: error(
-                "Desktop Google OAuth client JSON not found. " +
-                    "Set GYST_GOOGLE_DESKTOP_OAUTH_PATH or place desktop_oauth_client.json in ${googleDir.pathString}."
-            )
-        val config = parseDesktopOAuthConfig(configJson)
-            ?: error("Invalid desktop OAuth JSON. Use an OAuth Client ID of type 'Desktop app'.")
+        val configJson =
+            loadDesktopOAuthJson()
+                ?: error(
+                    "Desktop Google OAuth client JSON not found. " +
+                        "Set GYST_GOOGLE_DESKTOP_OAUTH_PATH or place desktop_oauth_client.json in ${googleDir.pathString}.",
+                )
+        val config =
+            parseDesktopOAuthConfig(configJson)
+                ?: error("Invalid desktop OAuth JSON. Use an OAuth Client ID of type 'Desktop app'.")
 
-        val created = GoogleAuthorizationCodeFlow.Builder(
-            GoogleNetHttpTransport.newTrustedTransport(),
-            GsonFactory.getDefaultInstance(),
-            config.clientId,
-            config.clientSecret,
-            listOf(DRIVE_APPDATA_SCOPE, OPENID_SCOPE, EMAIL_SCOPE, PROFILE_SCOPE),
-        )
-            .setDataStoreFactory(FileDataStoreFactory(tokenStoreDir.toFile()))
-            .setAccessType("offline")
-            .build()
+        val created =
+            GoogleAuthorizationCodeFlow.Builder(
+                GoogleNetHttpTransport.newTrustedTransport(),
+                GsonFactory.getDefaultInstance(),
+                config.clientId,
+                config.clientSecret,
+                listOf(DRIVE_APPDATA_SCOPE, OPENID_SCOPE, EMAIL_SCOPE, PROFILE_SCOPE),
+            )
+                .setDataStoreFactory(FileDataStoreFactory(tokenStoreDir.toFile()))
+                .setAccessType("offline")
+                .build()
         flow = created
         return created
     }
 
     private fun requireAccessToken(flow: GoogleAuthorizationCodeFlow): String {
-        val credential = flow.loadCredential(OAUTH_USER_ID)
-            ?: error("You are not signed in with Google.")
+        val credential =
+            flow.loadCredential(OAUTH_USER_ID)
+                ?: error("You are not signed in with Google.")
         if (credential.accessToken.isNullOrBlank() || (credential.expiresInSeconds ?: 0) <= 60L) {
             val refreshed = credential.refreshToken()
             if (!refreshed && credential.accessToken.isNullOrBlank()) {
@@ -492,11 +540,12 @@ class DesktopGoogleAuthSyncService(
     }
 
     private fun fetchProfile(token: String): GoogleProfile {
-        val response = requestText(
-            url = "https://www.googleapis.com/oauth2/v2/userinfo",
-            method = "GET",
-            token = token,
-        )
+        val response =
+            requestText(
+                url = "https://www.googleapis.com/oauth2/v2/userinfo",
+                method = "GET",
+                token = token,
+            )
         val root = json.parseToJsonElement(response).jsonObject
         return GoogleProfile(
             name = root["name"]?.jsonPrimitive?.contentOrNull,
@@ -507,32 +556,39 @@ class DesktopGoogleAuthSyncService(
 
     private fun findBackupFile(token: String): RemoteBackupFile? {
         val query = "name='$BACKUP_FILE_NAME' and 'appDataFolder' in parents and trashed=false"
-        val url = buildGoogleApiUrl(
-            base = "https://www.googleapis.com/drive/v3/files",
-            params = listOf(
-                "q" to query,
-                "spaces" to "appDataFolder",
-                "orderBy" to "modifiedTime desc",
-                "fields" to "files(id,name,modifiedTime)",
-            ),
-        )
+        val url =
+            buildGoogleApiUrl(
+                base = "https://www.googleapis.com/drive/v3/files",
+                params =
+                    listOf(
+                        "q" to query,
+                        "spaces" to "appDataFolder",
+                        "orderBy" to "modifiedTime desc",
+                        "fields" to "files(id,name,modifiedTime)",
+                    ),
+            )
         val response = requestText(url = url, method = "GET", token = token)
         val files = json.parseToJsonElement(response).jsonObject["files"] ?: return null
-        val candidates = files.jsonArray.mapNotNull { item ->
-            val obj = item.jsonObject
-            val id = obj["id"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
-            val modified = obj["modifiedTime"]?.jsonPrimitive?.contentOrNull
-                ?.let { runCatching { Instant.parse(it) }.getOrNull() }
-            RemoteBackupFile(id = id, modifiedAt = modified)
-        }
+        val candidates =
+            files.jsonArray.mapNotNull { item ->
+                val obj = item.jsonObject
+                val id = obj["id"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
+                val modified =
+                    obj["modifiedTime"]?.jsonPrimitive?.contentOrNull
+                        ?.let { runCatching { Instant.parse(it) }.getOrNull() }
+                RemoteBackupFile(id = id, modifiedAt = modified)
+            }
         if (candidates.isEmpty()) return null
         return candidates.maxWithOrNull(
             compareBy<RemoteBackupFile> { it.modifiedAt ?: Instant.DISTANT_PAST }
-                .thenBy { it.id }
+                .thenBy { it.id },
         )
     }
 
-    private fun createBackupFile(token: String, data: ByteArray) {
+    private fun createBackupFile(
+        token: String,
+        data: ByteArray,
+    ) {
         val metadata = """{"name":"$BACKUP_FILE_NAME","parents":["appDataFolder"]}"""
         multipartUpload(
             url = "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart",
@@ -543,7 +599,11 @@ class DesktopGoogleAuthSyncService(
         )
     }
 
-    private fun updateBackupFile(token: String, fileId: String, data: ByteArray) {
+    private fun updateBackupFile(
+        token: String,
+        fileId: String,
+        data: ByteArray,
+    ) {
         val metadata = """{"name":"$BACKUP_FILE_NAME"}"""
         multipartUpload(
             url = "https://www.googleapis.com/upload/drive/v3/files/$fileId?uploadType=multipart",
@@ -555,7 +615,10 @@ class DesktopGoogleAuthSyncService(
         )
     }
 
-    private fun downloadBackupFile(token: String, fileId: String): ByteArray {
+    private fun downloadBackupFile(
+        token: String,
+        fileId: String,
+    ): ByteArray {
         val url = "https://www.googleapis.com/drive/v3/files/$fileId?alt=media"
         return requestBytes(url = url, method = "GET", token = token, contentType = null, body = null)
     }
@@ -570,17 +633,18 @@ class DesktopGoogleAuthSyncService(
     ) {
         val boundary = "gyst-${System.currentTimeMillis()}"
         val newline = "\r\n"
-        val body = ByteArrayOutputStream().apply {
-            write("--$boundary$newline".toByteArray())
-            write("Content-Type: application/json; charset=UTF-8$newline$newline".toByteArray())
-            write(metadataJson.toByteArray())
-            write(newline.toByteArray())
-            write("--$boundary$newline".toByteArray())
-            write("Content-Type: application/octet-stream$newline$newline".toByteArray())
-            write(media)
-            write(newline.toByteArray())
-            write("--$boundary--$newline".toByteArray())
-        }.toByteArray()
+        val body =
+            ByteArrayOutputStream().apply {
+                write("--$boundary$newline".toByteArray())
+                write("Content-Type: application/json; charset=UTF-8$newline$newline".toByteArray())
+                write(metadataJson.toByteArray())
+                write(newline.toByteArray())
+                write("--$boundary$newline".toByteArray())
+                write("Content-Type: application/octet-stream$newline$newline".toByteArray())
+                write(media)
+                write(newline.toByteArray())
+                write("--$boundary--$newline".toByteArray())
+            }.toByteArray()
 
         requestBytes(
             url = url,
@@ -592,7 +656,11 @@ class DesktopGoogleAuthSyncService(
         )
     }
 
-    private fun requestText(url: String, method: String, token: String): String {
+    private fun requestText(
+        url: String,
+        method: String,
+        token: String,
+    ): String {
         val bytes = requestBytes(url, method, token, contentType = null, body = null)
         return bytes.toString(Charsets.UTF_8)
     }
@@ -605,16 +673,17 @@ class DesktopGoogleAuthSyncService(
         body: ByteArray?,
         extraHeaders: Map<String, String> = emptyMap(),
     ): ByteArray {
-        val connection = (URL(url).openConnection() as HttpURLConnection).apply {
-            requestMethod = method
-            connectTimeout = 15_000
-            readTimeout = 25_000
-            token?.let { setRequestProperty("Authorization", "Bearer $it") }
-            setRequestProperty("Accept", "application/json")
-            contentType?.let { setRequestProperty("Content-Type", it) }
-            extraHeaders.forEach { (k, v) -> setRequestProperty(k, v) }
-            doInput = true
-        }
+        val connection =
+            (URL(url).openConnection() as HttpURLConnection).apply {
+                requestMethod = method
+                connectTimeout = 15_000
+                readTimeout = 25_000
+                token?.let { setRequestProperty("Authorization", "Bearer $it") }
+                setRequestProperty("Accept", "application/json")
+                contentType?.let { setRequestProperty("Content-Type", it) }
+                extraHeaders.forEach { (k, v) -> setRequestProperty(k, v) }
+                doInput = true
+            }
 
         if (body != null) {
             connection.doOutput = true
@@ -642,14 +711,16 @@ class DesktopGoogleAuthSyncService(
         }
     }
 
-    private fun buildGoogleApiUrl(base: String, params: List<Pair<String, String>>): String {
+    private fun buildGoogleApiUrl(
+        base: String,
+        params: List<Pair<String, String>>,
+    ): String {
         if (params.isEmpty()) return base
         val query = params.joinToString("&") { (key, value) -> "$key=${encodeUrlParam(value)}" }
         return "$base?$query"
     }
 
-    private fun encodeUrlParam(value: String): String =
-        URLEncoder.encode(value, Charsets.UTF_8.name()).replace("+", "%20")
+    private fun encodeUrlParam(value: String): String = URLEncoder.encode(value, Charsets.UTF_8.name()).replace("+", "%20")
 
     private fun readDatabaseBytes(): ByteArray {
         if (!dbPath.exists()) error("Local database was not found")
@@ -713,7 +784,10 @@ private data class GoogleProfile(
     val photoUrl: String?,
 )
 
-private fun classifyDesktopError(t: Throwable, isRestore: Boolean = false): GoogleSyncErrorCode {
+private fun classifyDesktopError(
+    t: Throwable,
+    isRestore: Boolean = false,
+): GoogleSyncErrorCode {
     val msg = t.message.orEmpty().lowercase()
     return when {
         "oauth" in msg && ("not found" in msg || "invalid" in msg || "desktop app" in msg) -> GoogleSyncErrorCode.OAUTH_NOT_CONFIGURED

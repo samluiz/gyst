@@ -1,9 +1,9 @@
 package com.samluiz.gyst.presentation
 
 import com.samluiz.gyst.domain.model.*
+import com.samluiz.gyst.domain.service.AdvisorState
 import com.samluiz.gyst.domain.service.AppUpdateState
 import com.samluiz.gyst.domain.service.GoogleSyncState
-import kotlin.time.Instant
 
 internal fun normalizeThemeMode(mode: String?): String =
     when (mode) {
@@ -40,6 +40,7 @@ data class MainState(
         AppUpdateState(
             isAvailable = false,
         ),
+    val advisor: AdvisorState = AdvisorState(),
     val blockingMessage: String? = null,
     val infoMessage: String? = null,
     val errorMessage: String? = null,

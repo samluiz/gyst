@@ -35,8 +35,26 @@ CREATE TABLE expense (
     recurrence_type TEXT NOT NULL DEFAULT 'ONE_TIME',
     created_at TEXT NOT NULL,
     schedule_item_id TEXT,
+    recurrence_series_id TEXT,
     CHECK(payment_method IN ('PIX', 'DEBIT', 'CASH', 'TRANSFER')),
     CHECK(recurrence_type IN ('ONE_TIME', 'MONTHLY')),
+    FOREIGN KEY (category_id) REFERENCES category(id) ON DELETE RESTRICT,
+    FOREIGN KEY (recurrence_series_id) REFERENCES recurring_expense_series(id) ON DELETE SET NULL
+);
+
+CREATE TABLE recurring_expense_series (
+    id TEXT NOT NULL PRIMARY KEY,
+    start_year_month TEXT NOT NULL,
+    end_year_month TEXT,
+    day_of_month INTEGER NOT NULL CHECK(day_of_month >= 1 AND day_of_month <= 31),
+    amount_cents INTEGER NOT NULL CHECK(amount_cents >= 0),
+    category_id TEXT NOT NULL,
+    note TEXT,
+    merchant TEXT,
+    payment_method TEXT NOT NULL,
+    active INTEGER NOT NULL CHECK(active IN (0, 1)),
+    CHECK(payment_method IN ('PIX', 'DEBIT', 'CASH', 'TRANSFER')),
+    CHECK(end_year_month IS NULL OR end_year_month >= start_year_month),
     FOREIGN KEY (category_id) REFERENCES category(id) ON DELETE RESTRICT
 );
 
@@ -47,6 +65,7 @@ CREATE TABLE subscription (
     billing_day INTEGER NOT NULL CHECK(billing_day >= 1 AND billing_day <= 31),
     category_id TEXT NOT NULL,
     active INTEGER NOT NULL,
+    start_year_month TEXT NOT NULL,
     CHECK(active IN (0, 1)),
     FOREIGN KEY (category_id) REFERENCES category(id) ON DELETE RESTRICT
 );
@@ -55,6 +74,7 @@ CREATE TABLE installment_plan (
     id TEXT NOT NULL PRIMARY KEY,
     name TEXT NOT NULL,
     total_installments INTEGER NOT NULL CHECK(total_installments >= 1),
+    total_amount_cents INTEGER NOT NULL CHECK(total_amount_cents >= 0),
     monthly_amount_cents INTEGER NOT NULL CHECK(monthly_amount_cents >= 0),
     start_year_month TEXT NOT NULL,
     end_year_month TEXT NOT NULL,
@@ -69,6 +89,7 @@ CREATE TABLE payment_schedule_item (
     id TEXT NOT NULL PRIMARY KEY,
     kind TEXT NOT NULL,
     ref_id TEXT NOT NULL,
+    category_id TEXT NOT NULL,
     subscription_id TEXT,
     installment_plan_id TEXT,
     due_date TEXT NOT NULL,
@@ -82,7 +103,8 @@ CREATE TABLE payment_schedule_item (
       (kind = 'INSTALLMENT' AND installment_plan_id IS NOT NULL AND subscription_id IS NULL)
     ),
     FOREIGN KEY (subscription_id) REFERENCES subscription(id) ON DELETE CASCADE,
-    FOREIGN KEY (installment_plan_id) REFERENCES installment_plan(id) ON DELETE CASCADE
+    FOREIGN KEY (installment_plan_id) REFERENCES installment_plan(id) ON DELETE CASCADE,
+    FOREIGN KEY (category_id) REFERENCES category(id) ON DELETE RESTRICT
 );
 
 CREATE TABLE app_setting (
@@ -104,6 +126,13 @@ ON expense(category_id, occurred_at);
 
 CREATE INDEX IF NOT EXISTS idx_expense_recurring_lookup
 ON expense(recurrence_type, schedule_item_id, occurred_at);
+
+CREATE INDEX IF NOT EXISTS idx_expense_recurrence_month
+ON expense(recurrence_series_id, substr(occurred_at, 1, 7))
+WHERE recurrence_series_id IS NOT NULL;
+
+CREATE INDEX IF NOT EXISTS idx_recurring_expense_active_range
+ON recurring_expense_series(active, start_year_month, end_year_month);
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_schedule_unique_ref_kind_due
 ON payment_schedule_item(ref_id, kind, due_date);
@@ -191,30 +220,28 @@ SET occurred_at = ?,
     payment_method = ?,
     recurrence_type = ?,
     created_at = ?,
-    schedule_item_id = ?
+    schedule_item_id = ?,
+    recurrence_series_id = ?
 WHERE id = ?;
 
 INSERT OR IGNORE INTO expense(
-    id, occurred_at, amount_cents, category_id, note, merchant, payment_method, recurrence_type, created_at, schedule_item_id
+    id, occurred_at, amount_cents, category_id, note, merchant, payment_method, recurrence_type, created_at,
+    schedule_item_id, recurrence_series_id
 )
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 }
 
 deleteExpense:
 DELETE FROM expense WHERE id = ?;
 
-deleteFutureRecurringByTemplate:
+deleteFutureRecurringBySeries:
 DELETE FROM expense
 WHERE occurred_at > :fromDate
   AND recurrence_type = 'MONTHLY'
   AND schedule_item_id IS NULL
-  AND category_id = :categoryId
-  AND amount_cents = :amountCents
-  AND payment_method = :paymentMethod
-  AND ((:note IS NULL AND note IS NULL) OR note = :note)
-  AND ((:merchant IS NULL AND merchant IS NULL) OR merchant = :merchant);
+  AND recurrence_series_id = :seriesId;
 
-updateFutureRecurringByTemplate:
+updateFutureRecurringBySeries:
 UPDATE expense
 SET category_id = :newCategoryId,
     amount_cents = :newAmountCents,
@@ -224,11 +251,41 @@ SET category_id = :newCategoryId,
 WHERE occurred_at > :fromDate
   AND recurrence_type = 'MONTHLY'
   AND schedule_item_id IS NULL
-  AND category_id = :oldCategoryId
-  AND amount_cents = :oldAmountCents
-  AND payment_method = :oldPaymentMethod
-  AND ((:oldNote IS NULL AND note IS NULL) OR note = :oldNote)
-  AND ((:oldMerchant IS NULL AND merchant IS NULL) OR merchant = :oldMerchant);
+  AND recurrence_series_id = :seriesId;
+
+upsertRecurringExpenseSeries {
+UPDATE recurring_expense_series
+SET start_year_month = ?,
+    end_year_month = ?,
+    day_of_month = ?,
+    amount_cents = ?,
+    category_id = ?,
+    note = ?,
+    merchant = ?,
+    payment_method = ?,
+    active = ?
+WHERE id = ?;
+
+INSERT OR IGNORE INTO recurring_expense_series(
+    id, start_year_month, end_year_month, day_of_month, amount_cents, category_id, note, merchant, payment_method, active
+)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+}
+
+selectRecurringExpenseSeriesById:
+SELECT * FROM recurring_expense_series WHERE id = ? LIMIT 1;
+
+selectActiveRecurringExpenseSeriesForMonth:
+SELECT *
+FROM recurring_expense_series
+WHERE start_year_month <= :yearMonth
+  AND (end_year_month IS NULL OR end_year_month >= :yearMonth)
+ORDER BY day_of_month, id;
+
+endRecurringExpenseSeries:
+UPDATE recurring_expense_series
+SET active = 0, end_year_month = :lastActiveMonth
+WHERE id = :id;
 
 selectExpenseById:
 SELECT * FROM expense WHERE id = ? LIMIT 1;
@@ -272,11 +329,12 @@ SET name = ?,
     amount_cents = ?,
     billing_day = ?,
     category_id = ?,
-    active = ?
+    active = ?,
+    start_year_month = ?
 WHERE id = ?;
 
-INSERT OR IGNORE INTO subscription(id, name, amount_cents, billing_day, category_id, active)
-VALUES (?, ?, ?, ?, ?, ?);
+INSERT OR IGNORE INTO subscription(id, name, amount_cents, billing_day, category_id, active, start_year_month)
+VALUES (?, ?, ?, ?, ?, ?, ?);
 }
 
 selectSubscriptions:
@@ -285,13 +343,14 @@ SELECT * FROM subscription ORDER BY active DESC, amount_cents DESC;
 selectActiveSubscriptions:
 SELECT * FROM subscription WHERE active = 1 ORDER BY amount_cents DESC;
 
-deleteSubscription:
-DELETE FROM subscription WHERE id = ?;
+deactivateSubscription:
+UPDATE subscription SET active = 0 WHERE id = ?;
 
 upsertInstallmentPlan {
 UPDATE installment_plan
 SET name = ?,
     total_installments = ?,
+    total_amount_cents = ?,
     monthly_amount_cents = ?,
     start_year_month = ?,
     end_year_month = ?,
@@ -300,9 +359,9 @@ SET name = ?,
 WHERE id = ?;
 
 INSERT OR IGNORE INTO installment_plan(
-    id, name, total_installments, monthly_amount_cents, start_year_month, end_year_month, category_id, active
+    id, name, total_installments, total_amount_cents, monthly_amount_cents, start_year_month, end_year_month, category_id, active
 )
-VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
 }
 
 selectInstallmentPlans:
@@ -311,13 +370,14 @@ SELECT * FROM installment_plan ORDER BY active DESC, end_year_month ASC;
 selectActiveInstallments:
 SELECT * FROM installment_plan WHERE active = 1 ORDER BY end_year_month ASC;
 
-deleteInstallmentPlan:
-DELETE FROM installment_plan WHERE id = ?;
+deactivateInstallmentPlan:
+UPDATE installment_plan SET active = 0 WHERE id = ?;
 
 upsertScheduleItem {
 UPDATE payment_schedule_item
 SET kind = ?,
     ref_id = ?,
+    category_id = ?,
     subscription_id = ?,
     installment_plan_id = ?,
     due_date = ?,
@@ -327,9 +387,9 @@ SET kind = ?,
 WHERE id = ?;
 
 INSERT OR IGNORE INTO payment_schedule_item(
-    id, kind, ref_id, subscription_id, installment_plan_id, due_date, amount_cents, status, paid_at
+    id, kind, ref_id, category_id, subscription_id, installment_plan_id, due_date, amount_cents, status, paid_at
 )
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 }
 
 selectScheduleByDateRange:
@@ -348,7 +408,8 @@ deleteScheduleItemsByRefAndKindFromDate:
 DELETE FROM payment_schedule_item
 WHERE ref_id = :refId
   AND kind = :kind
-  AND due_date >= :fromDate;
+  AND due_date >= :fromDate
+  AND status = 'DUE';
 
 updateScheduleStatus:
 UPDATE payment_schedule_item SET status = ?, paid_at = ? WHERE id = ?;
@@ -378,6 +439,9 @@ DELETE FROM payment_schedule_item;
 deleteAllExpenses:
 DELETE FROM expense;
 
+deleteAllRecurringExpenseSeries:
+DELETE FROM recurring_expense_series;
+
 deleteAllSubscriptions:
 DELETE FROM subscription;
 
@@ -395,4 +459,3 @@ DELETE FROM category;
 
 deleteAllSettings:
 DELETE FROM app_setting;
-

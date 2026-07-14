@@ -9,6 +9,7 @@ import com.samluiz.gyst.app.GystRoot
 import com.samluiz.gyst.data.repository.SqlDriverFactory
 import com.samluiz.gyst.db.GystDatabase
 import com.samluiz.gyst.di.initKoin
+import com.samluiz.gyst.domain.service.AdvisorSecretStore
 import com.samluiz.gyst.domain.service.AppUpdateService
 import com.samluiz.gyst.domain.service.GoogleAuthSyncService
 import com.samluiz.gyst.logging.AppLogger
@@ -25,19 +26,23 @@ fun main() {
     val logsPath = homeDir.resolve("logs").resolve("app.log")
     AppLogger.addSink(DesktopFileLogSink(logsPath))
     AppLogger.i("DesktopMain", "Starting desktop app")
-    initKoin(platformModule = module {
-        single<SqlDriverFactory> {
-            object : SqlDriverFactory {
-                override fun createDriver(): SqlDriver = openDesktopDriver(dbPath, backupPath)
-            }
-        }
-        single<SqlDriver> {
-            Files.createDirectories(homeDir)
-            get<SqlDriverFactory>().createDriver()
-        }
-        single<GoogleAuthSyncService> { DesktopGoogleAuthSyncService(dbPath = dbPath, backupPath = backupPath) }
-        single<AppUpdateService> { DesktopAppUpdateService() }
-    })
+    initKoin(
+        platformModule =
+            module {
+                single<SqlDriverFactory> {
+                    object : SqlDriverFactory {
+                        override fun createDriver(): SqlDriver = openDesktopDriver(dbPath, backupPath)
+                    }
+                }
+                single<SqlDriver> {
+                    Files.createDirectories(homeDir)
+                    get<SqlDriverFactory>().createDriver()
+                }
+                single<GoogleAuthSyncService> { DesktopGoogleAuthSyncService(dbPath = dbPath, backupPath = backupPath) }
+                single<AppUpdateService> { DesktopAppUpdateService() }
+                single<AdvisorSecretStore> { DesktopAdvisorSecretStore(homeDir.resolve("secrets").resolve("advisor.key")) }
+            },
+    )
 
     application {
         Window(
@@ -50,7 +55,10 @@ fun main() {
     }
 }
 
-private fun openDesktopDriver(dbPath: Path, backupPath: Path): SqlDriver {
+private fun openDesktopDriver(
+    dbPath: Path,
+    backupPath: Path,
+): SqlDriver {
     Files.createDirectories(dbPath.parent)
     ensureDesktopDbHealth(dbPath, backupPath)
     return runCatching {
@@ -93,17 +101,21 @@ private fun openDesktopDriver(dbPath: Path, backupPath: Path): SqlDriver {
     }
 }
 
-private fun ensureDesktopDbHealth(dbPath: Path, backupPath: Path) {
+private fun ensureDesktopDbHealth(
+    dbPath: Path,
+    backupPath: Path,
+) {
     if (!Files.exists(dbPath)) return
-    val healthy = runCatching {
-        DriverManager.getConnection("jdbc:sqlite:${dbPath.toAbsolutePath()}").use { conn ->
-            conn.createStatement().use { st ->
-                st.executeQuery("PRAGMA quick_check(1)").use { rs ->
-                    rs.next() && rs.getString(1).equals("ok", ignoreCase = true)
+    val healthy =
+        runCatching {
+            DriverManager.getConnection("jdbc:sqlite:${dbPath.toAbsolutePath()}").use { conn ->
+                conn.createStatement().use { st ->
+                    st.executeQuery("PRAGMA quick_check(1)").use { rs ->
+                        rs.next() && rs.getString(1).equals("ok", ignoreCase = true)
+                    }
                 }
             }
-        }
-    }.getOrDefault(false)
+        }.getOrDefault(false)
     if (!healthy) {
         backupDbFiles(dbPath, backupPath, "desktop_quick_check_failed")
         deleteDbFiles(dbPath)
@@ -123,7 +135,10 @@ private fun readUserVersion(dbPath: Path): Long {
     }.getOrDefault(0L)
 }
 
-private fun setUserVersion(dbPath: Path, version: Long) {
+private fun setUserVersion(
+    dbPath: Path,
+    version: Long,
+) {
     DriverManager.getConnection("jdbc:sqlite:${dbPath.toAbsolutePath()}").use { conn ->
         conn.createStatement().use { st ->
             st.execute("PRAGMA user_version = $version")
@@ -141,7 +156,7 @@ private fun hasAnyUserTables(dbPath: Path): Boolean {
                     SELECT COUNT(*) FROM sqlite_master
                     WHERE type='table'
                       AND name NOT LIKE 'sqlite_%'
-                    """.trimIndent()
+                    """.trimIndent(),
                 ).use { rs ->
                     rs.next() && rs.getInt(1) > 0
                 }
@@ -154,44 +169,51 @@ private fun hasExpectedSchema(dbPath: Path): Boolean {
     if (!Files.exists(dbPath)) return false
     return runCatching {
         DriverManager.getConnection("jdbc:sqlite:${dbPath.toAbsolutePath()}").use { conn ->
-            val requiredTables = setOf(
-                "category",
-                "budget_month",
-                "budget_allocation",
-                "expense",
-                "subscription",
-                "installment_plan",
-                "payment_schedule_item",
-                "app_setting",
-            )
-            val presentTables = conn.createStatement().use { st ->
-                st.executeQuery("SELECT name FROM sqlite_master WHERE type='table'").use { rs ->
-                    buildSet {
-                        while (rs.next()) add(rs.getString(1))
+            val requiredTables =
+                setOf(
+                    "category",
+                    "budget_month",
+                    "budget_allocation",
+                    "expense",
+                    "subscription",
+                    "installment_plan",
+                    "payment_schedule_item",
+                    "app_setting",
+                )
+            val presentTables =
+                conn.createStatement().use { st ->
+                    st.executeQuery("SELECT name FROM sqlite_master WHERE type='table'").use { rs ->
+                        buildSet {
+                            while (rs.next()) add(rs.getString(1))
+                        }
                     }
                 }
-            }
             if (!requiredTables.all { it in presentTables }) return@runCatching false
 
-            val expenseColumns = conn.createStatement().use { st ->
-                st.executeQuery("PRAGMA table_info(expense)").use { rs ->
-                    buildSet {
-                        while (rs.next()) add(rs.getString("name"))
+            val expenseColumns =
+                conn.createStatement().use { st ->
+                    st.executeQuery("PRAGMA table_info(expense)").use { rs ->
+                        buildSet {
+                            while (rs.next()) add(rs.getString("name"))
+                        }
                     }
                 }
-            }
             setOf("recurrence_type", "schedule_item_id").all { it in expenseColumns }
         }
     }.getOrDefault(false)
 }
 
-private fun backupDbFiles(dbPath: Path, backupPath: Path, reason: String) {
+private fun backupDbFiles(
+    dbPath: Path,
+    backupPath: Path,
+    reason: String,
+) {
     runCatching { Files.createDirectories(backupPath.parent) }
     val stamp = System.currentTimeMillis()
     listOf(
         dbPath,
-        Path.of("${dbPath}-wal"),
-        Path.of("${dbPath}-shm"),
+        Path.of("$dbPath-wal"),
+        Path.of("$dbPath-shm"),
     ).forEach { source ->
         if (!Files.exists(source)) return@forEach
         val target = backupPath.parent.resolve("${source.fileName}.$reason.$stamp.bak")
@@ -204,11 +226,9 @@ private fun backupDbFiles(dbPath: Path, backupPath: Path, reason: String) {
 private fun deleteDbFiles(dbPath: Path) {
     listOf(
         dbPath,
-        Path.of("${dbPath}-wal"),
-        Path.of("${dbPath}-shm"),
+        Path.of("$dbPath-wal"),
+        Path.of("$dbPath-shm"),
     ).forEach { source ->
         runCatching { Files.deleteIfExists(source) }
     }
 }
-
-

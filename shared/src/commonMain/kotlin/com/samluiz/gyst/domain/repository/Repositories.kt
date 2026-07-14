@@ -52,28 +52,39 @@ interface ExpenseRepository {
         query: String?,
     ): List<Expense>
 
-    suspend fun deleteFutureRecurringByTemplate(
+    suspend fun deleteFutureRecurringBySeries(
         fromDateExclusive: LocalDate,
-        template: Expense,
+        seriesId: String,
     )
 
-    suspend fun updateFutureRecurringByTemplate(
+    suspend fun updateFutureRecurringBySeries(
         fromDateExclusive: LocalDate,
-        oldTemplate: Expense,
+        seriesId: String,
         newTemplate: Expense,
     )
 
     suspend fun monthlySpentByCategory(yearMonth: YearMonth): Map<String, Long>
 
     suspend fun monthlyTotal(yearMonth: YearMonth): Long
+}
 
-    suspend fun monthlyRecurringTotal(yearMonth: YearMonth): Long
+interface RecurringExpenseRepository {
+    suspend fun upsert(series: RecurringExpenseSeries)
+
+    suspend fun findById(id: String): RecurringExpenseSeries?
+
+    suspend fun activeForMonth(yearMonth: YearMonth): List<RecurringExpenseSeries>
+
+    suspend fun endBefore(
+        id: String,
+        lastActiveMonth: YearMonth,
+    )
 }
 
 interface SubscriptionRepository {
     suspend fun upsert(subscription: Subscription)
 
-    suspend fun delete(id: String)
+    suspend fun deactivate(id: String)
 
     suspend fun list(): List<Subscription>
 
@@ -83,7 +94,7 @@ interface SubscriptionRepository {
 interface InstallmentRepository {
     suspend fun upsert(plan: InstallmentPlan)
 
-    suspend fun delete(id: String)
+    suspend fun deactivate(id: String)
 
     suspend fun list(): List<InstallmentPlan>
 
@@ -104,11 +115,6 @@ interface ScheduleRepository {
     ): PaymentScheduleItem?
 
     suspend fun findById(id: String): PaymentScheduleItem?
-
-    suspend fun deleteByRefAndKind(
-        refId: String,
-        kind: ScheduleKind,
-    )
 
     suspend fun deleteByRefAndKindFromDate(
         refId: String,

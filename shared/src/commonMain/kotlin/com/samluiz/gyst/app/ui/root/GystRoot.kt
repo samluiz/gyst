@@ -66,9 +66,7 @@ import com.samluiz.gyst.domain.service.AppUpdateState
 import com.samluiz.gyst.domain.service.GoogleSyncErrorCode
 import com.samluiz.gyst.domain.service.GoogleSyncState
 import com.samluiz.gyst.domain.service.SyncSource
-import com.samluiz.gyst.presentation.CloudSyncStatus
 import com.samluiz.gyst.presentation.MainStore
-import com.samluiz.gyst.presentation.cloudSyncStatus
 import gyst.shared.generated.resources.OpenspaceRegular
 import gyst.shared.generated.resources.Res
 import kotlinx.coroutines.delay
@@ -125,7 +123,7 @@ fun GystRoot() {
                         verticalArrangement = Arrangement.spacedBy(12.dp),
                     ) {
                         state.errorMessage?.let { error ->
-                            PanelCard(title = "Erro", icon = Icons.Default.CreditCardOff) {
+                            PanelCard(title = s.errorTitle, icon = Icons.Default.CreditCardOff) {
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
                                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -225,6 +223,11 @@ fun GystRoot() {
                                         PlanningTab(
                                             s = s,
                                             state = state,
+                                            onConfigureAdvisor = store::configureAdvisor,
+                                            onAskAdvisor = store::askAdvisor,
+                                            onEnsureAdvisorOverview = store::ensureAdvisorOverview,
+                                            onClearAdvisor = store::clearAdvisorConversation,
+                                            onDisconnectAdvisor = store::disconnectAdvisor,
                                         )
                                     Screen.PERFIL ->
                                         ProfileTab(
@@ -562,5 +565,3 @@ internal fun capitalizeFirst(value: String): String {
         if (ch.isLowerCase()) ch.titlecase() else ch.toString()
     }
 }
-
-

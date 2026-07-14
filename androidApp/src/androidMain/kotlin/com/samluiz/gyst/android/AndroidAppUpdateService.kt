@@ -23,12 +23,13 @@ private const val DEFAULT_UPDATE_API_URL = "https://api.github.com/repos/samluiz
 class AndroidAppUpdateService(
     private val context: Context,
 ) : AppUpdateService {
-    private val internal = MutableStateFlow(
-        AppUpdateState(
-            isAvailable = true,
-            currentVersion = BuildInfo.VERSION_NAME,
+    private val internal =
+        MutableStateFlow(
+            AppUpdateState(
+                isAvailable = true,
+                currentVersion = BuildInfo.VERSION_NAME,
+            ),
         )
-    )
     override val state: StateFlow<AppUpdateState> = internal.asStateFlow()
 
     override suspend fun checkForUpdates(silent: Boolean) {
@@ -42,8 +43,9 @@ class AndroidAppUpdateService(
                 val publishedAt = root.optString("published_at").takeIf { it.isNotBlank() }
                 val notes = root.optString("body").takeIf { it.isNotBlank() }
                 val asset = pickAndroidAsset(root)
-                val isUpdateAvailable = latestVersion.isNotBlank() &&
-                    compareSemVer(latestVersion, BuildInfo.VERSION_NAME) > 0
+                val isUpdateAvailable =
+                    latestVersion.isNotBlank() &&
+                        compareSemVer(latestVersion, BuildInfo.VERSION_NAME) > 0
 
                 internal.update {
                     it.copy(
@@ -74,9 +76,10 @@ class AndroidAppUpdateService(
     override suspend fun openUpdate() {
         val url = state.value.downloadUrl ?: state.value.releasePageUrl ?: return
         withContext(Dispatchers.Main) {
-            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            }
+            val intent =
+                Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
             context.startActivity(intent)
         }
     }
@@ -97,13 +100,14 @@ class AndroidAppUpdateService(
     }
 
     private fun requestText(url: String): String {
-        val connection = (URL(url).openConnection() as HttpURLConnection).apply {
-            requestMethod = "GET"
-            connectTimeout = 10_000
-            readTimeout = 15_000
-            setRequestProperty("Accept", "application/vnd.github+json")
-            setRequestProperty("User-Agent", "gyst-android-updater")
-        }
+        val connection =
+            (URL(url).openConnection() as HttpURLConnection).apply {
+                requestMethod = "GET"
+                connectTimeout = 10_000
+                readTimeout = 15_000
+                setRequestProperty("Accept", "application/vnd.github+json")
+                setRequestProperty("User-Agent", "gyst-android-updater")
+            }
         return try {
             val code = connection.responseCode
             val stream = if (code in 200..299) connection.inputStream else connection.errorStream

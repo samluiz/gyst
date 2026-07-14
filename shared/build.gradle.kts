@@ -1,12 +1,12 @@
-import org.jetbrains.kotlin.gradle.dsl.JvmTarget
-import org.jetbrains.kotlin.gradle.plugin.KotlinPlatformType
-import org.jetbrains.kotlin.gradle.tasks.KotlinCompilationTask
 import org.gradle.api.DefaultTask
 import org.gradle.api.file.DirectoryProperty
 import org.gradle.api.provider.Property
 import org.gradle.api.tasks.Input
 import org.gradle.api.tasks.OutputDirectory
 import org.gradle.api.tasks.TaskAction
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+import org.jetbrains.kotlin.gradle.plugin.KotlinPlatformType
+import org.jetbrains.kotlin.gradle.tasks.KotlinCompilationTask
 import java.io.File
 
 plugins {
@@ -34,10 +34,11 @@ kotlin {
     }
 
     jvm("desktop")
-    val iosTargets = listOf(
-        iosArm64(),
-        iosSimulatorArm64(),
-    )
+    val iosTargets =
+        listOf(
+            iosArm64(),
+            iosSimulatorArm64(),
+        )
     iosTargets.forEach { target ->
         target.binaries.framework {
             baseName = "shared"
@@ -63,6 +64,11 @@ kotlin {
             implementation(libs.koin.core)
             implementation(libs.koin.compose)
 
+            implementation(libs.ktor.client.core)
+            implementation(libs.ktor.client.content.negotiation)
+            implementation(libs.ktor.serialization.kotlinx.json)
+            implementation(libs.markdown.renderer.m3)
+
             implementation(libs.sqldelight.runtime)
             implementation(libs.sqldelight.coroutines.extensions)
         }
@@ -70,19 +76,23 @@ kotlin {
             implementation(libs.kotlin.test)
             implementation(libs.koin.test)
             implementation(libs.kotlinx.coroutines.test)
+            implementation(libs.ktor.client.mock)
         }
         androidMain.dependencies {
+            implementation(libs.ktor.client.cio)
             implementation(libs.sqldelight.android.driver)
         }
         getByName("desktopMain").dependencies {
             implementation(compose.desktop.currentOs)
             implementation(libs.kotlinx.coroutines.swing)
+            implementation(libs.ktor.client.cio)
             implementation(libs.sqldelight.jvm.driver)
         }
         getByName("desktopTest").dependencies {
             implementation(libs.sqldelight.jvm.driver)
         }
         iosMain.dependencies {
+            implementation(libs.ktor.client.darwin)
             implementation(libs.sqldelight.native.driver)
         }
     }
@@ -110,7 +120,8 @@ abstract class GenerateBuildInfoTask : DefaultTask() {
     fun generate() {
         val packageDir = File(outputDir.get().asFile, "com/samluiz/gyst/app")
         val outputFile = File(packageDir, "BuildInfo.kt")
-        val content = """
+        val content =
+            """
             package com.samluiz.gyst.app
 
             object BuildInfo {
@@ -133,11 +144,11 @@ val generateBuildInfo by tasks.registering(GenerateBuildInfoTask::class) {
     versionCode.set(rootProject.extra["appVersionCode"].toString().toInt())
     updateApiUrl.set(
         providers.gradleProperty("app.updateApiUrl").orNull
-            ?: "https://api.github.com/repos/samluiz/gyst/releases/latest"
+            ?: "https://api.github.com/repos/samluiz/gyst/releases/latest",
     )
     releasesPageUrl.set(
         providers.gradleProperty("app.releasesPageUrl").orNull
-            ?: "https://github.com/samluiz/gyst/releases"
+            ?: "https://github.com/samluiz/gyst/releases",
     )
 }
 

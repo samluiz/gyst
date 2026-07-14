@@ -15,35 +15,38 @@ private val desktopProfileImageCache = ConcurrentHashMap<String, ImageBitmap>()
 
 @Composable
 actual fun rememberRemoteProfileImage(photoUrl: String?): ImageBitmap? {
-    val state = produceState<ImageBitmap?>(initialValue = null, key1 = photoUrl) {
-        value = null
-        val url = photoUrl?.trim().orEmpty()
-        if (url.isEmpty()) return@produceState
+    val state =
+        produceState<ImageBitmap?>(initialValue = null, key1 = photoUrl) {
+            value = null
+            val url = photoUrl?.trim().orEmpty()
+            if (url.isEmpty()) return@produceState
 
-        desktopProfileImageCache[url]?.let {
-            value = it
-            return@produceState
-        }
-
-        val loaded = runCatching {
-            withContext(Dispatchers.IO) {
-                val connection = (URL(url).openConnection() as HttpURLConnection).apply {
-                    connectTimeout = 10_000
-                    readTimeout = 10_000
-                    requestMethod = "GET"
-                    setRequestProperty("User-Agent", "gyst-desktop")
-                }
-                connection.inputStream.use { input ->
-                    val bytes = input.readBytes()
-                    Image.makeFromEncoded(bytes).toComposeImageBitmap()
-                }
+            desktopProfileImageCache[url]?.let {
+                value = it
+                return@produceState
             }
-        }.getOrNull()
 
-        if (loaded != null) {
-            desktopProfileImageCache[url] = loaded
+            val loaded =
+                runCatching {
+                    withContext(Dispatchers.IO) {
+                        val connection =
+                            (URL(url).openConnection() as HttpURLConnection).apply {
+                                connectTimeout = 10_000
+                                readTimeout = 10_000
+                                requestMethod = "GET"
+                                setRequestProperty("User-Agent", "gyst-desktop")
+                            }
+                        connection.inputStream.use { input ->
+                            val bytes = input.readBytes()
+                            Image.makeFromEncoded(bytes).toComposeImageBitmap()
+                        }
+                    }
+                }.getOrNull()
+
+            if (loaded != null) {
+                desktopProfileImageCache[url] = loaded
+            }
+            value = loaded
         }
-        value = loaded
-    }
     return state.value
 }
