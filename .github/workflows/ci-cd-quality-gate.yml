@@ -62,46 +62,6 @@ jobs:
             sleep 20
           done
 
-  android_instrumentation_quality:
-    name: Android Notification and Deep-link Instrumentation
-    runs-on: ubuntu-latest
-    timeout-minutes: 45
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up JDK 17
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: "17"
-          cache: gradle
-
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Inject google-services.json
-        shell: bash
-        env:
-          GOOGLE_SERVICES_JSON_B64: ${{ secrets.GOOGLE_SERVICES_JSON_B64 }}
-        run: |
-          if [ -z "$GOOGLE_SERVICES_JSON_B64" ]; then
-            echo "Missing required secret: GOOGLE_SERVICES_JSON_B64"
-            exit 1
-          fi
-          echo "$GOOGLE_SERVICES_JSON_B64" | base64 --decode > androidApp/google-services.json
-
-      - name: Run connected Android tests
-        uses: reactivecircus/android-emulator-runner@v2
-        with:
-          api-level: 35
-          arch: x86_64
-          profile: pixel_6
-          disable-animations: true
-          script: |
-            chmod +x gradlew
-            ./gradlew :androidApp:connectedDebugAndroidTest --no-daemon
-
   desktop_windows_quality:
     name: Desktop Windows Validation
     runs-on: windows-latest

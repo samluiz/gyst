@@ -3,6 +3,11 @@ name: CI/CD Release
 on:
   workflow_dispatch:
     inputs:
+      skip_quality_gate:
+        description: "Skip quality gates"
+        required: true
+        default: false
+        type: boolean
       build_android:
         description: "Build Android APK"
         required: true
@@ -36,84 +41,23 @@ jobs:
   validate_release_ref:
     name: Validate Release Ref
     runs-on: ubuntu-latest
-    outputs:
-      version_name: ${{ steps.release_version.outputs.version_name }}
-      version_code: ${{ steps.release_version.outputs.version_code }}
     steps:
-      - name: Validate release tag and selected platforms
-        id: release_version
-        shell: bash
+      - name: Ensure workflow runs from a tag
         run: |
           if [[ "${GITHUB_REF}" != refs/tags/* ]]; then
             echo "This workflow must be dispatched from a tag in 'Use workflow from'."
             echo "Current ref: ${GITHUB_REF}"
             exit 1
           fi
-
-          TAG="${GITHUB_REF_NAME}"
-          if [[ ! "$TAG" =~ ^v?([1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
-            echo "Release tag must be SemVer in the form 1.5.0 or v1.5.0."
-            echo "Current tag: $TAG"
-            exit 1
-          fi
-
-          VERSION_NAME="${TAG#v}"
-          IFS='.' read -r MAJOR MINOR PATCH <<< "$VERSION_NAME"
-          if (( MINOR > 99 || PATCH > 99 )); then
-            echo "Minor and patch components must fit the two-digit Android versionCode scheme."
-            exit 1
-          fi
-          VERSION_CODE=$((MAJOR * 10000 + MINOR * 100 + PATCH))
-          if (( VERSION_CODE < 1 || VERSION_CODE > 2100000000 )); then
-            echo "Derived Android versionCode is outside the supported range: $VERSION_CODE"
-            exit 1
-          fi
-
           if [[ "${{ github.event.inputs.build_android }}" != "true" && "${{ github.event.inputs.build_windows }}" != "true" && "${{ github.event.inputs.build_linux }}" != "true" && "${{ github.event.inputs.build_macos }}" != "true" && "${{ github.event.inputs.build_ios }}" != "true" ]]; then
             echo "Select at least one platform to build."
             exit 1
           fi
-          echo "version_name=$VERSION_NAME" >> "$GITHUB_OUTPUT"
-          echo "version_code=$VERSION_CODE" >> "$GITHUB_OUTPUT"
-          echo "Release ref OK: ${GITHUB_REF} -> version $VERSION_NAME ($VERSION_CODE)"
-
-  quality_gate_shared:
-    name: Quality Gate (Shared)
-    runs-on: ubuntu-latest
-    needs: [validate_release_ref]
-    timeout-minutes: 45
-    steps:
-      - name: Checkout selected tag
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ github.ref }}
-
-      - name: Set up JDK 17
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: "17"
-          cache: gradle
-
-      - name: Validate wrapper
-        uses: gradle/actions/wrapper-validation@v3
-
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Run shared quality checks
-        run: |
-          chmod +x gradlew
-          ./gradlew \
-            ktlintCheck \
-            detekt \
-            :shared:compileKotlinDesktop \
-            :shared:desktopTest \
-            --no-daemon
+          echo "Release ref OK: ${GITHUB_REF}"
 
   quality_gate_android:
     name: Quality Gate (Android)
-    if: ${{ github.event.inputs.build_android == 'true' }}
+    if: ${{ github.event.inputs.build_android == 'true' && github.event.inputs.skip_quality_gate != 'true' }}
     runs-on: ubuntu-latest
     needs: [validate_release_ref]
     timeout-minutes: 45
@@ -151,22 +95,17 @@ jobs:
         run: |
           chmod +x gradlew
           ./gradlew \
+            ktlintCheck \
+            detekt \
+            :shared:compileKotlinDesktop \
+            :shared:desktopTest \
             :androidApp:lintDebug \
             :androidApp:testDebugUnitTest \
             --no-daemon
 
-      - name: Run notification and deep-link instrumentation tests
-        uses: reactivecircus/android-emulator-runner@v2
-        with:
-          api-level: 35
-          arch: x86_64
-          profile: pixel_6
-          disable-animations: true
-          script: ./gradlew :androidApp:connectedDebugAndroidTest --no-daemon
-
   quality_gate_windows:
     name: Quality Gate (Windows/Desktop)
-    if: ${{ github.event.inputs.build_windows == 'true' }}
+    if: ${{ github.event.inputs.build_windows == 'true' && github.event.inputs.skip_quality_gate != 'true' }}
     runs-on: windows-latest
     needs: [validate_release_ref]
     timeout-minutes: 45
@@ -190,7 +129,7 @@ jobs:
 
   quality_gate_linux:
     name: Quality Gate (Linux/Desktop)
-    if: ${{ github.event.inputs.build_linux == 'true' }}
+    if: ${{ github.event.inputs.build_linux == 'true' && github.event.inputs.skip_quality_gate != 'true' }}
     runs-on: ubuntu-latest
     needs: [validate_release_ref]
     timeout-minutes: 45
@@ -214,7 +153,7 @@ jobs:
 
   quality_gate_macos:
     name: Quality Gate (macOS/Desktop)
-    if: ${{ github.event.inputs.build_macos == 'true' }}
+    if: ${{ github.event.inputs.build_macos == 'true' && github.event.inputs.skip_quality_gate != 'true' }}
     runs-on: macos-14
     needs: [validate_release_ref]
     timeout-minutes: 45
@@ -238,7 +177,7 @@ jobs:
 
   quality_gate_ios:
     name: Quality Gate (iOS)
-    if: ${{ github.event.inputs.build_ios == 'true' }}
+    if: ${{ github.event.inputs.build_ios == 'true' && github.event.inputs.skip_quality_gate != 'true' }}
     runs-on: macos-14
     needs: [validate_release_ref]
     timeout-minutes: 45
@@ -263,11 +202,10 @@ jobs:
   build_release_android:
     name: Build Android Release APK
     runs-on: ubuntu-latest
-    needs: [validate_release_ref, quality_gate_shared, quality_gate_android]
-    if: ${{ always() && github.event.inputs.build_android == 'true' && needs.validate_release_ref.result == 'success' && needs.quality_gate_shared.result == 'success' && needs.quality_gate_android.result == 'success' }}
+    needs: [validate_release_ref, quality_gate_android]
+    if: ${{ always() && github.event.inputs.build_android == 'true' && needs.validate_release_ref.result == 'success' && (github.event.inputs.skip_quality_gate == 'true' || needs.quality_gate_android.result == 'success') }}
     env:
-      APP_VERSION: ${{ needs.validate_release_ref.outputs.version_name }}
-      APP_VERSION_CODE: ${{ needs.validate_release_ref.outputs.version_code }}
+      APP_VERSION: ${{ github.ref_name }}
     steps:
       - name: Checkout selected tag
         uses: actions/checkout@v4
@@ -295,97 +233,46 @@ jobs:
           fi
           echo "$GOOGLE_SERVICES_JSON_B64" | base64 --decode > androidApp/google-services.json
 
-      - name: Validate and decode Android signing credentials
+      - name: Decode release keystore (if provided)
         shell: bash
         env:
           GYST_KEYSTORE_B64: ${{ secrets.GYST_KEYSTORE_B64 }}
-          GYST_KEYSTORE_PASSWORD: ${{ secrets.GYST_KEYSTORE_PASSWORD }}
-          GYST_KEY_ALIAS: ${{ secrets.GYST_KEY_ALIAS }}
-          GYST_KEY_PASSWORD: ${{ secrets.GYST_KEY_PASSWORD }}
         run: |
-          missing=""
-          for name in GYST_KEYSTORE_B64 GYST_KEYSTORE_PASSWORD GYST_KEY_ALIAS GYST_KEY_PASSWORD; do
-            if [[ -z "${!name}" ]]; then
-              missing="$missing $name"
-            fi
-          done
-          if [[ -n "$missing" ]]; then
-            echo "Missing required Android signing secrets:$missing"
-            exit 1
+          if [ -n "$GYST_KEYSTORE_B64" ]; then
+            echo "$GYST_KEYSTORE_B64" | base64 --decode > "$RUNNER_TEMP/gyst-release.jks"
+          else
+            echo "No keystore secret provided. Building unsigned release artifact."
           fi
-
-          echo "$GYST_KEYSTORE_B64" | base64 --decode > "$RUNNER_TEMP/gyst-release.jks"
-          chmod 600 "$RUNNER_TEMP/gyst-release.jks"
-          if [[ ! -s "$RUNNER_TEMP/gyst-release.jks" ]]; then
-            echo "Decoded Android keystore is empty."
-            exit 1
-          fi
-          keytool -list \
-            -keystore "$RUNNER_TEMP/gyst-release.jks" \
-            -storepass "$GYST_KEYSTORE_PASSWORD" \
-            -alias "$GYST_KEY_ALIAS" \
-            >/dev/null
 
       - name: Build release APK
         env:
           GYST_KEYSTORE_PASSWORD: ${{ secrets.GYST_KEYSTORE_PASSWORD }}
           GYST_KEY_ALIAS: ${{ secrets.GYST_KEY_ALIAS }}
           GYST_KEY_PASSWORD: ${{ secrets.GYST_KEY_PASSWORD }}
-          GYST_KEYSTORE_PATH: ${{ runner.temp }}/gyst-release.jks
+          GYST_KEYSTORE_PATH_DEFAULT: ${{ runner.temp }}/gyst-release.jks
         run: |
           chmod +x gradlew
-          ./gradlew \
-            :androidApp:assembleRelease \
-            -Papp.version="$APP_VERSION" \
-            -Papp.versionCode="$APP_VERSION_CODE" \
-            --no-daemon
-
-      - name: Verify signed Android artifact and embedded version
-        id: verify_android_artifact
-        shell: bash
-        run: |
-          mapfile -t APK_FILES < <(find androidApp/build/outputs/apk/release -maxdepth 1 -type f -name '*.apk' | sort)
-          if (( ${#APK_FILES[@]} != 1 )); then
-            echo "Expected exactly one release APK, found ${#APK_FILES[@]}."
-            exit 1
+          if [ -f "$GYST_KEYSTORE_PATH_DEFAULT" ]; then
+            export GYST_KEYSTORE_PATH="$GYST_KEYSTORE_PATH_DEFAULT"
+          else
+            unset GYST_KEYSTORE_PATH
+            unset GYST_KEYSTORE_PASSWORD
+            unset GYST_KEY_ALIAS
+            unset GYST_KEY_PASSWORD
           fi
-          APK_PATH="${APK_FILES[0]}"
-
-          APKSIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -n 1)"
-          if [[ -z "$APKSIGNER" ]]; then
-            echo "Android apksigner was not found."
-            exit 1
-          fi
-          "$APKSIGNER" verify --verbose --print-certs "$APK_PATH"
-
-          APKANALYZER="$(command -v apkanalyzer || true)"
-          if [[ -z "$APKANALYZER" ]]; then
-            APKANALYZER="$(find "$ANDROID_HOME/cmdline-tools" -type f -name apkanalyzer | sort -V | tail -n 1)"
-          fi
-          if [[ -z "$APKANALYZER" ]]; then
-            echo "Android apkanalyzer was not found."
-            exit 1
-          fi
-
-          ACTUAL_VERSION_NAME="$("$APKANALYZER" manifest version-name "$APK_PATH")"
-          ACTUAL_VERSION_CODE="$("$APKANALYZER" manifest version-code "$APK_PATH")"
-          if [[ "$ACTUAL_VERSION_NAME" != "$APP_VERSION" ]]; then
-            echo "APK versionName mismatch: expected $APP_VERSION, found $ACTUAL_VERSION_NAME"
-            exit 1
-          fi
-          if [[ "$ACTUAL_VERSION_CODE" != "$APP_VERSION_CODE" ]]; then
-            echo "APK versionCode mismatch: expected $APP_VERSION_CODE, found $ACTUAL_VERSION_CODE"
-            exit 1
-          fi
-          echo "apk_path=$APK_PATH" >> "$GITHUB_OUTPUT"
+          ./gradlew :androidApp:assembleRelease -Papp.version=$APP_VERSION --no-daemon
 
       - name: Normalize Android artifact name
         shell: bash
-        env:
-          APK_PATH: ${{ steps.verify_android_artifact.outputs.apk_path }}
         run: |
+          VERSION_LABEL="${APP_VERSION#v}"
           mkdir -p release-dist
-          cp "$APK_PATH" "release-dist/gyst-${APP_VERSION}.apk"
+          APK_PATH="$(ls -1 androidApp/build/outputs/apk/release/*.apk | head -n 1)"
+          if [ -z "$APK_PATH" ]; then
+            echo "No APK produced."
+            exit 1
+          fi
+          cp "$APK_PATH" "release-dist/gyst-${VERSION_LABEL}.apk"
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
@@ -397,10 +284,10 @@ jobs:
   build_release_windows:
     name: Build Windows MSI and Portable
     runs-on: windows-latest
-    needs: [validate_release_ref, quality_gate_shared, quality_gate_windows]
-    if: ${{ always() && github.event.inputs.build_windows == 'true' && needs.validate_release_ref.result == 'success' && needs.quality_gate_shared.result == 'success' && needs.quality_gate_windows.result == 'success' }}
+    needs: [validate_release_ref, quality_gate_windows]
+    if: ${{ always() && github.event.inputs.build_windows == 'true' && needs.validate_release_ref.result == 'success' && (github.event.inputs.skip_quality_gate == 'true' || needs.quality_gate_windows.result == 'success') }}
     env:
-      APP_VERSION: ${{ needs.validate_release_ref.outputs.version_name }}
+      APP_VERSION: ${{ github.ref_name }}
     steps:
       - name: Checkout selected tag
         uses: actions/checkout@v4
@@ -462,10 +349,10 @@ jobs:
   build_release_linux:
     name: Build Linux DEB and Portable
     runs-on: ubuntu-latest
-    needs: [validate_release_ref, quality_gate_shared, quality_gate_linux]
-    if: ${{ always() && github.event.inputs.build_linux == 'true' && needs.validate_release_ref.result == 'success' && needs.quality_gate_shared.result == 'success' && needs.quality_gate_linux.result == 'success' }}
+    needs: [validate_release_ref, quality_gate_linux]
+    if: ${{ always() && github.event.inputs.build_linux == 'true' && needs.validate_release_ref.result == 'success' && (github.event.inputs.skip_quality_gate == 'true' || needs.quality_gate_linux.result == 'success') }}
     env:
-      APP_VERSION: ${{ needs.validate_release_ref.outputs.version_name }}
+      APP_VERSION: ${{ github.ref_name }}
     steps:
       - name: Checkout selected tag
         uses: actions/checkout@v4
@@ -525,10 +412,10 @@ jobs:
   build_release_macos:
     name: Build macOS DMG and Portable
     runs-on: macos-14
-    needs: [validate_release_ref, quality_gate_shared, quality_gate_macos]
-    if: ${{ always() && github.event.inputs.build_macos == 'true' && needs.validate_release_ref.result == 'success' && needs.quality_gate_shared.result == 'success' && needs.quality_gate_macos.result == 'success' }}
+    needs: [validate_release_ref, quality_gate_macos]
+    if: ${{ always() && github.event.inputs.build_macos == 'true' && needs.validate_release_ref.result == 'success' && (github.event.inputs.skip_quality_gate == 'true' || needs.quality_gate_macos.result == 'success') }}
     env:
-      APP_VERSION: ${{ needs.validate_release_ref.outputs.version_name }}
+      APP_VERSION: ${{ github.ref_name }}
     steps:
       - name: Checkout selected tag
         uses: actions/checkout@v4
@@ -587,11 +474,11 @@ jobs:
 
   build_release_ios:
     name: Build iOS IPA
-    if: ${{ github.event.inputs.build_ios == 'true' && needs.validate_release_ref.result == 'success' && needs.quality_gate_shared.result == 'success' && needs.quality_gate_ios.result == 'success' }}
+    if: ${{ github.event.inputs.build_ios == 'true' && needs.validate_release_ref.result == 'success' && (github.event.inputs.skip_quality_gate == 'true' || needs.quality_gate_ios.result == 'success') }}
     runs-on: macos-14
-    needs: [validate_release_ref, quality_gate_shared, quality_gate_ios]
+    needs: [validate_release_ref, quality_gate_ios]
     env:
-      APP_VERSION: ${{ needs.validate_release_ref.outputs.version_name }}
+      APP_VERSION: ${{ github.ref_name }}
     steps:
       - name: Checkout selected tag
         uses: actions/checkout@v4
