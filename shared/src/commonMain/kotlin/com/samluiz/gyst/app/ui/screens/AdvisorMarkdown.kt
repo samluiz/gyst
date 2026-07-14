@@ -22,7 +22,7 @@ internal fun AdvisorMarkdown(
     modifier: Modifier = Modifier,
     textStyle: TextStyle = MaterialTheme.typography.bodyMedium,
 ) {
-    val markdownState = rememberMarkdownState(content, retainState = true)
+    val markdownState = rememberMarkdownState(prepareAdvisorMarkdown(content), retainState = true)
     val colors = MaterialTheme.colorScheme
 
     SelectionContainer {
@@ -65,5 +65,26 @@ internal fun AdvisorMarkdown(
                     table = textStyle,
                 ),
         )
+    }
+}
+
+private val incompleteRealPrefix = Regex("""\bR[ \u00A0]+(?=\d)""")
+
+internal fun prepareAdvisorMarkdown(content: String): String {
+    val completedCurrencyPrefixes =
+        incompleteRealPrefix.replace(content) {
+            "R${'$'} "
+        }
+
+    return buildString(completedCurrencyPrefixes.length) {
+        completedCurrencyPrefixes.forEachIndexed { index, character ->
+            val isUnescapedRealSymbol =
+                character == '$' &&
+                    index > 0 &&
+                    completedCurrencyPrefixes[index - 1] == 'R' &&
+                    (index < 2 || completedCurrencyPrefixes[index - 2] != '\\')
+            if (isUnescapedRealSymbol) append('\\')
+            append(character)
+        }
     }
 }

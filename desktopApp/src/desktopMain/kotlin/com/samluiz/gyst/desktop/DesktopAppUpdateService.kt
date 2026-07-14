@@ -73,7 +73,7 @@ class DesktopAppUpdateService : AppUpdateService {
         }
     }
 
-    override suspend fun openUpdate() {
+    override suspend fun startUpdate() {
         val url = state.value.downloadUrl ?: state.value.releasePageUrl ?: return
         withContext(Dispatchers.IO) {
             if (!Desktop.isDesktopSupported()) return@withContext

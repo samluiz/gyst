@@ -44,7 +44,7 @@ internal fun ProfileTab(
     onSetLanguage: (String) -> Unit,
     onSetTheme: (String) -> Unit,
     onCheckForUpdates: () -> Unit,
-    onOpenUpdate: () -> Unit,
+    onStartUpdate: () -> Unit,
     onSignInGoogle: () -> Unit,
     onSignOutGoogle: () -> Unit,
     onSyncGoogleDrive: () -> Unit,
@@ -156,6 +156,9 @@ internal fun ProfileTab(
                             val secondaryLine =
                                 when {
                                     update.isChecking -> s.updateStatusChecking
+                                    update.isDownloading ->
+                                        update.downloadProgressPercent?.let { "${s.updateDownloading}: $it%" }
+                                            ?: s.updateDownloading
                                     update.isUpdateAvailable && update.latestVersion != null ->
                                         "${s.latestVersion}: v${update.latestVersion}"
                                     else -> updateStatus.label
@@ -205,13 +208,27 @@ internal fun ProfileTab(
                             overflow = TextOverflow.Ellipsis,
                         )
                     }
+                    if (update.requiresInstallPermission) {
+                        Text(
+                            s.updateInstallPermission,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                     if (update.isUpdateAvailable && update.downloadUrl != null) {
                         CompactPrimaryButton(
-                            text = s.updateNow,
+                            text =
+                                when {
+                                    update.isDownloading -> s.updateDownloading
+                                    update.isUpdateDownloaded -> s.updateInstall
+                                    else -> s.updateNow
+                                },
+                            enabled = !update.isDownloading,
+                            loading = update.isDownloading,
                             compact = true,
                             squared = true,
                             modifier = Modifier.fillMaxWidth(),
-                            onClick = onOpenUpdate,
+                            onClick = onStartUpdate,
                         )
                     }
                 }

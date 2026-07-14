@@ -20,7 +20,7 @@ internal class StoreSyncActions(
 
     suspend fun checkForUpdates() = appUpdateService.checkForUpdates(silent = false)
 
-    suspend fun openUpdate() = appUpdateService.openUpdate()
+    suspend fun startUpdate() = appUpdateService.startUpdate()
 
     suspend fun syncGoogleDrive(applyHotReloadIfNeeded: suspend (String, Boolean) -> Boolean) {
         googleAuthSyncService.syncNow()

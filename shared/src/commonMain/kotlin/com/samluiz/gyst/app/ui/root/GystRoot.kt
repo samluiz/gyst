@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
@@ -62,6 +63,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -92,6 +94,8 @@ fun GystRoot() {
     val s = rememberStrings(state.language)
     var screen by remember { mutableStateOf(Screen.RESUMO) }
     var despesasSectionIndex by rememberSaveable { mutableStateOf(0) }
+    val density = LocalDensity.current
+    val isKeyboardVisible = WindowInsets.ime.getBottom(density) > 0
 
     GystTheme(themeMode = state.themeMode) {
         Surface(modifier = Modifier.fillMaxSize()) {
@@ -116,11 +120,13 @@ fun GystRoot() {
                     modifier = Modifier.fillMaxSize(),
                     containerColor = Color.Transparent,
                     bottomBar = {
-                        BottomNav(
-                            s = s,
-                            selected = screen,
-                            onSelect = { screen = it },
-                        )
+                        if (!isKeyboardVisible) {
+                            BottomNav(
+                                s = s,
+                                selected = screen,
+                                onSelect = { screen = it },
+                            )
+                        }
                     },
                 ) { innerPadding ->
                     Column(
@@ -246,7 +252,7 @@ fun GystRoot() {
                                             onSetLanguage = store::setLanguage,
                                             onSetTheme = store::setThemeMode,
                                             onCheckForUpdates = store::checkForUpdates,
-                                            onOpenUpdate = store::openUpdate,
+                                            onStartUpdate = store::startUpdate,
                                             onSignInGoogle = store::signInGoogle,
                                             onSignOutGoogle = store::signOutGoogle,
                                             onSyncGoogleDrive = store::syncGoogleDrive,

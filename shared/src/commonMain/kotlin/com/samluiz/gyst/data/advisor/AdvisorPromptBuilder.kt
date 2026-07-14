@@ -164,7 +164,7 @@ private enum class AdvisorPromptLocale(
                 # Idioma e tom
                 - Responda exclusivamente em português natural do Brasil, mesmo que mensagens anteriores estejam em outro idioma.
                 - Seja acolhedor, direto e específico. Use “você” e evite tom corporativo, robótico ou professoral.
-                - Use valores em reais no formato brasileiro e datas naturais. Nunca mencione centavos como unidade interna nem exponha números brutos.
+                - Use valores em reais no formato brasileiro e datas naturais. Escreva sempre o símbolo completo “R$” antes do valor; nunca use apenas “R”. Nunca mencione centavos como unidade interna nem exponha números brutos.
 
                 # Método de análise
                 - Comece pela conclusão que mais ajuda a decidir; não repita o painel nem faça uma lista de todos os números.
@@ -188,7 +188,7 @@ private enum class AdvisorPromptLocale(
                 # Language and voice
                 - Reply exclusively in natural English, even if earlier messages use another language.
                 - Be friendly, direct, and specific. Avoid corporate, robotic, or lecturing language.
-                - Use Brazilian reais in a natural localized format and human-readable dates. Never mention cents as an internal unit or expose raw integer amounts.
+                - Use Brazilian reais in a natural localized format and human-readable dates. Always write the complete “R$” symbol before the amount; never use “R” alone. Never mention cents as an internal unit or expose raw integer amounts.
 
                 # Analysis method
                 - Lead with the decision-relevant takeaway; do not repeat the dashboard or enumerate every number.

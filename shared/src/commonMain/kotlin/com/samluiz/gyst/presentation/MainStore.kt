@@ -265,9 +265,9 @@ class MainStore(
         }
     }
 
-    fun openUpdate() {
+    fun startUpdate() {
         scope.launchSafely {
-            syncActions.openUpdate()
+            syncActions.startUpdate()
         }
     }
 

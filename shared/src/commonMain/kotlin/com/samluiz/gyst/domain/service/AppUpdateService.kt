@@ -17,6 +17,10 @@ data class AppUpdateState(
     val lastCheckedAtIso: String? = null,
     val notes: String? = null,
     val lastError: String? = null,
+    val isDownloading: Boolean = false,
+    val downloadProgressPercent: Int? = null,
+    val isUpdateDownloaded: Boolean = false,
+    val requiresInstallPermission: Boolean = false,
 )
 
 interface AppUpdateService {
@@ -24,7 +28,7 @@ interface AppUpdateService {
 
     suspend fun checkForUpdates(silent: Boolean = true)
 
-    suspend fun openUpdate()
+    suspend fun startUpdate()
 }
 
 class NoOpAppUpdateService : AppUpdateService {
@@ -39,7 +43,7 @@ class NoOpAppUpdateService : AppUpdateService {
 
     override suspend fun checkForUpdates(silent: Boolean) = Unit
 
-    override suspend fun openUpdate() = Unit
+    override suspend fun startUpdate() = Unit
 }
 
 fun compareSemVer(
