@@ -18,6 +18,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Key
+import androidx.compose.material.icons.filled.RestartAlt
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -91,8 +92,15 @@ internal fun AdvisorPlanningContent(
                     )
                 }
             }
-            IconButton(onClick = { showConfig = true }) {
-                Icon(if (advisor.isConfigured) Icons.Default.Settings else Icons.Default.Key, s.advisorSetupTitle)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (advisor.messages.isNotEmpty()) {
+                    IconButton(onClick = onClear) {
+                        Icon(Icons.Default.RestartAlt, contentDescription = s.advisorClear)
+                    }
+                }
+                IconButton(onClick = { showConfig = true }) {
+                    Icon(if (advisor.isConfigured) Icons.Default.Settings else Icons.Default.Key, s.advisorSetupTitle)
+                }
             }
         }
 
@@ -125,24 +133,6 @@ internal fun AdvisorPlanningContent(
                 key = { index, message -> message.id.ifBlank { "${message.role}-$index" } },
             ) { _, message ->
                 AdvisorMessageBubble(message.role, message.content)
-            }
-            if (advisor.messages.isNotEmpty()) {
-                item(key = "advisor-conversation-actions") {
-                    Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                        Text(
-                            s.advisorClear,
-                            modifier = Modifier.clickable(onClick = onClear),
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                        Text(
-                            s.advisorDisconnect,
-                            modifier = Modifier.clickable(onClick = onDisconnect),
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.error,
-                        )
-                    }
-                }
             }
         }
 
