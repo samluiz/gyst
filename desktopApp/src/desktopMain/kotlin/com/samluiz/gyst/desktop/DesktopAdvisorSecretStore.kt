@@ -109,7 +109,8 @@ private enum class DesktopSecretPlatform {
         override fun clear(path: Path) {
             Files.deleteIfExists(path)
         }
-    };
+    },
+    ;
 
     abstract fun read(path: Path): String?
 
