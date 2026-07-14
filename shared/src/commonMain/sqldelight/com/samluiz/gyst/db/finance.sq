@@ -112,6 +112,209 @@ CREATE TABLE app_setting (
     value TEXT NOT NULL
 );
 
+CREATE TABLE advisor_provider_profile (
+    id TEXT NOT NULL PRIMARY KEY,
+    provider_id TEXT NOT NULL,
+    display_name TEXT NOT NULL,
+    base_url TEXT NOT NULL,
+    model TEXT NOT NULL,
+    api_format TEXT NOT NULL,
+    supports_text INTEGER NOT NULL CHECK(supports_text IN (0, 1)),
+    supports_vision INTEGER NOT NULL CHECK(supports_vision IN (0, 1)),
+    supports_structured_output INTEGER NOT NULL CHECK(supports_structured_output IN (0, 1)),
+    supports_streaming INTEGER NOT NULL CHECK(supports_streaming IN (0, 1)),
+    supports_tool_calling INTEGER NOT NULL CHECK(supports_tool_calling IN (0, 1)),
+    active INTEGER NOT NULL CHECK(active IN (0, 1)),
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    last_used_at TEXT
+);
+
+CREATE TABLE advisor_conversation (
+    id TEXT NOT NULL PRIMARY KEY,
+    title TEXT,
+    title_source TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    provider_profile_id TEXT,
+    last_provider_id TEXT,
+    last_model_id TEXT,
+    system_prompt_snapshot TEXT,
+    last_message_preview TEXT,
+    archived INTEGER NOT NULL DEFAULT 0 CHECK(archived IN (0, 1)),
+    next_sequence INTEGER NOT NULL DEFAULT 0 CHECK(next_sequence >= 0),
+    CHECK(title_source IS NULL OR title_source IN ('FALLBACK', 'AI', 'MANUAL')),
+    CHECK((title IS NULL AND title_source IS NULL) OR title IS NOT NULL),
+    FOREIGN KEY (provider_profile_id) REFERENCES advisor_provider_profile(id) ON DELETE SET NULL
+);
+
+CREATE TABLE advisor_message (
+    id TEXT NOT NULL PRIMARY KEY,
+    conversation_id TEXT NOT NULL,
+    sequence_number INTEGER NOT NULL CHECK(sequence_number >= 0),
+    exchange_id TEXT,
+    retry_of_message_id TEXT,
+    role TEXT NOT NULL,
+    content TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL,
+    provider_id TEXT,
+    model_id TEXT,
+    provider_message_id TEXT,
+    input_tokens INTEGER CHECK(input_tokens IS NULL OR input_tokens >= 0),
+    output_tokens INTEGER CHECK(output_tokens IS NULL OR output_tokens >= 0),
+    error_type TEXT,
+    error_message TEXT,
+    attachment_metadata TEXT,
+    retry_count INTEGER NOT NULL DEFAULT 0 CHECK(retry_count >= 0),
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    CHECK(role IN ('SYSTEM', 'USER', 'ASSISTANT', 'TOOL')),
+    CHECK(status IN ('PENDING', 'STREAMING', 'COMPLETED', 'FAILED', 'CANCELLED')),
+    FOREIGN KEY (conversation_id) REFERENCES advisor_conversation(id) ON DELETE CASCADE,
+    FOREIGN KEY (retry_of_message_id) REFERENCES advisor_message(id) ON DELETE SET NULL,
+    UNIQUE(conversation_id, sequence_number)
+);
+
+CREATE TABLE transaction_import_session (
+    id TEXT NOT NULL PRIMARY KEY,
+    idempotency_key TEXT NOT NULL UNIQUE,
+    status TEXT NOT NULL,
+    provider_profile_id TEXT,
+    provider_id TEXT,
+    model_id TEXT,
+    locale_tag TEXT NOT NULL,
+    default_currency TEXT NOT NULL,
+    allow_partial INTEGER NOT NULL DEFAULT 0 CHECK(allow_partial IN (0, 1)),
+    selected_count INTEGER NOT NULL DEFAULT 0 CHECK(selected_count >= 0),
+    imported_count INTEGER NOT NULL DEFAULT 0 CHECK(imported_count >= 0),
+    error_type TEXT,
+    error_message TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    completed_at TEXT,
+    CHECK(status IN ('CREATED', 'ANALYZING', 'READY', 'IMPORTING', 'COMPLETED', 'FAILED', 'CANCELLED')),
+    FOREIGN KEY (provider_profile_id) REFERENCES advisor_provider_profile(id) ON DELETE SET NULL
+);
+
+CREATE TABLE transaction_import_source (
+    id TEXT NOT NULL PRIMARY KEY,
+    import_session_id TEXT NOT NULL,
+    source_hash TEXT NOT NULL,
+    source_order INTEGER NOT NULL CHECK(source_order >= 0),
+    media_type TEXT NOT NULL,
+    display_name TEXT,
+    byte_size INTEGER CHECK(byte_size IS NULL OR byte_size > 0),
+    temporary_reference TEXT,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY (import_session_id) REFERENCES transaction_import_session(id) ON DELETE CASCADE,
+    UNIQUE(import_session_id, source_hash),
+    UNIQUE(import_session_id, source_order)
+);
+
+CREATE TABLE transaction_candidate (
+    id TEXT NOT NULL PRIMARY KEY,
+    import_session_id TEXT,
+    source_type TEXT NOT NULL,
+    source_reference TEXT,
+    source_page TEXT,
+    row_order INTEGER NOT NULL DEFAULT 0 CHECK(row_order >= 0),
+    idempotency_key TEXT NOT NULL UNIQUE,
+    transaction_fingerprint TEXT,
+    description TEXT,
+    amount_cents INTEGER CHECK(amount_cents IS NULL OR amount_cents >= 0),
+    currency TEXT,
+    occurred_date TEXT,
+    occurred_time TEXT,
+    time_zone_id TEXT,
+    transaction_type TEXT NOT NULL,
+    suggested_category_id TEXT,
+    suggested_category_label TEXT,
+    account_or_payment_method TEXT,
+    installment_index INTEGER,
+    installment_total INTEGER,
+    note TEXT,
+    confidence REAL CHECK(confidence IS NULL OR (confidence >= 0.0 AND confidence <= 1.0)),
+    source_image_hash TEXT,
+    supporting_text TEXT,
+    warnings TEXT,
+    low_confidence_fields TEXT,
+    selected INTEGER NOT NULL DEFAULT 1 CHECK(selected IN (0, 1)),
+    status TEXT NOT NULL,
+    duplicate_candidate_id TEXT,
+    duplicate_expense_id TEXT,
+    linked_expense_id TEXT,
+    provider_id TEXT,
+    model_id TEXT,
+    retry_count INTEGER NOT NULL DEFAULT 0 CHECK(retry_count >= 0),
+    error_type TEXT,
+    error_message TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    CHECK(source_type IN ('IMAGE', 'ANDROID_NOTIFICATION')),
+    CHECK(transaction_type IN ('EXPENSE', 'INCOME', 'TRANSFER', 'REFUND', 'UNKNOWN')),
+    CHECK(status IN ('RECEIVED', 'PENDING_ANALYSIS', 'ANALYZING', 'NEEDS_REVIEW', 'APPROVED', 'REJECTED', 'FAILED', 'CANCELLED', 'IGNORED')),
+    FOREIGN KEY (import_session_id) REFERENCES transaction_import_session(id) ON DELETE CASCADE,
+    FOREIGN KEY (suggested_category_id) REFERENCES category(id) ON DELETE SET NULL,
+    FOREIGN KEY (duplicate_candidate_id) REFERENCES transaction_candidate(id) ON DELETE SET NULL,
+    FOREIGN KEY (duplicate_expense_id) REFERENCES expense(id) ON DELETE SET NULL,
+    FOREIGN KEY (linked_expense_id) REFERENCES expense(id) ON DELETE SET NULL
+);
+
+CREATE TABLE notification_ingestion (
+    id TEXT NOT NULL PRIMARY KEY,
+    source_package TEXT NOT NULL,
+    notification_id INTEGER,
+    notification_key TEXT NOT NULL,
+    notification_fingerprint TEXT NOT NULL UNIQUE,
+    posted_at TEXT NOT NULL,
+    title TEXT,
+    main_text TEXT,
+    expanded_text TEXT,
+    channel_id TEXT,
+    category TEXT,
+    normalized_text TEXT,
+    processing_status TEXT NOT NULL,
+    candidate_id TEXT,
+    retry_count INTEGER NOT NULL DEFAULT 0 CHECK(retry_count >= 0),
+    error_type TEXT,
+    error_message TEXT,
+    content_redacted_at TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    CHECK(processing_status IN ('RECEIVED', 'FILTERED', 'QUEUED', 'PROCESSING', 'COMPLETED', 'FAILED', 'CANCELLED')),
+    FOREIGN KEY (candidate_id) REFERENCES transaction_candidate(id) ON DELETE SET NULL
+);
+
+CREATE TABLE monitored_application (
+    package_name TEXT NOT NULL PRIMARY KEY,
+    display_name TEXT NOT NULL,
+    policy TEXT NOT NULL,
+    enabled INTEGER NOT NULL DEFAULT 1 CHECK(enabled IN (0, 1)),
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    CHECK(policy IN ('ALLOW', 'BLOCK'))
+);
+
+CREATE TABLE expense_origin (
+    id TEXT NOT NULL PRIMARY KEY,
+    expense_id TEXT NOT NULL UNIQUE,
+    candidate_id TEXT UNIQUE,
+    import_session_id TEXT,
+    source_type TEXT NOT NULL,
+    source_image_hash TEXT,
+    notification_fingerprint TEXT,
+    transaction_fingerprint TEXT NOT NULL,
+    idempotency_key TEXT NOT NULL UNIQUE,
+    confidence REAL CHECK(confidence IS NULL OR (confidence >= 0.0 AND confidence <= 1.0)),
+    provider_id TEXT,
+    model_id TEXT,
+    created_at TEXT NOT NULL,
+    CHECK(source_type IN ('IMAGE', 'ANDROID_NOTIFICATION')),
+    FOREIGN KEY (expense_id) REFERENCES expense(id) ON DELETE CASCADE,
+    FOREIGN KEY (candidate_id) REFERENCES transaction_candidate(id) ON DELETE SET NULL,
+    FOREIGN KEY (import_session_id) REFERENCES transaction_import_session(id) ON DELETE SET NULL
+);
+
 CREATE UNIQUE INDEX IF NOT EXISTS idx_budget_month_year_month_unique
 ON budget_month(year_month);
 
@@ -145,6 +348,50 @@ ON subscription(active, amount_cents);
 
 CREATE INDEX IF NOT EXISTS idx_installment_active_end
 ON installment_plan(active, end_year_month);
+
+CREATE INDEX IF NOT EXISTS idx_advisor_provider_active
+ON advisor_provider_profile(active, updated_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_advisor_conversation_activity
+ON advisor_conversation(archived, updated_at DESC, id);
+
+CREATE INDEX IF NOT EXISTS idx_advisor_message_order
+ON advisor_message(conversation_id, sequence_number);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_advisor_message_exchange_role
+ON advisor_message(conversation_id, exchange_id, role)
+WHERE exchange_id IS NOT NULL AND role IN ('USER', 'ASSISTANT');
+
+CREATE INDEX IF NOT EXISTS idx_advisor_message_incomplete
+ON advisor_message(conversation_id, status)
+WHERE status IN ('PENDING', 'STREAMING');
+
+CREATE INDEX IF NOT EXISTS idx_import_session_activity
+ON transaction_import_session(status, updated_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_import_source_hash
+ON transaction_import_source(source_hash);
+
+CREATE INDEX IF NOT EXISTS idx_candidate_import_order
+ON transaction_candidate(import_session_id, row_order, id);
+
+CREATE INDEX IF NOT EXISTS idx_candidate_review_queue
+ON transaction_candidate(status, updated_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_candidate_fingerprint
+ON transaction_candidate(transaction_fingerprint);
+
+CREATE INDEX IF NOT EXISTS idx_notification_source_key
+ON notification_ingestion(source_package, notification_key, posted_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_notification_processing
+ON notification_ingestion(processing_status, updated_at);
+
+CREATE INDEX IF NOT EXISTS idx_notification_candidate
+ON notification_ingestion(candidate_id);
+
+CREATE INDEX IF NOT EXISTS idx_expense_origin_fingerprint
+ON expense_origin(transaction_fingerprint);
 
 selectAllCategories:
 SELECT * FROM category ORDER BY name;
@@ -448,6 +695,479 @@ VALUES (?, ?);
 
 getAppSetting:
 SELECT value FROM app_setting WHERE key = ? LIMIT 1;
+
+upsertAdvisorProviderProfile {
+UPDATE advisor_provider_profile
+SET provider_id = ?,
+    display_name = ?,
+    base_url = ?,
+    model = ?,
+    api_format = ?,
+    supports_text = ?,
+    supports_vision = ?,
+    supports_structured_output = ?,
+    supports_streaming = ?,
+    supports_tool_calling = ?,
+    active = ?,
+    updated_at = ?,
+    last_used_at = ?
+WHERE id = ?;
+
+INSERT OR IGNORE INTO advisor_provider_profile(
+    id, provider_id, display_name, base_url, model, api_format, supports_text, supports_vision,
+    supports_structured_output, supports_streaming, supports_tool_calling, active,
+    created_at, updated_at, last_used_at
+)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+}
+
+selectAdvisorProviderProfiles:
+SELECT * FROM advisor_provider_profile ORDER BY active DESC, updated_at DESC, id;
+
+selectActiveVisionProviderProfiles:
+SELECT * FROM advisor_provider_profile
+WHERE active = 1 AND supports_text = 1 AND supports_vision = 1
+ORDER BY last_used_at DESC, updated_at DESC, id;
+
+selectAdvisorProviderProfileById:
+SELECT * FROM advisor_provider_profile WHERE id = ? LIMIT 1;
+
+deactivateAdvisorProviderProfile:
+UPDATE advisor_provider_profile SET active = 0, updated_at = :updatedAt WHERE id = :id;
+
+insertAdvisorConversation:
+INSERT INTO advisor_conversation(
+    id, title, title_source, created_at, updated_at, provider_profile_id,
+    last_provider_id, last_model_id, system_prompt_snapshot, last_message_preview,
+    archived, next_sequence
+)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+selectAdvisorConversationById:
+SELECT * FROM advisor_conversation WHERE id = ? LIMIT 1;
+
+selectAdvisorConversations:
+SELECT * FROM advisor_conversation
+WHERE (:includeArchived = 1 OR archived = 0)
+ORDER BY archived ASC, updated_at DESC, id ASC;
+
+setAdvisorConversationManualTitle:
+UPDATE advisor_conversation
+SET title = :title, title_source = 'MANUAL', updated_at = :updatedAt
+WHERE id = :id;
+
+setAdvisorConversationGeneratedTitleIfAllowed:
+UPDATE advisor_conversation
+SET title = :title, title_source = :titleSource, updated_at = :updatedAt
+WHERE id = :id AND (title_source IS NULL OR title_source != 'MANUAL');
+
+updateAdvisorConversationActivity:
+UPDATE advisor_conversation
+SET updated_at = :updatedAt,
+    provider_profile_id = COALESCE(:providerProfileId, provider_profile_id),
+    last_provider_id = COALESCE(:providerId, last_provider_id),
+    last_model_id = COALESCE(:modelId, last_model_id),
+    last_message_preview = :preview
+WHERE id = :id;
+
+advanceAdvisorConversationSequence:
+UPDATE advisor_conversation
+SET next_sequence = next_sequence + :count, updated_at = :updatedAt
+WHERE id = :id;
+
+setAdvisorConversationArchived:
+UPDATE advisor_conversation SET archived = :archived, updated_at = :updatedAt WHERE id = :id;
+
+deleteAdvisorConversation:
+DELETE FROM advisor_conversation WHERE id = ?;
+
+insertAdvisorMessage:
+INSERT INTO advisor_message(
+    id, conversation_id, sequence_number, exchange_id, retry_of_message_id, role,
+    content, status, provider_id, model_id, provider_message_id, input_tokens,
+    output_tokens, error_type, error_message, attachment_metadata, retry_count,
+    created_at, updated_at
+)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+selectAdvisorMessagesByConversation:
+SELECT * FROM advisor_message
+WHERE conversation_id = ?
+ORDER BY sequence_number ASC, id ASC;
+
+selectAdvisorMessageById:
+SELECT * FROM advisor_message WHERE id = ? LIMIT 1;
+
+selectAdvisorMessageByExchangeAndRole:
+SELECT * FROM advisor_message
+WHERE conversation_id = :conversationId AND exchange_id = :exchangeId AND role = :role
+LIMIT 1;
+
+updateAdvisorMessageProgress:
+UPDATE advisor_message
+SET content = :content, status = 'STREAMING', updated_at = :updatedAt
+WHERE id = :id AND status IN ('PENDING', 'STREAMING');
+
+completeAdvisorMessage:
+UPDATE advisor_message
+SET content = :content,
+    status = 'COMPLETED',
+    provider_message_id = :providerMessageId,
+    input_tokens = :inputTokens,
+    output_tokens = :outputTokens,
+    error_type = NULL,
+    error_message = NULL,
+    updated_at = :updatedAt
+WHERE id = :id AND status IN ('PENDING', 'STREAMING');
+
+failAdvisorMessage:
+UPDATE advisor_message
+SET content = :content,
+    status = 'FAILED',
+    error_type = :errorType,
+    error_message = :errorMessage,
+    updated_at = :updatedAt
+WHERE id = :id AND status IN ('PENDING', 'STREAMING');
+
+cancelAdvisorMessage:
+UPDATE advisor_message
+SET content = :content,
+    status = 'CANCELLED',
+    error_type = 'USER_CANCELLED',
+    error_message = NULL,
+    updated_at = :updatedAt
+WHERE id = :id AND status IN ('PENDING', 'STREAMING');
+
+resetAdvisorMessageForRetry:
+UPDATE advisor_message
+SET content = '',
+    status = 'PENDING',
+    provider_id = :providerId,
+    model_id = :modelId,
+    provider_message_id = NULL,
+    input_tokens = NULL,
+    output_tokens = NULL,
+    error_type = NULL,
+    error_message = NULL,
+    retry_count = retry_count + 1,
+    updated_at = :updatedAt
+WHERE id = :id AND status IN ('FAILED', 'CANCELLED');
+
+beginAdvisorMessageRegeneration:
+UPDATE advisor_message
+SET status = 'PENDING',
+    provider_id = :providerId,
+    model_id = :modelId,
+    provider_message_id = NULL,
+    input_tokens = NULL,
+    output_tokens = NULL,
+    error_type = NULL,
+    error_message = NULL,
+    retry_count = retry_count + 1,
+    updated_at = :updatedAt
+WHERE id = :id
+  AND role = 'ASSISTANT'
+  AND status IN ('COMPLETED', 'FAILED', 'CANCELLED');
+
+recoverInterruptedAdvisorMessages:
+UPDATE advisor_message
+SET status = 'FAILED',
+    error_type = 'INTERRUPTED',
+    error_message = NULL,
+    updated_at = :updatedAt
+WHERE status IN ('PENDING', 'STREAMING');
+
+insertTransactionImportSession:
+INSERT INTO transaction_import_session(
+    id, idempotency_key, status, provider_profile_id, provider_id, model_id,
+    locale_tag, default_currency, allow_partial, selected_count, imported_count,
+    error_type, error_message, created_at, updated_at, completed_at
+)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+selectTransactionImportSessionById:
+SELECT * FROM transaction_import_session WHERE id = ? LIMIT 1;
+
+selectTransactionImportSessionByIdempotencyKey:
+SELECT * FROM transaction_import_session WHERE idempotency_key = ? LIMIT 1;
+
+selectTransactionImportSessions:
+SELECT * FROM transaction_import_session ORDER BY updated_at DESC, id;
+
+configureTransactionImportSessionAnalysis:
+UPDATE transaction_import_session
+SET provider_profile_id = :providerProfileId,
+    provider_id = :providerId,
+    model_id = :modelId,
+    locale_tag = :localeTag,
+    default_currency = :defaultCurrency,
+    updated_at = :updatedAt
+WHERE id = :id;
+
+updateTransactionImportSessionStatus:
+UPDATE transaction_import_session
+SET status = :status,
+    selected_count = :selectedCount,
+    imported_count = :importedCount,
+    error_type = :errorType,
+    error_message = :errorMessage,
+    updated_at = :updatedAt,
+    completed_at = :completedAt
+WHERE id = :id;
+
+deleteTransactionImportSession:
+DELETE FROM transaction_import_session WHERE id = ?;
+
+insertTransactionImportSource:
+INSERT OR IGNORE INTO transaction_import_source(
+    id, import_session_id, source_hash, source_order, media_type, display_name,
+    byte_size, temporary_reference, created_at
+)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+selectTransactionImportSources:
+SELECT * FROM transaction_import_source
+WHERE import_session_id = ?
+ORDER BY source_order, id;
+
+selectPreviousTransactionImportSourcesByHash:
+SELECT * FROM transaction_import_source
+WHERE source_hash = ?
+ORDER BY created_at DESC, id;
+
+redactTransactionImportSourceCustody:
+UPDATE transaction_import_source
+SET display_name = NULL,
+    byte_size = NULL,
+    temporary_reference = NULL
+WHERE import_session_id = ?;
+
+insertTransactionCandidate:
+INSERT INTO transaction_candidate(
+    id, import_session_id, source_type, source_reference, source_page, row_order,
+    idempotency_key, transaction_fingerprint, description, amount_cents, currency,
+    occurred_date, occurred_time, time_zone_id, transaction_type,
+    suggested_category_id, suggested_category_label, account_or_payment_method, installment_index,
+    installment_total, note, confidence, source_image_hash, supporting_text,
+    warnings, low_confidence_fields, selected, status, duplicate_candidate_id,
+    duplicate_expense_id, linked_expense_id, provider_id, model_id, retry_count,
+    error_type, error_message, created_at, updated_at
+)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+selectTransactionCandidateById:
+SELECT * FROM transaction_candidate WHERE id = ? LIMIT 1;
+
+selectTransactionCandidateByIdempotencyKey:
+SELECT * FROM transaction_candidate WHERE idempotency_key = ? LIMIT 1;
+
+selectTransactionCandidatesByImportSession:
+SELECT * FROM transaction_candidate
+WHERE import_session_id = ?
+ORDER BY row_order, id;
+
+selectPendingTransactionCandidates:
+SELECT * FROM transaction_candidate
+WHERE status = 'NEEDS_REVIEW'
+ORDER BY updated_at DESC, id;
+
+selectTransactionCandidatesByFingerprint:
+SELECT * FROM transaction_candidate
+WHERE transaction_fingerprint = :fingerprint AND id != :excludedId
+ORDER BY created_at DESC, id;
+
+selectPotentialExpenseDuplicates:
+SELECT * FROM expense
+WHERE occurred_at = :occurredDate
+  AND amount_cents = :amountCents
+ORDER BY created_at DESC, id;
+
+updateTransactionCandidate:
+UPDATE transaction_candidate
+SET transaction_fingerprint = :fingerprint,
+    description = :description,
+    amount_cents = :amountCents,
+    currency = :currency,
+    occurred_date = :occurredDate,
+    occurred_time = :occurredTime,
+    time_zone_id = :timeZoneId,
+    transaction_type = :transactionType,
+    suggested_category_id = :suggestedCategoryId,
+    suggested_category_label = :suggestedCategoryLabel,
+    account_or_payment_method = :accountOrPaymentMethod,
+    installment_index = :installmentIndex,
+    installment_total = :installmentTotal,
+    note = :note,
+    confidence = :confidence,
+    supporting_text = :supportingText,
+    warnings = :warnings,
+    low_confidence_fields = :lowConfidenceFields,
+    selected = :selected,
+    duplicate_candidate_id = :duplicateCandidateId,
+    duplicate_expense_id = :duplicateExpenseId,
+    updated_at = :updatedAt
+WHERE id = :id AND status = 'NEEDS_REVIEW';
+
+updateTransactionCandidateStatus:
+UPDATE transaction_candidate
+SET status = :status,
+    supporting_text = CASE
+        WHEN :status IN ('REJECTED', 'CANCELLED', 'IGNORED') THEN NULL
+        ELSE supporting_text
+    END,
+    error_type = :errorType,
+    error_message = :errorMessage,
+    retry_count = :retryCount,
+    updated_at = :updatedAt
+WHERE id = :id AND status != 'APPROVED';
+
+transitionTransactionCandidateStatus:
+UPDATE transaction_candidate
+SET status = :status,
+    supporting_text = CASE
+        WHEN :status IN ('REJECTED', 'CANCELLED', 'IGNORED') THEN NULL
+        ELSE supporting_text
+    END,
+    error_type = :errorType,
+    error_message = :errorMessage,
+    retry_count = :retryCount,
+    updated_at = :updatedAt
+WHERE id = :id AND status = :expectedStatus;
+
+markTransactionCandidateApproved:
+UPDATE transaction_candidate
+SET status = 'APPROVED',
+    linked_expense_id = :expenseId,
+    supporting_text = NULL,
+    error_type = NULL,
+    error_message = NULL,
+    updated_at = :updatedAt
+WHERE id = :id AND status = 'NEEDS_REVIEW' AND linked_expense_id IS NULL;
+
+deleteUnapprovedTransactionCandidate:
+DELETE FROM transaction_candidate WHERE id = ? AND status != 'APPROVED';
+
+deleteUnapprovedTransactionCandidatesByImportSession:
+DELETE FROM transaction_candidate
+WHERE import_session_id = ? AND status != 'APPROVED';
+
+insertNotificationIngestion:
+INSERT OR IGNORE INTO notification_ingestion(
+    id, source_package, notification_id, notification_key, notification_fingerprint,
+    posted_at, title, main_text, expanded_text, channel_id, category,
+    normalized_text, processing_status, candidate_id, retry_count, error_type,
+    error_message, content_redacted_at, created_at, updated_at
+)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+selectNotificationIngestionById:
+SELECT * FROM notification_ingestion WHERE id = ? LIMIT 1;
+
+selectNotificationIngestionByFingerprint:
+SELECT * FROM notification_ingestion WHERE notification_fingerprint = ? LIMIT 1;
+
+selectNotificationIngestionsForProcessing:
+SELECT * FROM notification_ingestion
+WHERE processing_status IN ('RECEIVED', 'QUEUED', 'FAILED')
+ORDER BY updated_at, id;
+
+recoverInterruptedNotificationProcessing:
+UPDATE notification_ingestion
+SET processing_status = 'QUEUED',
+    error_type = 'PROCESS_INTERRUPTED',
+    error_message = 'Processing was interrupted and will be retried',
+    updated_at = :updatedAt
+WHERE processing_status = 'PROCESSING' AND candidate_id IS NULL;
+
+updateNotificationIngestionStatus:
+UPDATE notification_ingestion
+SET processing_status = :status,
+    candidate_id = :candidateId,
+    retry_count = :retryCount,
+    error_type = :errorType,
+    error_message = :errorMessage,
+    updated_at = :updatedAt
+WHERE id = :id;
+
+redactNotificationIngestionContent:
+UPDATE notification_ingestion
+SET title = NULL,
+    main_text = NULL,
+    expanded_text = NULL,
+    normalized_text = NULL,
+    content_redacted_at = :redactedAt,
+    updated_at = :redactedAt
+WHERE id = :id;
+
+deleteNotificationDerivedData {
+DELETE FROM notification_ingestion;
+
+DELETE FROM expense_origin WHERE source_type = 'ANDROID_NOTIFICATION';
+
+DELETE FROM transaction_candidate WHERE source_type = 'ANDROID_NOTIFICATION';
+
+DELETE FROM app_setting WHERE key LIKE 'automatic_detection.notification_delivery.%';
+}
+
+upsertMonitoredApplication {
+UPDATE monitored_application
+SET display_name = ?, policy = ?, enabled = ?, updated_at = ?
+WHERE package_name = ?;
+
+INSERT OR IGNORE INTO monitored_application(package_name, display_name, policy, enabled, created_at, updated_at)
+VALUES (?, ?, ?, ?, ?, ?);
+}
+
+selectMonitoredApplications:
+SELECT * FROM monitored_application ORDER BY enabled DESC, display_name, package_name;
+
+selectMonitoredApplicationByPackage:
+SELECT * FROM monitored_application WHERE package_name = ? LIMIT 1;
+
+deleteMonitoredApplication:
+DELETE FROM monitored_application WHERE package_name = ?;
+
+insertApprovedExpense:
+INSERT INTO expense(
+    id, occurred_at, amount_cents, category_id, note, merchant, payment_method,
+    recurrence_type, created_at, schedule_item_id, recurrence_series_id
+)
+VALUES (?, ?, ?, ?, ?, ?, ?, 'ONE_TIME', ?, NULL, NULL);
+
+insertExpenseOrigin:
+INSERT INTO expense_origin(
+    id, expense_id, candidate_id, import_session_id, source_type,
+    source_image_hash, notification_fingerprint, transaction_fingerprint,
+    idempotency_key, confidence, provider_id, model_id, created_at
+)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+selectExpenseOriginByIdempotencyKey:
+SELECT * FROM expense_origin WHERE idempotency_key = ? LIMIT 1;
+
+selectExpenseOriginsByFingerprint:
+SELECT * FROM expense_origin WHERE transaction_fingerprint = ? ORDER BY created_at DESC, id;
+
+deleteAllNotificationIngestions:
+DELETE FROM notification_ingestion;
+
+deleteAllExpenseOrigins:
+DELETE FROM expense_origin;
+
+deleteAllTransactionImportSessions:
+DELETE FROM transaction_import_session;
+
+deleteAllTransactionCandidates:
+DELETE FROM transaction_candidate;
+
+deleteAllAdvisorConversations:
+DELETE FROM advisor_conversation;
+
+deleteAllAdvisorProviderProfiles:
+DELETE FROM advisor_provider_profile;
+
+deleteAllMonitoredApplications:
+DELETE FROM monitored_application;
 
 deleteAllScheduleItems:
 DELETE FROM payment_schedule_item;

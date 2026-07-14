@@ -52,7 +52,6 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -70,20 +69,23 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.samluiz.gyst.domain.service.AppUpdateState
+import com.samluiz.gyst.domain.service.AutomaticTransactionDetectionService
 import com.samluiz.gyst.domain.service.GoogleSyncErrorCode
 import com.samluiz.gyst.domain.service.GoogleSyncState
+import com.samluiz.gyst.domain.service.ImageImportService
 import com.samluiz.gyst.domain.service.SyncSource
+import com.samluiz.gyst.presentation.AppDestination
+import com.samluiz.gyst.presentation.AppNavigator
 import com.samluiz.gyst.presentation.MainStore
+import com.samluiz.gyst.presentation.MainTab
 import gyst.shared.generated.resources.OpenspaceRegular
 import gyst.shared.generated.resources.Res
 import kotlinx.coroutines.delay
 import org.jetbrains.compose.resources.Font
 import org.koin.compose.koinInject
 
-private enum class Screen { RESUMO, DESPESAS, PLANEJAMENTO, PERFIL }
-
 private data class NavDestination(
-    val screen: Screen,
+    val screen: MainTab,
     val label: String,
     val icon: ImageVector,
 )
@@ -91,9 +93,19 @@ private data class NavDestination(
 @Composable
 fun GystRoot() {
     val store: MainStore = koinInject()
+    val navigator: AppNavigator = koinInject()
+    val imageImportService: ImageImportService = koinInject()
+    val automaticDetectionService: AutomaticTransactionDetectionService = koinInject()
     val state by store.state.collectAsState()
+    val navigation by navigator.state.collectAsState()
+    val automaticDetectionState by automaticDetectionService.state.collectAsState()
     val s = rememberStrings(state.language)
-    var screen by remember { mutableStateOf(Screen.RESUMO) }
+    val screen = navigation.selectedTab
+    val isFullScreenDestination =
+        navigation.destination is AppDestination.ImageImport ||
+            navigation.destination is AppDestination.DetectionSettings ||
+            navigation.destination is AppDestination.PendingSuggestions ||
+            navigation.destination is AppDestination.SuggestionReview
     var despesasSectionIndex by rememberSaveable { mutableStateOf(0) }
     val density = LocalDensity.current
     val isKeyboardVisible = WindowInsets.ime.getBottom(density) > 0
@@ -121,11 +133,11 @@ fun GystRoot() {
                     modifier = Modifier.fillMaxSize().imePadding(),
                     containerColor = Color.Transparent,
                     bottomBar = {
-                        if (!isKeyboardVisible) {
+                        if (!isKeyboardVisible && !isFullScreenDestination) {
                             BottomNav(
                                 s = s,
                                 selected = screen,
-                                onSelect = { screen = it },
+                                onSelect = navigator::selectTab,
                             )
                         }
                     },
@@ -193,73 +205,135 @@ fun GystRoot() {
                             }
                         }
 
-                        Header(
-                            s = s,
-                            month = capitalizeFirst(formatYearMonthHuman(state.currentMonth, s.languageCode)),
-                            onPrev = store::goToPreviousMonth,
-                            onNext = store::goToNextMonth,
-                            onToday = store::goToCurrentMonth,
-                            showMonthSelector = screen != Screen.PERFIL,
-                        )
+                        if (isFullScreenDestination) {
+                            when (val destination = navigation.destination) {
+                                is AppDestination.ImageImport ->
+                                    ImageImportRoute(
+                                        s = s,
+                                        service = imageImportService,
+                                        categories = state.categories,
+                                        onBack = { navigator.back() },
+                                        onConfigureProvider = { navigator.selectTab(MainTab.PLANNING) },
+                                    )
+                                AppDestination.DetectionSettings ->
+                                    AutomaticDetectionSettingsRoute(
+                                        s = s,
+                                        service = automaticDetectionService,
+                                        onBack = { navigator.back() },
+                                        onOpenPending = {
+                                            navigator.navigate(AppDestination.PendingSuggestions)
+                                        },
+                                        onConfigureProvider = { navigator.selectTab(MainTab.PLANNING) },
+                                    )
+                                AppDestination.PendingSuggestions ->
+                                    PendingTransactionSuggestionsRoute(
+                                        s = s,
+                                        service = automaticDetectionService,
+                                        onBack = { navigator.back() },
+                                        onReview = navigator::reviewSuggestion,
+                                        onOpenSettings = {
+                                            navigator.navigate(AppDestination.DetectionSettings)
+                                        },
+                                    )
+                                is AppDestination.SuggestionReview ->
+                                    TransactionSuggestionReviewRoute(
+                                        suggestionId = destination.suggestionId,
+                                        s = s,
+                                        service = automaticDetectionService,
+                                        categories = state.categories,
+                                        onBack = {
+                                            navigator.navigate(AppDestination.PendingSuggestions)
+                                        },
+                                        onOpenPending = {
+                                            navigator.navigate(AppDestination.PendingSuggestions)
+                                        },
+                                    )
+                                else -> Unit
+                            }
+                        } else {
+                            Header(
+                                s = s,
+                                month = capitalizeFirst(formatYearMonthHuman(state.currentMonth, s.languageCode)),
+                                onPrev = store::goToPreviousMonth,
+                                onNext = store::goToNextMonth,
+                                onToday = store::goToCurrentMonth,
+                                showMonthSelector = screen != MainTab.PROFILE,
+                            )
 
-                        AnimatedContent(targetState = screen to state.isLoading, label = "screen") { (current, loading) ->
-                            if (loading) {
-                                ScreenSkeleton(current = current)
-                            } else {
-                                when (current) {
-                                    Screen.RESUMO ->
-                                        ResumoTab(
-                                            s = s,
-                                            state = state,
-                                            onSaveIncome = store::saveIncome,
-                                        )
-                                    Screen.DESPESAS ->
-                                        DespesasTab(
-                                            s,
-                                            state,
-                                            selectedSectionIndex = despesasSectionIndex,
-                                            onSelectedSectionChange = { despesasSectionIndex = it },
-                                            onLoadMoreExpenses = store::loadMoreExpenses,
-                                            onAddExpense = store::addExpense,
-                                            onAddCategory = store::addCategory,
-                                            onUpdateCategory = store::updateCategoryName,
-                                            onDeleteCategory = store::deleteCategory,
-                                            onAddSubscription = store::addSubscription,
-                                            onAddInstallment = store::addInstallment,
-                                            onUpdateExpense = store::updateExpense,
-                                            onDeleteExpense = store::deleteExpense,
-                                            onUpdateSubscription = store::updateSubscription,
-                                            onDeleteSubscription = store::deleteSubscription,
-                                            onUpdateInstallment = store::updateInstallment,
-                                            onDeleteInstallment = store::deleteInstallment,
-                                            onDuplicateExpense = store::duplicateExpense,
-                                            onDuplicateSubscription = store::duplicateSubscription,
-                                            onDuplicateInstallment = store::duplicateInstallment,
-                                        )
-                                    Screen.PLANEJAMENTO ->
-                                        PlanningTab(
-                                            s = s,
-                                            state = state,
-                                            onConfigureAdvisor = store::configureAdvisor,
-                                            onAskAdvisor = store::askAdvisor,
-                                            onEnsureAdvisorOverview = store::ensureAdvisorOverview,
-                                            onClearAdvisor = store::clearAdvisorConversation,
-                                            onDisconnectAdvisor = store::disconnectAdvisor,
-                                        )
-                                    Screen.PERFIL ->
-                                        ProfileTab(
-                                            s,
-                                            state,
-                                            onSetLanguage = store::setLanguage,
-                                            onSetTheme = store::setThemeMode,
-                                            onCheckForUpdates = store::checkForUpdates,
-                                            onStartUpdate = store::startUpdate,
-                                            onSignInGoogle = store::signInGoogle,
-                                            onSignOutGoogle = store::signOutGoogle,
-                                            onSyncGoogleDrive = store::syncGoogleDrive,
-                                            onRestoreGoogleDrive = store::restoreFromGoogleDrive,
-                                            onResetLocalData = store::resetLocalData,
-                                        )
+                            AnimatedContent(targetState = screen to state.isLoading, label = "screen") { (current, loading) ->
+                                if (loading) {
+                                    ScreenSkeleton(current = current)
+                                } else {
+                                    when (current) {
+                                        MainTab.SUMMARY ->
+                                            ResumoTab(
+                                                s = s,
+                                                state = state,
+                                                onSaveIncome = store::saveIncome,
+                                            )
+                                        MainTab.EXPENSES ->
+                                            DespesasTab(
+                                                s,
+                                                state,
+                                                selectedSectionIndex = despesasSectionIndex,
+                                                onSelectedSectionChange = { despesasSectionIndex = it },
+                                                onLoadMoreExpenses = store::loadMoreExpenses,
+                                                onAddExpense = store::addExpense,
+                                                onAddCategory = store::addCategory,
+                                                onUpdateCategory = store::updateCategoryName,
+                                                onDeleteCategory = store::deleteCategory,
+                                                onAddSubscription = store::addSubscription,
+                                                onAddInstallment = store::addInstallment,
+                                                onUpdateExpense = store::updateExpense,
+                                                onDeleteExpense = store::deleteExpense,
+                                                onUpdateSubscription = store::updateSubscription,
+                                                onDeleteSubscription = store::deleteSubscription,
+                                                onUpdateInstallment = store::updateInstallment,
+                                                onDeleteInstallment = store::deleteInstallment,
+                                                onDuplicateExpense = store::duplicateExpense,
+                                                onDuplicateSubscription = store::duplicateSubscription,
+                                                onDuplicateInstallment = store::duplicateInstallment,
+                                                onOpenImageImport = {
+                                                    navigator.navigate(AppDestination.ImageImport())
+                                                },
+                                            )
+                                        MainTab.PLANNING ->
+                                            PlanningTab(
+                                                s = s,
+                                                state = state,
+                                                onConfigureAdvisor = store::configureAdvisor,
+                                                onAskAdvisor = store::askAdvisor,
+                                                onEnsureAdvisorOverview = store::ensureAdvisorOverview,
+                                                onCreateAdvisorConversation = store::createAdvisorConversation,
+                                                onSelectAdvisorConversation = store::selectAdvisorConversation,
+                                                onRenameAdvisorConversation = store::renameAdvisorConversation,
+                                                onDeleteAdvisorConversation = store::deleteAdvisorConversation,
+                                                onRetryAdvisorMessage = store::retryAdvisorMessage,
+                                                onCancelAdvisorResponse = store::cancelAdvisorResponse,
+                                                onDisconnectAdvisor = store::disconnectAdvisor,
+                                            )
+                                        MainTab.PROFILE ->
+                                            ProfileTab(
+                                                s,
+                                                state,
+                                                automaticDetectionState = automaticDetectionState,
+                                                onSetLanguage = store::setLanguage,
+                                                onSetTheme = store::setThemeMode,
+                                                onCheckForUpdates = store::checkForUpdates,
+                                                onStartUpdate = store::startUpdate,
+                                                onSignInGoogle = store::signInGoogle,
+                                                onSignOutGoogle = store::signOutGoogle,
+                                                onSyncGoogleDrive = store::syncGoogleDrive,
+                                                onRestoreGoogleDrive = store::restoreFromGoogleDrive,
+                                                onResetLocalData = store::resetLocalData,
+                                                onOpenAutomaticDetectionSettings = {
+                                                    navigator.navigate(AppDestination.DetectionSettings)
+                                                },
+                                                onOpenPendingSuggestions = {
+                                                    navigator.navigate(AppDestination.PendingSuggestions)
+                                                },
+                                            )
+                                    }
                                 }
                             }
                         }
@@ -368,7 +442,7 @@ private fun Header(
 }
 
 @Composable
-private fun ScreenSkeleton(current: Screen) {
+private fun ScreenSkeleton(current: MainTab) {
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         verticalArrangement = Arrangement.spacedBy(10.dp),
@@ -377,10 +451,10 @@ private fun ScreenSkeleton(current: Screen) {
             PanelCard(
                 title =
                     when (current) {
-                        Screen.RESUMO -> " "
-                        Screen.DESPESAS -> " "
-                        Screen.PLANEJAMENTO -> " "
-                        Screen.PERFIL -> " "
+                        MainTab.SUMMARY -> " "
+                        MainTab.EXPENSES -> " "
+                        MainTab.PLANNING -> " "
+                        MainTab.PROFILE -> " "
                     },
             ) {
                 SkeletonLine(width = 0.42f)
@@ -423,16 +497,16 @@ private fun SkeletonLine(width: Float) {
 @Composable
 private fun BottomNav(
     s: AppStrings,
-    selected: Screen,
-    onSelect: (Screen) -> Unit,
+    selected: MainTab,
+    onSelect: (MainTab) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val destinations =
         listOf(
-            NavDestination(Screen.RESUMO, s.tabSummary, Icons.Default.AutoGraph),
-            NavDestination(Screen.DESPESAS, s.tabExpenses, Icons.AutoMirrored.Filled.ReceiptLong),
-            NavDestination(Screen.PLANEJAMENTO, s.tabPlanning, Icons.Default.Savings),
-            NavDestination(Screen.PERFIL, s.profile, Icons.Default.Person),
+            NavDestination(MainTab.SUMMARY, s.tabSummary, Icons.Default.AutoGraph),
+            NavDestination(MainTab.EXPENSES, s.tabExpenses, Icons.AutoMirrored.Filled.ReceiptLong),
+            NavDestination(MainTab.PLANNING, s.tabPlanning, Icons.Default.Savings),
+            NavDestination(MainTab.PROFILE, s.profile, Icons.Default.Person),
         )
 
     NavigationBar(

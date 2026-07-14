@@ -1,3 +1,14 @@
 <resources>
     <string name="app_name">Gyst</string>
+    <string name="notification_listener_service_name">Automatic transaction detection</string>
+    <string name="transaction_detection_channel_name">Transaction detections</string>
+    <string name="transaction_detection_channel_description">Review possible financial transactions detected from allowed app notifications.</string>
+    <string name="transaction_detected_title">Transaction detected</string>
+    <string name="transaction_detected_body_with_merchant">A possible transaction of %1$s at %2$s was detected. Tap to review and add it.</string>
+    <string name="transaction_detected_body_with_amount">A possible transaction of %1$s was detected. Tap to review and add it.</string>
+    <string name="transaction_detected_body_generic">A possible transaction was detected. Tap to review and add it.</string>
+    <string name="transaction_detected_public_body">Open Gyst to review a pending suggestion.</string>
+    <string name="transaction_detected_review_action">Review</string>
+    <string name="notification_access_explanation">Notification access lets Gyst inspect notifications only from the financial apps you allow and create reviewable transaction suggestions.</string>
+    <string name="post_notifications_explanation">Notification permission lets Gyst tell you when a detected transaction is ready to review. Detection can still save suggestions when this permission is denied.</string>
 </resources>

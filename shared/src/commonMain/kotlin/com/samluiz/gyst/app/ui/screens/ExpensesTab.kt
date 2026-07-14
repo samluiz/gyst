@@ -19,6 +19,7 @@ import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.AddPhotoAlternate
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -64,6 +65,7 @@ internal fun DespesasTab(
     onDuplicateExpense: (String) -> Unit,
     onDuplicateSubscription: (String) -> Unit,
     onDuplicateInstallment: (String) -> Unit,
+    onOpenImageImport: () -> Unit,
 ) {
     val dialogs = remember { ExpenseDialogState() }
     val categoryById = remember(state.categories) { state.categories.associateBy { it.id } }
@@ -102,6 +104,26 @@ internal fun DespesasTab(
     }
 
     LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxSize()) {
+        item {
+            Box(
+                modifier = Modifier.fillMaxWidth(),
+                contentAlignment = Alignment.CenterEnd,
+            ) {
+                CompactPrimaryButton(
+                    text = s.imageImportEntry,
+                    compact = true,
+                    subtle = true,
+                    leadingContent = {
+                        androidx.compose.material3.Icon(
+                            Icons.Default.AddPhotoAlternate,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp),
+                        )
+                    },
+                    onClick = onOpenImageImport,
+                )
+            }
+        }
         item {
             PanelCard(
                 title = "",

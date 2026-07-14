@@ -1,6 +1,5 @@
 package com.samluiz.gyst.presentation
 
-import com.samluiz.gyst.domain.service.AdvisorApiFormat
 import com.samluiz.gyst.domain.service.AdvisorCategoryContext
 import com.samluiz.gyst.domain.service.AdvisorCommitmentContext
 import com.samluiz.gyst.domain.service.AdvisorConfig
@@ -12,12 +11,10 @@ internal class StoreAdvisorActions(
     private val getState: () -> MainState,
 ) {
     suspend fun configure(
-        baseUrl: String,
-        model: String,
-        apiFormat: AdvisorApiFormat,
+        config: AdvisorConfig,
         apiKey: String?,
     ) {
-        advisorService.configure(AdvisorConfig(baseUrl, model, apiFormat), apiKey)
+        advisorService.configure(config, apiKey)
     }
 
     suspend fun ask(
@@ -45,6 +42,30 @@ internal class StoreAdvisorActions(
     }
 
     suspend fun clearConversation() = advisorService.clearConversation()
+
+    suspend fun createConversation(title: String?) = advisorService.createConversation(title)
+
+    suspend fun selectConversation(conversationId: String) = advisorService.selectConversation(conversationId)
+
+    suspend fun renameConversation(
+        conversationId: String,
+        title: String,
+    ) = advisorService.renameConversation(conversationId, title)
+
+    suspend fun deleteConversation(conversationId: String) = advisorService.deleteConversation(conversationId)
+
+    suspend fun retryMessage(
+        messageId: String,
+        languageCode: String,
+    ) {
+        advisorService.retryMessage(
+            messageId = messageId,
+            context = getState().toAdvisorFinancialContext(),
+            languageCode = languageCode,
+        )
+    }
+
+    suspend fun cancelResponse() = advisorService.cancelResponse()
 
     suspend fun disconnect() = advisorService.disconnect()
 }

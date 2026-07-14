@@ -127,6 +127,8 @@ internal fun CompactInput(
     modifier: Modifier = Modifier,
     isError: Boolean = false,
     keyboardType: KeyboardType = KeyboardType.Text,
+    isWarning: Boolean = false,
+    supportingText: String? = null,
 ) {
     var focused by remember { mutableStateOf(false) }
     var fieldValue by remember(value) {
@@ -165,6 +167,7 @@ internal fun CompactInput(
                         1.dp,
                         when {
                             isError -> MaterialTheme.colorScheme.error.copy(alpha = 0.75f)
+                            isWarning -> MaterialTheme.colorScheme.tertiary.copy(alpha = 0.7f)
                             focused -> MaterialTheme.colorScheme.primary.copy(alpha = 0.55f)
                             else -> MaterialTheme.colorScheme.outline.copy(alpha = 0.18f)
                         },
@@ -187,6 +190,18 @@ internal fun CompactInput(
                 }
             },
         )
+        supportingText?.let {
+            Text(
+                text = it,
+                style = MaterialTheme.typography.labelSmall,
+                color =
+                    when {
+                        isError -> MaterialTheme.colorScheme.error
+                        isWarning -> MaterialTheme.colorScheme.tertiary
+                        else -> MaterialTheme.colorScheme.onSurfaceVariant
+                    },
+            )
+        }
     }
 }
 
@@ -197,6 +212,8 @@ internal fun CompactMoneyInput(
     label: String,
     modifier: Modifier = Modifier,
     isError: Boolean = false,
+    isWarning: Boolean = false,
+    supportingText: String? = null,
 ) {
     var fieldValue by remember(centsDigits) {
         val formatted = formatBrlFromCentsDigits(centsDigits)
@@ -231,6 +248,7 @@ internal fun CompactMoneyInput(
                         1.dp,
                         when {
                             isError -> MaterialTheme.colorScheme.error.copy(alpha = 0.8f)
+                            isWarning -> MaterialTheme.colorScheme.tertiary.copy(alpha = 0.75f)
                             focused -> MaterialTheme.colorScheme.primary.copy(alpha = 0.65f)
                             else -> MaterialTheme.colorScheme.outline.copy(alpha = 0.24f)
                         },
@@ -253,6 +271,18 @@ internal fun CompactMoneyInput(
                 }
             },
         )
+        supportingText?.let {
+            Text(
+                text = it,
+                style = MaterialTheme.typography.labelSmall,
+                color =
+                    when {
+                        isError -> MaterialTheme.colorScheme.error
+                        isWarning -> MaterialTheme.colorScheme.tertiary
+                        else -> MaterialTheme.colorScheme.onSurfaceVariant
+                    },
+            )
+        }
     }
 }
 

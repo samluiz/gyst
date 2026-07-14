@@ -1,18 +1,24 @@
 package com.samluiz.gyst.desktop
 
-import androidx.compose.ui.res.painterResource
+import androidx.compose.runtime.remember
+import androidx.compose.ui.graphics.painter.BitmapPainter
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
 import app.cash.sqldelight.db.SqlDriver
 import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
 import com.samluiz.gyst.app.GystRoot
+import com.samluiz.gyst.data.repository.DatabaseRuntimeController
 import com.samluiz.gyst.data.repository.SqlDriverFactory
 import com.samluiz.gyst.db.GystDatabase
 import com.samluiz.gyst.di.initKoin
 import com.samluiz.gyst.domain.service.AdvisorSecretStore
 import com.samluiz.gyst.domain.service.AppUpdateService
+import com.samluiz.gyst.domain.service.AutomaticTransactionDetectionService
 import com.samluiz.gyst.domain.service.GoogleAuthSyncService
+import com.samluiz.gyst.domain.service.ImageSourceService
+import com.samluiz.gyst.domain.service.UnsupportedAutomaticTransactionDetectionService
 import com.samluiz.gyst.logging.AppLogger
+import org.jetbrains.compose.resources.decodeToImageBitmap
 import org.koin.dsl.module
 import java.nio.file.Files
 import java.nio.file.Path
@@ -24,6 +30,8 @@ fun main() {
     val dbPath = homeDir.resolve("gyst.db")
     val backupPath = homeDir.resolve("backup").resolve("gyst-backup.db")
     val logsPath = homeDir.resolve("logs").resolve("app.log")
+    Files.createDirectories(homeDir)
+    recoverInterruptedDesktopDatabaseReplacement(dbPath)
     AppLogger.addSink(DesktopFileLogSink(logsPath))
     AppLogger.i("DesktopMain", "Starting desktop app")
     initKoin(
@@ -38,20 +46,75 @@ fun main() {
                     Files.createDirectories(homeDir)
                     get<SqlDriverFactory>().createDriver()
                 }
-                single<GoogleAuthSyncService> { DesktopGoogleAuthSyncService(dbPath = dbPath, backupPath = backupPath) }
+                single<GoogleAuthSyncService> {
+                    DesktopGoogleAuthSyncService(
+                        dbPath = dbPath,
+                        backupPath = backupPath,
+                        databaseRuntimeController = get<DatabaseRuntimeController>(),
+                    )
+                }
                 single<AppUpdateService> { DesktopAppUpdateService() }
                 single<AdvisorSecretStore> { DesktopAdvisorSecretStore(homeDir.resolve("secrets").resolve("advisor.key")) }
+                single<ImageSourceService> {
+                    DesktopImageSourceService(homeDir.resolve("cache").resolve("transaction-import-images"))
+                }
+                single<AutomaticTransactionDetectionService> {
+                    UnsupportedAutomaticTransactionDetectionService()
+                }
             },
     )
 
     application {
+        val appIcon =
+            remember {
+                val bytes =
+                    requireNotNull(Thread.currentThread().contextClassLoader.getResourceAsStream("app_icon.png")) {
+                        "Desktop app icon resource is missing"
+                    }.use { it.readBytes() }
+                BitmapPainter(bytes.decodeToImageBitmap())
+            }
         Window(
             onCloseRequest = ::exitApplication,
             title = "Gyst",
-            icon = painterResource("app_icon.png"),
+            icon = appIcon,
         ) {
             GystRoot()
         }
+    }
+}
+
+private fun recoverInterruptedDesktopDatabaseReplacement(dbPath: Path) {
+    val staged = dbPath.resolveSibling("${dbPath.fileName}.tmp")
+    val previous = dbPath.resolveSibling("${dbPath.fileName}.bak")
+    Files.deleteIfExists(staged)
+    if (!Files.exists(previous)) return
+    if (!Files.exists(dbPath)) {
+        Files.move(previous, dbPath, StandardCopyOption.REPLACE_EXISTING)
+        return
+    }
+    val replacementCommitted =
+        runCatching {
+            DriverManager.getConnection("jdbc:sqlite:${dbPath.toAbsolutePath()}").use { connection ->
+                val healthy =
+                    connection.createStatement().use { statement ->
+                        statement.executeQuery("PRAGMA quick_check(1)").use { result ->
+                            result.next() && result.getString(1).equals("ok", ignoreCase = true)
+                        }
+                    }
+                val version =
+                    connection.createStatement().use { statement ->
+                        statement.executeQuery("PRAGMA user_version").use { result ->
+                            if (result.next()) result.getLong(1) else 0L
+                        }
+                    }
+                healthy && version == GystDatabase.Schema.version
+            }
+        }.getOrDefault(false)
+    if (replacementCommitted) {
+        Files.deleteIfExists(previous)
+    } else {
+        Files.deleteIfExists(dbPath)
+        Files.move(previous, dbPath, StandardCopyOption.REPLACE_EXISTING)
     }
 }
 
@@ -62,11 +125,20 @@ private fun openDesktopDriver(
     Files.createDirectories(dbPath.parent)
     ensureDesktopDbHealth(dbPath, backupPath)
     return runCatching {
-        val driver = JdbcSqliteDriver("jdbc:sqlite:${dbPath.toAbsolutePath()}")
+        val driver = JdbcSqliteDriver(desktopSqliteUrl(dbPath))
         val currentVersion = readUserVersion(dbPath)
         val targetVersion = GystDatabase.Schema.version
         when {
-            currentVersion <= 0L && !hasAnyUserTables(dbPath) -> GystDatabase.Schema.create(driver)
+            currentVersion > targetVersion -> {
+                error(
+                    "Database schema $currentVersion is newer than supported schema $targetVersion. " +
+                        "Downgrading is not supported.",
+                )
+            }
+            currentVersion <= 0L && !hasAnyUserTables(dbPath) -> {
+                GystDatabase.Schema.create(driver)
+                driver.setSchemaVersion(targetVersion)
+            }
             currentVersion <= 0L -> {
                 if (hasExpectedSchema(dbPath)) {
                     setUserVersion(dbPath, targetVersion)
@@ -78,9 +150,11 @@ private fun openDesktopDriver(
                     error("Existing database has user_version=0 but schema is incompatible.")
                 }
             }
-            currentVersion < targetVersion -> GystDatabase.Schema.migrate(driver, currentVersion, targetVersion)
+            currentVersion < targetVersion -> {
+                GystDatabase.Schema.migrate(driver, currentVersion, targetVersion)
+                driver.setSchemaVersion(targetVersion)
+            }
         }
-        driver.execute(null, "PRAGMA foreign_keys=ON", 0)
         driver
     }.getOrElse { error ->
         val hasData = hasAnyUserTables(dbPath)
@@ -94,11 +168,18 @@ private fun openDesktopDriver(
             )
         }
         deleteDbFiles(dbPath)
-        val fresh = JdbcSqliteDriver("jdbc:sqlite:${dbPath.toAbsolutePath()}")
+        val fresh = JdbcSqliteDriver(desktopSqliteUrl(dbPath))
         GystDatabase.Schema.create(fresh)
-        fresh.execute(null, "PRAGMA foreign_keys=ON", 0)
+        fresh.setSchemaVersion(GystDatabase.Schema.version)
         fresh
     }
+}
+
+/** SQLite JDBC opens connections per operation, so foreign keys must be a URL property. */
+private fun desktopSqliteUrl(dbPath: Path): String = "jdbc:sqlite:${dbPath.toAbsolutePath()}?foreign_keys=on"
+
+private fun SqlDriver.setSchemaVersion(version: Long) {
+    execute(null, "PRAGMA user_version = $version", 0)
 }
 
 private fun ensureDesktopDbHealth(

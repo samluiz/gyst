@@ -3,39 +3,82 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description" content="Política de privacidade do Gyst 1.5.0, incluindo consultor BYOK, importação por imagem e detecção opcional de transações no Android." />
   <title>Política de Privacidade - Gyst</title>
   <style>
     body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; margin: 40px auto; max-width: 860px; padding: 0 16px; line-height: 1.6; color: #1a1a1a; }
     h1, h2 { line-height: 1.3; }
+    li + li { margin-top: .35rem; }
+    code { background: #f2f4f6; border-radius: 4px; padding: .08rem .28rem; }
   </style>
 </head>
 <body>
   <h1>Política de Privacidade - Gyst</h1>
-  <p><strong>Vigência:</strong> 13 de fevereiro de 2026</p>
-  <p>O Gyst é um aplicativo de controle financeiro pessoal com foco em uso local (offline-first).</p>
+  <p><strong>Vigência:</strong> 14 de julho de 2026<br /><strong>Versão da política:</strong> 1.5.0</p>
+  <p>O Gyst é um aplicativo de controle financeiro pessoal com funcionamento local por padrão (<code>offline-first</code>). Recursos de Google Drive e inteligência artificial são opcionais e iniciados/configurados pelo usuário.</p>
 
-  <h2>1. Dados coletados</h2>
-  <p>O app pode tratar dados inseridos por você: orçamento, categorias, despesas, assinaturas, parcelamentos, preferências do app e, opcionalmente, dados básicos de conta Google (nome, e-mail e foto) quando você faz login.</p>
+  <h2>1. Dados tratados no dispositivo</h2>
+  <p>O aplicativo pode tratar:</p>
+  <ul>
+    <li>orçamento mensal, categorias, despesas, assinaturas, parcelamentos e preferências;</li>
+    <li>conversas com o consultor, incluindo títulos, mensagens, estados de envio/erro e provedor/modelo usados;</li>
+    <li>perfis de provedor, endereço de API, modelo e capacidades declaradas, sem armazenar a chave no banco financeiro;</li>
+    <li>imagens de comprovantes, faturas ou extratos selecionadas ou capturadas expressamente para uma importação;</li>
+    <li>rascunhos extraídos, avisos de validação, hashes de origem e metadados de procedência;</li>
+    <li>no Android, com a detecção ativada e a origem permitida: pacote de origem, chave/identificador da notificação, horário, título, texto principal/expandido e categoria/canal necessários à filtragem e deduplicação;</li>
+    <li>dados básicos da conta Google (nome, e-mail e foto) somente após login e metadados de sincronização.</li>
+  </ul>
+  <p>A detecção Android descarta localmente, antes do armazenamento durável, notificações identificadas como mensagens, chamadas, mídia, conteúdo irrelevante ou códigos de autenticação/OTP. Sequências longas semelhantes a números de cartão/conta são ocultadas, mantendo no máximo os quatro últimos dígitos quando necessário para revisão.</p>
 
-  <h2>2. Como os dados são usados</h2>
-  <p>Os dados são usados para cálculos e exibição do planejamento financeiro, armazenamento local e sincronização/restauração via Google Drive quando habilitada.</p>
+  <h2>2. Finalidades</h2>
+  <ul>
+    <li>calcular e exibir o planejamento financeiro;</li>
+    <li>manter registros e conversas entre reinicializações e atualizações;</li>
+    <li>extrair rascunhos de imagens escolhidas e detectar localmente possíveis transações Android;</li>
+    <li>apresentar rascunhos editáveis, duplicidades e alertas de revisão;</li>
+    <li>inserir uma despesa somente após confirmação explícita;</li>
+    <li>sincronizar/restaurar um backup no Google Drive quando solicitado.</li>
+  </ul>
 
-  <h2>3. Armazenamento e compartilhamento</h2>
-  <p>Por padrão, os dados ficam no dispositivo. Se sincronização estiver ativa, backups são salvos no espaço privado do app no Google Drive (<code>appDataFolder</code>). O Gyst não vende dados pessoais.</p>
+  <h2>3. Provedores de inteligência artificial (BYOK)</h2>
+  <p>O Gyst não escolhe nem chama um provedor ocultamente. O usuário informa sua própria chave, seleciona o provedor/modelo e inicia o uso.</p>
+  <ul>
+    <li><strong>Consultor:</strong> pode enviar pergunta/mensagens da conversa selecionada, instruções de segurança e contexto financeiro relevante.</li>
+    <li><strong>Importação por imagem:</strong> pode enviar os bytes completos das imagens recém-selecionadas, tipo de arquivo, idioma/moeda, instruções e esquema de extração.</li>
+    <li><strong>Análise opcional de notificação:</strong> pode enviar o pacote de origem, texto financeiro relevante normalizado e limitado, idioma/contexto e esquema estruturado. Não envia chave/ID Android da notificação, lista de apps, outras notificações, banco completo, OTP ou números completos de conta/cartão.</li>
+  </ul>
+  <p>Regras locais em português e inglês eliminam conteúdo irrelevante ou sensível antes de qualquer chamada de notificação. O Gyst não troca silenciosamente de provedor. O tratamento e a retenção pelo provedor seguem a política dele; revise-a antes do uso.</p>
 
-  <h2>4. Segurança</h2>
-  <p>São aplicadas medidas razoáveis de segurança. Nenhum sistema é totalmente isento de risco.</p>
+  <h2>4. Armazenamento, retenção e backup</h2>
+  <ul>
+    <li>Dados duráveis ficam no banco local.</li>
+    <li>Imagens ficam em cache privado temporário e são removidas ao concluir/cancelar ou após 24 horas. Rascunhos não confirmados expirados também são apagados; importações concluídas mantêm somente hash/procedência, nunca a imagem.</li>
+    <li>Conteúdo de notificação é limitado e mantido durante processamento/revisão; texto bruto é apagado/redigido quando deixa de ser necessário, enquanto impressão digital e campos do rascunho podem permanecer para evitar duplicidades.</li>
+    <li>Chaves de provedor ficam fora do banco em armazenamento protegido pela plataforma e não entram no backup do Google Drive.</li>
+    <li>Com Google Drive habilitado, o banco durável — inclusive registros, conversas e rascunhos/metadados existentes — pode ser copiado para o <code>appDataFolder</code>. Imagens temporárias e chaves não fazem parte desse banco.</li>
+  </ul>
 
-  <h2>5. Seus direitos</h2>
-  <p>Você pode editar/excluir dados no app, desconectar Google, remover backups e desinstalar o aplicativo.</p>
+  <h2>5. Permissões Android</h2>
+  <p><strong>Acesso às notificações</strong> autoriza o <code>NotificationListenerService</code> a receber notificações elegíveis dos apps permitidos. <strong>Mostrar notificações</strong> (<code>POST_NOTIFICATIONS</code>, Android 13+) autoriza o Gyst a exibir o aviso de revisão. Sem a segunda permissão, o rascunho ainda pode aparecer dentro do app.</p>
+  <p>O Gyst não usa serviço de acessibilidade, API privada ou varredura periódica. Veja o <a href="../android-transaction-detection.md">guia de detecção automática</a>.</p>
 
-  <h2>6. Crianças</h2>
+  <h2>6. Compartilhamento</h2>
+  <p>O Gyst não vende dados nem os compartilha para publicidade. Dados saem do dispositivo somente nos fluxos opcionais escolhidos: backup no Google Drive ou requisição ao provedor BYOK configurado.</p>
+  <p>O backup automático do sistema Android é desativado. A transferência para o Google Drive acontece somente quando você usa a sincronização do Gyst.</p>
+
+  <h2>7. Segurança e diagnóstico</h2>
+  <p>São usadas chaves separadas do banco, integridade por chaves estrangeiras, idempotência, filtragem local e notificações privadas na tela bloqueada. Logs podem conter identificadores locais, estado e tipo de erro, mas nunca chave de API, payload completo, imagem completa, corpo completo de notificação, OTP, número completo de conta/cartão ou stack trace exibido ao usuário. Nenhum sistema é totalmente isento de risco.</p>
+
+  <h2>8. Controles do usuário</h2>
+  <p>Você pode editar/excluir registros e conversas, cancelar importações, aprovar/rejeitar/excluir rascunhos, apagar dados derivados de notificações e sua proveniência, desativar IA/alertas/detecção, revogar permissões Android, remover sua chave BYOK, desconectar Google, remover backups e apagar dados locais ou desinstalar o app. Despesas já aprovadas permanecem como registros comuns até serem excluídas normalmente.</p>
+
+  <h2>9. Crianças</h2>
   <p>O app não é direcionado a menores de 13 anos.</p>
 
-  <h2>7. Alterações</h2>
-  <p>Esta política pode ser atualizada. A versão vigente será publicada neste repositório.</p>
+  <h2>10. Alterações</h2>
+  <p>Esta política pode ser atualizada quando recursos ou práticas mudarem. A versão vigente ficará neste repositório e na página pública.</p>
 
-  <h2>8. Contato</h2>
+  <h2>11. Contato</h2>
   <p>Use os canais do projeto (issues/discussões do repositório).</p>
 </body>
 </html>

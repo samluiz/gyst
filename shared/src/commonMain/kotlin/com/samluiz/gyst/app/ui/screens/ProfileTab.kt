@@ -14,6 +14,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
@@ -35,12 +36,14 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.samluiz.gyst.domain.service.AutomaticTransactionDetectionState
 import com.samluiz.gyst.presentation.MainState
 
 @Composable
 internal fun ProfileTab(
     s: AppStrings,
     state: MainState,
+    automaticDetectionState: AutomaticTransactionDetectionState,
     onSetLanguage: (String) -> Unit,
     onSetTheme: (String) -> Unit,
     onCheckForUpdates: () -> Unit,
@@ -50,6 +53,8 @@ internal fun ProfileTab(
     onSyncGoogleDrive: () -> Unit,
     onRestoreGoogleDrive: (Boolean) -> Unit,
     onResetLocalData: () -> Unit,
+    onOpenAutomaticDetectionSettings: () -> Unit,
+    onOpenPendingSuggestions: () -> Unit,
 ) {
     val google = state.googleSync
     var showRestoreConfirm by remember { mutableStateOf(false) }
@@ -124,6 +129,51 @@ internal fun ProfileTab(
                     AppToggleChip(selected = state.language == "system", onClick = { onSetLanguage("system") }, text = s.system)
                     AppToggleChip(selected = state.language == "pt", onClick = { onSetLanguage("pt") }, text = "PT")
                     AppToggleChip(selected = state.language == "en", onClick = { onSetLanguage("en") }, text = "EN")
+                }
+            }
+        }
+        if (automaticDetectionState.isSupported) {
+            item {
+                PanelCard(
+                    title = s.automaticDetection.entryTitle,
+                    icon = Icons.Default.Notifications,
+                    headerTrailing = {
+                        if (automaticDetectionState.pendingSuggestions.isNotEmpty()) {
+                            Text(
+                                s.automaticDetection.pendingCount.replace(
+                                    "{count}",
+                                    automaticDetectionState.pendingSuggestions.size.toString(),
+                                ),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.primary,
+                            )
+                        }
+                    },
+                ) {
+                    Text(
+                        s.automaticDetection.entryHint,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        CompactPrimaryButton(
+                            text = s.automaticDetection.settingsTitle,
+                            compact = true,
+                            subtle = true,
+                            onClick = onOpenAutomaticDetectionSettings,
+                        )
+                        if (automaticDetectionState.pendingSuggestions.isNotEmpty()) {
+                            CompactPrimaryButton(
+                                text = s.automaticDetection.reviewSuggestion,
+                                compact = true,
+                                onClick = onOpenPendingSuggestions,
+                            )
+                        }
+                    }
                 }
             }
         }

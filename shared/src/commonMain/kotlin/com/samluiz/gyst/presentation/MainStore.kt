@@ -3,7 +3,7 @@ package com.samluiz.gyst.presentation
 import com.samluiz.gyst.data.repository.DatabaseRuntimeController
 import com.samluiz.gyst.domain.model.*
 import com.samluiz.gyst.domain.repository.*
-import com.samluiz.gyst.domain.service.AdvisorApiFormat
+import com.samluiz.gyst.domain.service.AdvisorConfig
 import com.samluiz.gyst.domain.service.AdvisorService
 import com.samluiz.gyst.domain.service.AppUpdateService
 import com.samluiz.gyst.domain.service.GoogleAuthSyncService
@@ -49,11 +49,11 @@ class MainStore(
     private val installmentRepository: InstallmentRepository,
     private val scheduleRepository: ScheduleRepository,
     private val settingsRepository: SettingsRepository,
-    private val localDataMaintenanceRepository: LocalDataMaintenanceRepository,
     private val googleAuthSyncService: GoogleAuthSyncService,
     private val appUpdateService: AppUpdateService,
     private val advisorService: AdvisorService,
     private val databaseRuntimeController: DatabaseRuntimeController,
+    private val persistentRuntimeCoordinator: PersistentRuntimeCoordinator,
     private val createBudgetMonthUseCase: CreateBudgetMonthUseCase,
     private val setBudgetAllocationsUseCase: SetBudgetAllocationsUseCase,
     private val addOrUpdateExpenseUseCase: AddOrUpdateExpenseUseCase,
@@ -79,6 +79,7 @@ class MainStore(
             appUpdateService = appUpdateService,
             databaseRuntimeController = databaseRuntimeController,
             seedDataInitializer = seedDataInitializer,
+            persistentRuntimeCoordinator = persistentRuntimeCoordinator,
             setState = { _state.value = it },
             getState = { _state.value },
             refresh = { showSkeleton -> refreshInternal(showSkeleton) },
@@ -130,7 +131,7 @@ class MainStore(
             _state.value = _state.value.copy(themeMode = theme, language = language, isLoading = true)
             seedDataInitializer.ensureSeedData()
             googleAuthSyncService.initialize()
-            advisorService.initialize()
+            persistentRuntimeCoordinator.initializeAll()
             appUpdateService.checkForUpdates(silent = true)
             val now = Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault()).date
             val month = YearMonth.fromDate(now)
@@ -217,12 +218,10 @@ class MainStore(
     }
 
     fun configureAdvisor(
-        baseUrl: String,
-        model: String,
-        apiFormat: AdvisorApiFormat,
+        config: AdvisorConfig,
         apiKey: String?,
     ) {
-        scope.launchSafely(serialized = false) { advisorActions.configure(baseUrl, model, apiFormat, apiKey) }
+        scope.launchSafely(serialized = false) { advisorActions.configure(config, apiKey) }
     }
 
     fun askAdvisor(
@@ -241,6 +240,36 @@ class MainStore(
 
     fun clearAdvisorConversation() {
         scope.launchSafely(serialized = false) { advisorActions.clearConversation() }
+    }
+
+    fun createAdvisorConversation(title: String? = null) {
+        scope.launchSafely(serialized = false) { advisorActions.createConversation(title) }
+    }
+
+    fun selectAdvisorConversation(conversationId: String) {
+        scope.launchSafely(serialized = false) { advisorActions.selectConversation(conversationId) }
+    }
+
+    fun renameAdvisorConversation(
+        conversationId: String,
+        title: String,
+    ) {
+        scope.launchSafely(serialized = false) { advisorActions.renameConversation(conversationId, title) }
+    }
+
+    fun deleteAdvisorConversation(conversationId: String) {
+        scope.launchSafely(serialized = false) { advisorActions.deleteConversation(conversationId) }
+    }
+
+    fun retryAdvisorMessage(
+        messageId: String,
+        languageCode: String,
+    ) {
+        scope.launchSafely(serialized = false) { advisorActions.retryMessage(messageId, languageCode) }
+    }
+
+    fun cancelAdvisorResponse() {
+        scope.launchSafely(serialized = false) { advisorActions.cancelResponse() }
     }
 
     fun disconnectAdvisor() {
@@ -290,8 +319,7 @@ class MainStore(
     fun resetLocalData() {
         scope.launchSafely {
             _state.value = _state.value.copy(isLoading = true)
-            localDataMaintenanceRepository.resetLocalData()
-            seedDataInitializer.ensureSeedData()
+            persistentRuntimeCoordinator.resetLocalData()
             googleAuthSyncService.initialize()
             refreshInternal(showSkeleton = true)
         }

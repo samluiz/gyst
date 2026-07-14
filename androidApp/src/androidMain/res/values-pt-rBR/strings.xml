@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Gyst</string>
+    <string name="notification_listener_service_name">Detecção automática de transações</string>
+    <string name="transaction_detection_channel_name">Transações detectadas</string>
+    <string name="transaction_detection_channel_description">Revise possíveis transações financeiras detectadas nas notificações dos aplicativos permitidos.</string>
+    <string name="transaction_detected_title">Transação detectada</string>
+    <string name="transaction_detected_body_with_merchant">Uma possível transação de %1$s em %2$s foi detectada. Toque para revisar e adicionar.</string>
+    <string name="transaction_detected_body_with_amount">Uma possível transação de %1$s foi detectada. Toque para revisar e adicionar.</string>
+    <string name="transaction_detected_body_generic">Uma possível transação foi detectada. Toque para revisar e adicionar.</string>
+    <string name="transaction_detected_public_body">Abra o Gyst para revisar uma sugestão pendente.</string>
+    <string name="transaction_detected_review_action">Revisar</string>
+    <string name="notification_access_explanation">O acesso às notificações permite que o Gyst examine apenas as notificações dos aplicativos financeiros que você autorizar e crie sugestões de transação para revisão.</string>
+    <string name="post_notifications_explanation">A permissão de notificações permite que o Gyst avise quando uma transação detectada estiver pronta para revisão. A detecção ainda pode salvar sugestões se essa permissão for negada.</string>
+</resources>

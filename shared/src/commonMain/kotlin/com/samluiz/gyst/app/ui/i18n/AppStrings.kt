@@ -6,6 +6,322 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.text.intl.Locale
 
 @Immutable
+data class AutomaticDetectionStrings(
+    val entryTitle: String,
+    val entryHint: String,
+    val pendingCount: String,
+    val settingsTitle: String,
+    val settingsSubtitle: String,
+    val unsupportedTitle: String,
+    val unsupportedBody: String,
+    val detectionTitle: String,
+    val detectionBody: String,
+    val detectionEnabled: String,
+    val listenerAccessTitle: String,
+    val listenerAccessBody: String,
+    val listenerGranted: String,
+    val listenerMissing: String,
+    val openListenerSettings: String,
+    val appNotificationsTitle: String,
+    val appNotificationsBody: String,
+    val appNotificationsGranted: String,
+    val appNotificationsDenied: String,
+    val requestAppNotifications: String,
+    val openAppNotificationSettings: String,
+    val reviewNotificationsTitle: String,
+    val reviewNotificationsBody: String,
+    val monitoredAppsTitle: String,
+    val monitoredAppsBody: String,
+    val monitoredAppsEmpty: String,
+    val allowApp: String,
+    val blockApp: String,
+    val aiTitle: String,
+    val aiBody: String,
+    val aiPrivacy: String,
+    val aiProvider: String,
+    val aiNoProvider: String,
+    val configureProvider: String,
+    val pendingTitle: String,
+    val pendingBody: String,
+    val pendingEmptyTitle: String,
+    val pendingEmptyBody: String,
+    val reviewSuggestion: String,
+    val retryFailed: String,
+    val failedCount: String,
+    val deleteDataTitle: String,
+    val deleteDataBody: String,
+    val deleteDataAction: String,
+    val deleteDataConfirmTitle: String,
+    val deleteDataConfirmBody: String,
+    val refresh: String,
+    val sourceApplication: String,
+    val reviewTitle: String,
+    val reviewSubtitle: String,
+    val suggestionUnavailableTitle: String,
+    val suggestionUnavailableBody: String,
+    val confidence: String,
+    val confidenceHigh: String,
+    val confidenceMedium: String,
+    val confidenceLow: String,
+    val warnings: String,
+    val duplicateWarning: String,
+    val extractionFailure: String,
+    val detectedDetails: String,
+    val transactionType: String,
+    val transactionDate: String,
+    val transactionTime: String,
+    val currency: String,
+    val paymentMethod: String,
+    val notes: String,
+    val saveDraft: String,
+    val approveAndAdd: String,
+    val rejectSuggestion: String,
+    val deleteSuggestion: String,
+    val rejectConfirmTitle: String,
+    val rejectConfirmBody: String,
+    val deleteConfirmTitle: String,
+    val deleteConfirmBody: String,
+    val approvalExpenseOnly: String,
+    val saved: String,
+    val approved: String,
+    val rejected: String,
+    val deleted: String,
+    val actionFailed: String,
+    val validationTitle: String,
+    val lowConfidenceFields: String,
+    val backToPending: String,
+)
+
+interface ImageImportStringValues {
+    val imageImportEntry: String
+    val imageImportTitle: String
+    val imageImportSubtitle: String
+    val imageImportBack: String
+    val imageImportSelectImages: String
+    val imageImportTakePhoto: String
+    val imageImportSources: String
+    val imageImportSourceCount: String
+    val imageImportRemoveImage: String
+    val imageImportNoSourcesTitle: String
+    val imageImportNoSourcesBody: String
+    val imageImportSourceUnavailable: String
+    val imageImportCameraUnavailable: String
+    val imageImportProvider: String
+    val imageImportProviderHint: String
+    val imageImportNoProviderTitle: String
+    val imageImportNoProviderBody: String
+    val imageImportConfigureProvider: String
+    val imageImportPrivacyTitle: String
+    val imageImportPrivacyBody: String
+    val imageImportPrivacyConsent: String
+    val imageImportAnalyze: String
+    val imageImportAnalyzingTitle: String
+    val imageImportAnalyzingBody: String
+    val imageImportCancelAnalysis: String
+    val imageImportRetryAnalysis: String
+    val imageImportPreviewTitle: String
+    val imageImportPreviewBody: String
+    val imageImportEmptyPreviewTitle: String
+    val imageImportEmptyPreviewBody: String
+    val imageImportSelectedCount: String
+    val imageImportSelectAll: String
+    val imageImportSelectNone: String
+    val imageImportAddRow: String
+    val imageImportDeleteRow: String
+    val imageImportEditRow: String
+    val imageImportSaveRow: String
+    val imageImportBulkEdit: String
+    val imageImportApplyCategory: String
+    val imageImportApplyPayment: String
+    val imageImportUnmatchedCategory: String
+    val imageImportDate: String
+    val imageImportTime: String
+    val imageImportCurrency: String
+    val imageImportTransactionType: String
+    val imageImportTypeExpense: String
+    val imageImportTypeIncome: String
+    val imageImportTypeTransfer: String
+    val imageImportTypeRefund: String
+    val imageImportTypeUnknown: String
+    val imageImportPaymentMethod: String
+    val imageImportPaymentPix: String
+    val imageImportPaymentDebit: String
+    val imageImportPaymentCash: String
+    val imageImportPaymentTransfer: String
+    val imageImportPaymentUnknown: String
+    val imageImportInstallmentCurrent: String
+    val imageImportInstallmentTotal: String
+    val imageImportNote: String
+    val imageImportConfidence: String
+    val imageImportLowConfidence: String
+    val imageImportLowConfidenceFields: String
+    val imageImportLowConfidenceFieldHint: String
+    val imageImportFieldDescription: String
+    val imageImportFieldAmount: String
+    val imageImportFieldCurrency: String
+    val imageImportFieldDate: String
+    val imageImportFieldType: String
+    val imageImportFieldConfidence: String
+    val imageImportDuplicateWarning: String
+    val imageImportWarningAmbiguousSource: String
+    val imageImportWarningRepeatedSource: String
+    val imageImportWarningExtractedValue: String
+    val imageImportNeedsReview: String
+    val imageImportRowSelection: String
+    val imageImportUnknownValue: String
+    val imageImportValidationError: String
+    val imageImportWarning: String
+    val imageImportIssueDescription: String
+    val imageImportIssueAmount: String
+    val imageImportIssueCurrency: String
+    val imageImportIssueDate: String
+    val imageImportIssueType: String
+    val imageImportIssueCategory: String
+    val imageImportIssuePayment: String
+    val imageImportIssueInstallment: String
+    val imageImportIssueSummary: String
+    val imageImportConfirm: String
+    val imageImportAtomicHint: String
+    val imageImportImporting: String
+    val imageImportCompletedTitle: String
+    val imageImportCompletedBody: String
+    val imageImportImportedCount: String
+    val imageImportAlreadyImportedCount: String
+    val imageImportDone: String
+    val imageImportCancel: String
+    val imageImportCancelTitle: String
+    val imageImportCancelBody: String
+    val imageImportKeepReviewing: String
+    val imageImportFailureNoImages: String
+    val imageImportFailureProvider: String
+    val imageImportFailureAuth: String
+    val imageImportFailureRateLimit: String
+    val imageImportFailureNetwork: String
+    val imageImportFailureUnavailable: String
+    val imageImportFailureRejected: String
+    val imageImportFailureInvalidResponse: String
+    val imageImportFailureValidation: String
+    val imageImportFailureDatabase: String
+    val imageImportFailureCancelled: String
+    val imageImportFailureInterrupted: String
+}
+
+@Immutable
+data class ImageImportStrings(
+    override val imageImportEntry: String,
+    override val imageImportTitle: String,
+    override val imageImportSubtitle: String,
+    override val imageImportBack: String,
+    override val imageImportSelectImages: String,
+    override val imageImportTakePhoto: String,
+    override val imageImportSources: String,
+    override val imageImportSourceCount: String,
+    override val imageImportRemoveImage: String,
+    override val imageImportNoSourcesTitle: String,
+    override val imageImportNoSourcesBody: String,
+    override val imageImportSourceUnavailable: String,
+    override val imageImportCameraUnavailable: String,
+    override val imageImportProvider: String,
+    override val imageImportProviderHint: String,
+    override val imageImportNoProviderTitle: String,
+    override val imageImportNoProviderBody: String,
+    override val imageImportConfigureProvider: String,
+    override val imageImportPrivacyTitle: String,
+    override val imageImportPrivacyBody: String,
+    override val imageImportPrivacyConsent: String,
+    override val imageImportAnalyze: String,
+    override val imageImportAnalyzingTitle: String,
+    override val imageImportAnalyzingBody: String,
+    override val imageImportCancelAnalysis: String,
+    override val imageImportRetryAnalysis: String,
+    override val imageImportPreviewTitle: String,
+    override val imageImportPreviewBody: String,
+    override val imageImportEmptyPreviewTitle: String,
+    override val imageImportEmptyPreviewBody: String,
+    override val imageImportSelectedCount: String,
+    override val imageImportSelectAll: String,
+    override val imageImportSelectNone: String,
+    override val imageImportAddRow: String,
+    override val imageImportDeleteRow: String,
+    override val imageImportEditRow: String,
+    override val imageImportSaveRow: String,
+    override val imageImportBulkEdit: String,
+    override val imageImportApplyCategory: String,
+    override val imageImportApplyPayment: String,
+    override val imageImportUnmatchedCategory: String,
+    override val imageImportDate: String,
+    override val imageImportTime: String,
+    override val imageImportCurrency: String,
+    override val imageImportTransactionType: String,
+    override val imageImportTypeExpense: String,
+    override val imageImportTypeIncome: String,
+    override val imageImportTypeTransfer: String,
+    override val imageImportTypeRefund: String,
+    override val imageImportTypeUnknown: String,
+    override val imageImportPaymentMethod: String,
+    override val imageImportPaymentPix: String,
+    override val imageImportPaymentDebit: String,
+    override val imageImportPaymentCash: String,
+    override val imageImportPaymentTransfer: String,
+    override val imageImportPaymentUnknown: String,
+    override val imageImportInstallmentCurrent: String,
+    override val imageImportInstallmentTotal: String,
+    override val imageImportNote: String,
+    override val imageImportConfidence: String,
+    override val imageImportLowConfidence: String,
+    override val imageImportLowConfidenceFields: String,
+    override val imageImportLowConfidenceFieldHint: String,
+    override val imageImportFieldDescription: String,
+    override val imageImportFieldAmount: String,
+    override val imageImportFieldCurrency: String,
+    override val imageImportFieldDate: String,
+    override val imageImportFieldType: String,
+    override val imageImportFieldConfidence: String,
+    override val imageImportDuplicateWarning: String,
+    override val imageImportWarningAmbiguousSource: String,
+    override val imageImportWarningRepeatedSource: String,
+    override val imageImportWarningExtractedValue: String,
+    override val imageImportNeedsReview: String,
+    override val imageImportRowSelection: String,
+    override val imageImportUnknownValue: String,
+    override val imageImportValidationError: String,
+    override val imageImportWarning: String,
+    override val imageImportIssueDescription: String,
+    override val imageImportIssueAmount: String,
+    override val imageImportIssueCurrency: String,
+    override val imageImportIssueDate: String,
+    override val imageImportIssueType: String,
+    override val imageImportIssueCategory: String,
+    override val imageImportIssuePayment: String,
+    override val imageImportIssueInstallment: String,
+    override val imageImportIssueSummary: String,
+    override val imageImportConfirm: String,
+    override val imageImportAtomicHint: String,
+    override val imageImportImporting: String,
+    override val imageImportCompletedTitle: String,
+    override val imageImportCompletedBody: String,
+    override val imageImportImportedCount: String,
+    override val imageImportAlreadyImportedCount: String,
+    override val imageImportDone: String,
+    override val imageImportCancel: String,
+    override val imageImportCancelTitle: String,
+    override val imageImportCancelBody: String,
+    override val imageImportKeepReviewing: String,
+    override val imageImportFailureNoImages: String,
+    override val imageImportFailureProvider: String,
+    override val imageImportFailureAuth: String,
+    override val imageImportFailureRateLimit: String,
+    override val imageImportFailureNetwork: String,
+    override val imageImportFailureUnavailable: String,
+    override val imageImportFailureRejected: String,
+    override val imageImportFailureInvalidResponse: String,
+    override val imageImportFailureValidation: String,
+    override val imageImportFailureDatabase: String,
+    override val imageImportFailureCancelled: String,
+    override val imageImportFailureInterrupted: String,
+) : ImageImportStringValues
+
+@Immutable
 data class AppStrings(
     val languageCode: String,
     val tabSummary: String,
@@ -149,6 +465,11 @@ data class AppStrings(
     val advisorApiFormat: String,
     val advisorChatCompletions: String,
     val advisorResponses: String,
+    val advisorCapabilities: String,
+    val advisorVisionInput: String,
+    val advisorStructuredOutput: String,
+    val advisorStreaming: String,
+    val advisorCapabilitiesHint: String,
     val advisorSaveConnection: String,
     val advisorReplaceKeyHint: String,
     val advisorPrivacy: String,
@@ -173,7 +494,30 @@ data class AppStrings(
     val advisorRequestFailed: String,
     val advisorPreparingOverview: String,
     val advisorRefreshOverview: String,
-)
+    val advisorConversations: String,
+    val advisorManageConversations: String,
+    val advisorNewConversation: String,
+    val advisorUntitledConversation: String,
+    val advisorCurrentConversation: String,
+    val advisorNoConversationsTitle: String,
+    val advisorNoConversationsBody: String,
+    val advisorRenameConversation: String,
+    val advisorConversationName: String,
+    val advisorDeleteConversationTitle: String,
+    val advisorDeleteConversationBody: String,
+    val advisorOpenConversation: String,
+    val advisorConversationOptions: String,
+    val advisorBackToConversation: String,
+    val advisorLoadingConversations: String,
+    val advisorMessagePending: String,
+    val advisorMessageStreaming: String,
+    val advisorMessageFailed: String,
+    val advisorMessageCancelled: String,
+    val advisorRetry: String,
+    val advisorCancelResponse: String,
+    private val imageImportStrings: ImageImportStrings,
+    val automaticDetection: AutomaticDetectionStrings,
+) : ImageImportStringValues by imageImportStrings
 
 private val ptBr =
     AppStrings(
@@ -319,6 +663,11 @@ private val ptBr =
         advisorApiFormat = "Formato da API",
         advisorChatCompletions = "Chat Completions",
         advisorResponses = "Responses",
+        advisorCapabilities = "Recursos do modelo",
+        advisorVisionInput = "Imagens",
+        advisorStructuredOutput = "Saída estruturada",
+        advisorStreaming = "Resposta em tempo real",
+        advisorCapabilitiesHint = "Em modelos personalizados, marque apenas recursos confirmados pelo provedor.",
         advisorSaveConnection = "Salvar conexão",
         advisorReplaceKeyHint = "Nova chave (deixe vazio para manter)",
         advisorPrivacy =
@@ -345,6 +694,246 @@ private val ptBr =
         advisorRequestFailed = "O consultor não conseguiu responder.",
         advisorPreparingOverview = "Analisando seu momento financeiro…",
         advisorRefreshOverview = "Atualizar visão geral",
+        advisorConversations = "Conversas",
+        advisorManageConversations = "Ver conversas",
+        advisorNewConversation = "Nova conversa",
+        advisorUntitledConversation = "Nova conversa",
+        advisorCurrentConversation = "Atual",
+        advisorNoConversationsTitle = "Comece uma conversa",
+        advisorNoConversationsBody = "Cada conversa guarda seu próprio contexto e continua disponível quando você voltar.",
+        advisorRenameConversation = "Renomear conversa",
+        advisorConversationName = "Nome da conversa",
+        advisorDeleteConversationTitle = "Excluir conversa?",
+        advisorDeleteConversationBody = "As mensagens desta conversa serão removidas permanentemente.",
+        advisorOpenConversation = "Abrir conversa",
+        advisorConversationOptions = "Opções da conversa",
+        advisorBackToConversation = "Voltar à conversa",
+        advisorLoadingConversations = "Carregando conversas…",
+        advisorMessagePending = "Preparando resposta…",
+        advisorMessageStreaming = "Escrevendo…",
+        advisorMessageFailed = "Não foi possível concluir esta resposta.",
+        advisorMessageCancelled = "Resposta interrompida.",
+        advisorRetry = "Tentar novamente",
+        advisorCancelResponse = "Interromper resposta",
+        imageImportStrings =
+            ImageImportStrings(
+                imageImportEntry = "Importar por imagens",
+                imageImportTitle = "Importar transações",
+                imageImportSubtitle = "Imagens viram um rascunho editável — nada entra sem sua confirmação.",
+                imageImportBack = "Voltar para despesas",
+                imageImportSelectImages = "Escolher imagens",
+                imageImportTakePhoto = "Tirar foto",
+                imageImportSources = "Fontes",
+                imageImportSourceCount = "{count} de {maximum} imagens",
+                imageImportRemoveImage = "Remover imagem",
+                imageImportNoSourcesTitle = "Comece pelas imagens",
+                imageImportNoSourcesBody =
+                    "Escolha extratos, comprovantes, recibos ou capturas de tela. " +
+                        "Você pode combinar várias imagens.",
+                imageImportSourceUnavailable = "A seleção de imagens não está disponível nesta plataforma.",
+                imageImportCameraUnavailable = "A câmera não está disponível nesta plataforma.",
+                imageImportProvider = "Modelo de análise",
+                imageImportProviderHint = "Somente modelos configurados com visão e saída estruturada aparecem aqui.",
+                imageImportNoProviderTitle = "Conecte um modelo compatível",
+                imageImportNoProviderBody =
+                    "A análise de imagens precisa de um modelo configurado com visão e saída estruturada. " +
+                        "O Gyst nunca troca de provedor sem sua escolha.",
+                imageImportConfigureProvider = "Configurar provedor",
+                imageImportPrivacyTitle = "Antes de enviar",
+                imageImportPrivacyBody =
+                    "As imagens selecionadas contêm dados financeiros e serão enviadas somente ao provedor escolhido. " +
+                        "Os arquivos temporários são apagados após a importação ou o cancelamento.",
+                imageImportPrivacyConsent = "Entendi e quero enviar estas imagens para análise",
+                imageImportAnalyze = "Analisar imagens",
+                imageImportAnalyzingTitle = "Lendo suas imagens",
+                imageImportAnalyzingBody = "O Gyst está extraindo transações e preparando uma revisão. Nenhuma despesa foi criada.",
+                imageImportCancelAnalysis = "Cancelar análise",
+                imageImportRetryAnalysis = "Tentar análise novamente",
+                imageImportPreviewTitle = "Revise antes de importar",
+                imageImportPreviewBody =
+                    "Abra cada linha para conferir os campos. Avisos não impedem a importação; " +
+                        "erros precisam ser corrigidos.",
+                imageImportEmptyPreviewTitle = "Nenhuma transação encontrada",
+                imageImportEmptyPreviewBody =
+                    "Não identificamos uma transação segura nessas imagens. " +
+                        "Você pode tentar a análise novamente ou criar uma linha manualmente.",
+                imageImportSelectedCount = "{selected} de {total} selecionadas",
+                imageImportSelectAll = "Selecionar todas",
+                imageImportSelectNone = "Desmarcar todas",
+                imageImportAddRow = "Adicionar linha",
+                imageImportDeleteRow = "Excluir linha",
+                imageImportEditRow = "Editar linha",
+                imageImportSaveRow = "Salvar alterações",
+                imageImportBulkEdit = "Aplicar às selecionadas",
+                imageImportApplyCategory = "Categoria em massa",
+                imageImportApplyPayment = "Pagamento em massa",
+                imageImportUnmatchedCategory = "Sugestão não vinculada: {category}",
+                imageImportDate = "Data (AAAA-MM-DD)",
+                imageImportTime = "Hora",
+                imageImportCurrency = "Moeda",
+                imageImportTransactionType = "Tipo",
+                imageImportTypeExpense = "Despesa",
+                imageImportTypeIncome = "Renda",
+                imageImportTypeTransfer = "Transferência",
+                imageImportTypeRefund = "Reembolso",
+                imageImportTypeUnknown = "Não identificado",
+                imageImportPaymentMethod = "Forma de pagamento",
+                imageImportPaymentPix = "Pix",
+                imageImportPaymentDebit = "Débito",
+                imageImportPaymentCash = "Dinheiro",
+                imageImportPaymentTransfer = "Transferência",
+                imageImportPaymentUnknown = "Forma de pagamento não identificada",
+                imageImportInstallmentCurrent = "Parcela atual",
+                imageImportInstallmentTotal = "Total de parcelas",
+                imageImportNote = "Observação",
+                imageImportConfidence = "Confiança: {value}%",
+                imageImportLowConfidence = "Baixa confiança — confira os campos destacados",
+                imageImportLowConfidenceFields = "Confira: {fields}",
+                imageImportLowConfidenceFieldHint = "Valor extraído com baixa confiança — confira este campo.",
+                imageImportFieldDescription = "descrição",
+                imageImportFieldAmount = "valor",
+                imageImportFieldCurrency = "moeda",
+                imageImportFieldDate = "data",
+                imageImportFieldType = "tipo",
+                imageImportFieldConfidence = "resultado da análise",
+                imageImportDuplicateWarning = "Possível duplicata — confira antes de manter selecionada",
+                imageImportWarningAmbiguousSource = "Não foi possível ligar esta linha a uma imagem específica.",
+                imageImportWarningRepeatedSource = "Esta imagem já apareceu em uma importação anterior.",
+                imageImportWarningExtractedValue = "Revise este valor extraído antes de importar.",
+                imageImportNeedsReview = "Precisa de revisão",
+                imageImportRowSelection = "Incluir {description}, {amount}, {date}",
+                imageImportUnknownValue = "Não identificado",
+                imageImportValidationError = "Corrija este campo",
+                imageImportWarning = "Aviso",
+                imageImportIssueDescription = "Informe uma descrição.",
+                imageImportIssueAmount = "Informe um valor maior que zero.",
+                imageImportIssueCurrency = "Confira a moeda. O livro atual aceita BRL.",
+                imageImportIssueDate = "Informe uma data válida no formato AAAA-MM-DD.",
+                imageImportIssueType = "Selecione Despesa para importar no livro atual.",
+                imageImportIssueCategory = "Selecione uma categoria.",
+                imageImportIssuePayment = "Selecione uma forma de pagamento.",
+                imageImportIssueInstallment = "Confira o número e o total de parcelas.",
+                imageImportIssueSummary = "Esta linha pode ser um total ou cabeçalho do extrato.",
+                imageImportConfirm = "Importar selecionadas",
+                imageImportAtomicHint = "A confirmação é atômica: todas as linhas válidas selecionadas entram juntas ou nenhuma entra.",
+                imageImportImporting = "Importando…",
+                imageImportCompletedTitle = "Importação concluída",
+                imageImportCompletedBody = "As despesas confirmadas já estão no seu histórico.",
+                imageImportImportedCount = "{count} importadas",
+                imageImportAlreadyImportedCount = "{count} já tinham sido importadas",
+                imageImportDone = "Concluir",
+                imageImportCancel = "Cancelar importação",
+                imageImportCancelTitle = "Descartar esta importação?",
+                imageImportCancelBody = "O rascunho e as imagens temporárias serão descartados. Nenhuma transação será adicionada.",
+                imageImportKeepReviewing = "Continuar revisando",
+                imageImportFailureNoImages = "Escolha ao menos uma imagem para continuar.",
+                imageImportFailureProvider = "Escolha um modelo configurado com visão e saída estruturada.",
+                imageImportFailureAuth = "A chave foi recusada. Confira a configuração do provedor.",
+                imageImportFailureRateLimit = "O provedor limitou as requisições. Aguarde um pouco e tente novamente.",
+                imageImportFailureNetwork = "Não foi possível acessar o provedor. Confira sua conexão e tente novamente.",
+                imageImportFailureUnavailable =
+                    "O provedor está temporariamente indisponível após novas tentativas. " +
+                        "Tente novamente em instantes.",
+                imageImportFailureRejected = "O provedor recusou a análise das imagens.",
+                imageImportFailureInvalidResponse = "A resposta não tinha o formato esperado. Tente novamente ou escolha outro modelo.",
+                imageImportFailureValidation = "Há linhas selecionadas com erros. Corrija-as antes de importar.",
+                imageImportFailureDatabase = "Não foi possível salvar a importação com segurança. Nada foi inserido.",
+                imageImportFailureCancelled = "A análise foi cancelada. Você pode tentar novamente.",
+                imageImportFailureInterrupted = "A análise foi interrompida. Suas imagens continuam disponíveis para tentar novamente.",
+            ),
+        automaticDetection =
+            AutomaticDetectionStrings(
+                entryTitle = "Detecção automática",
+                entryHint = "Revise compras encontradas nas notificações dos seus bancos",
+                pendingCount = "{count} para revisar",
+                settingsTitle = "Detecção automática",
+                settingsSubtitle = "O Gyst identifica possíveis transações e sempre pede sua confirmação.",
+                unsupportedTitle = "Disponível no Android",
+                unsupportedBody = "A leitura de notificações não é oferecida nesta plataforma.",
+                detectionTitle = "Detectar transações",
+                detectionBody = "Nada será lido enquanto esta opção estiver desligada.",
+                detectionEnabled = "Detecção ativada",
+                listenerAccessTitle = "Acesso às notificações",
+                listenerAccessBody =
+                    "Permite que o Android entregue ao Gyst notificações dos aplicativos que você autorizar abaixo.",
+                listenerGranted = "Acesso concedido",
+                listenerMissing = "Acesso necessário",
+                openListenerSettings = "Abrir acesso às notificações",
+                appNotificationsTitle = "Notificações do Gyst",
+                appNotificationsBody =
+                    "Permite que o Gyst avise quando uma transação estiver pronta para revisão. " +
+                        "É uma permissão diferente do acesso acima.",
+                appNotificationsGranted = "Avisos permitidos",
+                appNotificationsDenied = "Avisos não permitidos",
+                requestAppNotifications = "Permitir avisos",
+                openAppNotificationSettings = "Abrir ajustes de avisos",
+                reviewNotificationsTitle = "Avisar quando detectar",
+                reviewNotificationsBody = "As sugestões continuam disponíveis no app mesmo sem o aviso do Android.",
+                monitoredAppsTitle = "Aplicativos monitorados",
+                monitoredAppsBody = "Escolha exatamente quais aplicativos financeiros podem ser analisados.",
+                monitoredAppsEmpty = "Nenhum aplicativo financeiro compatível foi encontrado.",
+                allowApp = "Permitir {app}",
+                blockApp = "Bloquear {app}",
+                aiTitle = "Análise com IA",
+                aiBody = "A IA pode interpretar descrições que as regras locais não entendem.",
+                aiPrivacy =
+                    "Quando ativada, somente o texto mínimo de uma notificação financeira relevante é enviado ao " +
+                        "provedor que você escolheu. Códigos de acesso e mensagens irrelevantes são filtrados localmente.",
+                aiProvider = "Modelo usado na análise",
+                aiNoProvider = "Conecte um modelo com texto e saída estruturada para usar a análise com IA.",
+                configureProvider = "Configurar provedor",
+                pendingTitle = "Transações para revisar",
+                pendingBody = "Nenhuma sugestão entra nas suas despesas sem sua aprovação.",
+                pendingEmptyTitle = "Tudo revisado",
+                pendingEmptyBody = "Quando uma possível transação for detectada, ela aparecerá aqui.",
+                reviewSuggestion = "Revisar transação",
+                retryFailed = "Tentar análises novamente",
+                failedCount = "{count} análises precisam de nova tentativa",
+                deleteDataTitle = "Dados de detecção",
+                deleteDataBody = "Apague sugestões e notificações processadas sem afetar suas despesas já aprovadas.",
+                deleteDataAction = "Apagar dados de detecção",
+                deleteDataConfirmTitle = "Apagar dados de detecção?",
+                deleteDataConfirmBody =
+                    "Sugestões pendentes e dados derivados das notificações serão apagados permanentemente.",
+                refresh = "Atualizar estado",
+                sourceApplication = "Aplicativo de origem",
+                reviewTitle = "Revisar transação",
+                reviewSubtitle = "Confira os campos antes de adicionar esta despesa.",
+                suggestionUnavailableTitle = "Sugestão indisponível",
+                suggestionUnavailableBody =
+                    "Ela pode já ter sido revisada ou apagada. Atualize a lista para ver o que ainda está pendente.",
+                confidence = "Confiança da detecção",
+                confidenceHigh = "Alta",
+                confidenceMedium = "Média",
+                confidenceLow = "Baixa — confira com atenção",
+                warnings = "Pontos para conferir",
+                duplicateWarning = "Esta transação pode já existir. Confirme antes de adicionar.",
+                extractionFailure = "A análise não foi concluída. Você pode tentar novamente nos ajustes.",
+                detectedDetails = "Detalhes detectados",
+                transactionType = "Tipo de transação",
+                transactionDate = "Data (AAAA-MM-DD)",
+                transactionTime = "Hora",
+                currency = "Moeda",
+                paymentMethod = "Forma de pagamento",
+                notes = "Observação",
+                saveDraft = "Salvar revisão",
+                approveAndAdd = "Aprovar e adicionar",
+                rejectSuggestion = "Rejeitar",
+                deleteSuggestion = "Excluir",
+                rejectConfirmTitle = "Rejeitar esta sugestão?",
+                rejectConfirmBody = "Ela continuará no histórico de processamento, mas não criará uma despesa.",
+                deleteConfirmTitle = "Excluir esta sugestão?",
+                deleteConfirmBody = "Os dados desta sugestão serão apagados e nenhuma despesa será criada.",
+                approvalExpenseOnly = "O livro atual aceita despesas em BRL. Outros tipos ficam bloqueados para aprovação.",
+                saved = "Revisão salva.",
+                approved = "Despesa adicionada.",
+                rejected = "Sugestão rejeitada.",
+                deleted = "Sugestão excluída.",
+                actionFailed = "Não foi possível concluir esta ação.",
+                validationTitle = "Corrija antes de aprovar",
+                lowConfidenceFields = "Campos incertos: {fields}",
+                backToPending = "Voltar às pendentes",
+            ),
     )
 
 private val enUs =
@@ -491,6 +1080,11 @@ private val enUs =
         advisorApiFormat = "API format",
         advisorChatCompletions = "Chat Completions",
         advisorResponses = "Responses",
+        advisorCapabilities = "Model capabilities",
+        advisorVisionInput = "Images",
+        advisorStructuredOutput = "Structured output",
+        advisorStreaming = "Live response",
+        advisorCapabilitiesHint = "For custom models, enable only capabilities confirmed by the provider.",
         advisorSaveConnection = "Save connection",
         advisorReplaceKeyHint = "New key (leave blank to keep it)",
         advisorPrivacy =
@@ -517,6 +1111,244 @@ private val enUs =
         advisorRequestFailed = "The advisor could not respond.",
         advisorPreparingOverview = "Reviewing your financial picture…",
         advisorRefreshOverview = "Refresh overview",
+        advisorConversations = "Conversations",
+        advisorManageConversations = "View conversations",
+        advisorNewConversation = "New conversation",
+        advisorUntitledConversation = "New conversation",
+        advisorCurrentConversation = "Current",
+        advisorNoConversationsTitle = "Start a conversation",
+        advisorNoConversationsBody = "Each conversation keeps its own context and remains available when you return.",
+        advisorRenameConversation = "Rename conversation",
+        advisorConversationName = "Conversation name",
+        advisorDeleteConversationTitle = "Delete conversation?",
+        advisorDeleteConversationBody = "The messages in this conversation will be permanently removed.",
+        advisorOpenConversation = "Open conversation",
+        advisorConversationOptions = "Conversation options",
+        advisorBackToConversation = "Back to conversation",
+        advisorLoadingConversations = "Loading conversations…",
+        advisorMessagePending = "Preparing response…",
+        advisorMessageStreaming = "Writing…",
+        advisorMessageFailed = "This response could not be completed.",
+        advisorMessageCancelled = "Response stopped.",
+        advisorRetry = "Try again",
+        advisorCancelResponse = "Stop response",
+        imageImportStrings =
+            ImageImportStrings(
+                imageImportEntry = "Import from images",
+                imageImportTitle = "Import transactions",
+                imageImportSubtitle = "Images become an editable draft—nothing is added without your confirmation.",
+                imageImportBack = "Back to expenses",
+                imageImportSelectImages = "Choose images",
+                imageImportTakePhoto = "Take photo",
+                imageImportSources = "Sources",
+                imageImportSourceCount = "{count} of {maximum} images",
+                imageImportRemoveImage = "Remove image",
+                imageImportNoSourcesTitle = "Start with your images",
+                imageImportNoSourcesBody =
+                    "Choose statements, payment confirmations, receipts, or screenshots. " +
+                        "You can combine multiple images.",
+                imageImportSourceUnavailable = "Image selection is not available on this platform.",
+                imageImportCameraUnavailable = "The camera is not available on this platform.",
+                imageImportProvider = "Analysis model",
+                imageImportProviderHint = "Only configured models with vision and structured output appear here.",
+                imageImportNoProviderTitle = "Connect a compatible model",
+                imageImportNoProviderBody =
+                    "Image analysis needs a configured model with vision and structured output. " +
+                        "Gyst never switches providers without your choice.",
+                imageImportConfigureProvider = "Configure provider",
+                imageImportPrivacyTitle = "Before sending",
+                imageImportPrivacyBody =
+                    "The selected images contain financial data and will be sent only to your chosen provider. " +
+                        "Temporary files are deleted after import or cancellation.",
+                imageImportPrivacyConsent = "I understand and want to send these images for analysis",
+                imageImportAnalyze = "Analyze images",
+                imageImportAnalyzingTitle = "Reading your images",
+                imageImportAnalyzingBody =
+                    "Gyst is extracting transactions and preparing a review. " +
+                        "No expense has been created.",
+                imageImportCancelAnalysis = "Cancel analysis",
+                imageImportRetryAnalysis = "Try analysis again",
+                imageImportPreviewTitle = "Review before importing",
+                imageImportPreviewBody = "Open each row to check its fields. Warnings do not block import; errors must be fixed.",
+                imageImportEmptyPreviewTitle = "No transactions found",
+                imageImportEmptyPreviewBody =
+                    "We could not identify a reliable transaction in these images. " +
+                        "You can try the analysis again or create a row manually.",
+                imageImportSelectedCount = "{selected} of {total} selected",
+                imageImportSelectAll = "Select all",
+                imageImportSelectNone = "Select none",
+                imageImportAddRow = "Add row",
+                imageImportDeleteRow = "Delete row",
+                imageImportEditRow = "Edit row",
+                imageImportSaveRow = "Save changes",
+                imageImportBulkEdit = "Apply to selected",
+                imageImportApplyCategory = "Bulk category",
+                imageImportApplyPayment = "Bulk payment",
+                imageImportUnmatchedCategory = "Unmatched suggestion: {category}",
+                imageImportDate = "Date (YYYY-MM-DD)",
+                imageImportTime = "Time",
+                imageImportCurrency = "Currency",
+                imageImportTransactionType = "Type",
+                imageImportTypeExpense = "Expense",
+                imageImportTypeIncome = "Income",
+                imageImportTypeTransfer = "Transfer",
+                imageImportTypeRefund = "Refund",
+                imageImportTypeUnknown = "Unknown",
+                imageImportPaymentMethod = "Payment method",
+                imageImportPaymentPix = "Pix",
+                imageImportPaymentDebit = "Debit",
+                imageImportPaymentCash = "Cash",
+                imageImportPaymentTransfer = "Transfer",
+                imageImportPaymentUnknown = "Payment method not identified",
+                imageImportInstallmentCurrent = "Current installment",
+                imageImportInstallmentTotal = "Total installments",
+                imageImportNote = "Note",
+                imageImportConfidence = "Confidence: {value}%",
+                imageImportLowConfidence = "Low confidence—check the highlighted fields",
+                imageImportLowConfidenceFields = "Check: {fields}",
+                imageImportLowConfidenceFieldHint = "Low-confidence extracted value—check this field.",
+                imageImportFieldDescription = "description",
+                imageImportFieldAmount = "amount",
+                imageImportFieldCurrency = "currency",
+                imageImportFieldDate = "date",
+                imageImportFieldType = "type",
+                imageImportFieldConfidence = "analysis result",
+                imageImportDuplicateWarning = "Possible duplicate—review it before keeping it selected",
+                imageImportWarningAmbiguousSource = "This row could not be linked to a specific image.",
+                imageImportWarningRepeatedSource = "This image appeared in an earlier import.",
+                imageImportWarningExtractedValue = "Review this extracted value before importing.",
+                imageImportNeedsReview = "Needs review",
+                imageImportRowSelection = "Include {description}, {amount}, {date}",
+                imageImportUnknownValue = "Not identified",
+                imageImportValidationError = "Fix this field",
+                imageImportWarning = "Warning",
+                imageImportIssueDescription = "Enter a description.",
+                imageImportIssueAmount = "Enter an amount greater than zero.",
+                imageImportIssueCurrency = "Check the currency. The current ledger accepts BRL.",
+                imageImportIssueDate = "Enter a valid date in YYYY-MM-DD format.",
+                imageImportIssueType = "Select Expense to import into the current ledger.",
+                imageImportIssueCategory = "Select a category.",
+                imageImportIssuePayment = "Select a payment method.",
+                imageImportIssueInstallment = "Check the installment number and total.",
+                imageImportIssueSummary = "This row may be a statement total or header.",
+                imageImportConfirm = "Import selected",
+                imageImportAtomicHint = "Confirmation is atomic: every selected valid row is added together, or none are added.",
+                imageImportImporting = "Importing…",
+                imageImportCompletedTitle = "Import complete",
+                imageImportCompletedBody = "Your confirmed expenses are now in your history.",
+                imageImportImportedCount = "{count} imported",
+                imageImportAlreadyImportedCount = "{count} had already been imported",
+                imageImportDone = "Done",
+                imageImportCancel = "Cancel import",
+                imageImportCancelTitle = "Discard this import?",
+                imageImportCancelBody = "The draft and temporary images will be discarded. No transaction will be added.",
+                imageImportKeepReviewing = "Keep reviewing",
+                imageImportFailureNoImages = "Choose at least one image to continue.",
+                imageImportFailureProvider = "Choose a configured model with vision and structured output.",
+                imageImportFailureAuth = "The key was rejected. Check the provider configuration.",
+                imageImportFailureRateLimit = "The provider is rate-limiting requests. Wait a moment and try again.",
+                imageImportFailureNetwork = "The provider could not be reached. Check your connection and try again.",
+                imageImportFailureUnavailable = "The provider is temporarily unavailable after automatic retries. Try again shortly.",
+                imageImportFailureRejected = "The provider rejected the image analysis request.",
+                imageImportFailureInvalidResponse = "The response did not match the expected format. Retry or choose another model.",
+                imageImportFailureValidation = "Some selected rows have errors. Fix them before importing.",
+                imageImportFailureDatabase = "The import could not be saved safely. Nothing was inserted.",
+                imageImportFailureCancelled = "Analysis was canceled. You can try again.",
+                imageImportFailureInterrupted = "Analysis was interrupted. Your images are still available to try again.",
+            ),
+        automaticDetection =
+            AutomaticDetectionStrings(
+                entryTitle = "Automatic detection",
+                entryHint = "Review purchases found in your banking app notifications",
+                pendingCount = "{count} to review",
+                settingsTitle = "Automatic detection",
+                settingsSubtitle = "Gyst finds possible transactions and always asks for your confirmation.",
+                unsupportedTitle = "Available on Android",
+                unsupportedBody = "Notification reading is not offered on this platform.",
+                detectionTitle = "Detect transactions",
+                detectionBody = "Nothing is read while this setting is off.",
+                detectionEnabled = "Detection enabled",
+                listenerAccessTitle = "Notification access",
+                listenerAccessBody =
+                    "Allows Android to deliver notifications from the apps you explicitly authorize below.",
+                listenerGranted = "Access granted",
+                listenerMissing = "Access required",
+                openListenerSettings = "Open notification access",
+                appNotificationsTitle = "Gyst notifications",
+                appNotificationsBody =
+                    "Allows Gyst to tell you when a transaction is ready to review. " +
+                        "This is separate from notification access above.",
+                appNotificationsGranted = "Alerts allowed",
+                appNotificationsDenied = "Alerts not allowed",
+                requestAppNotifications = "Allow alerts",
+                openAppNotificationSettings = "Open alert settings",
+                reviewNotificationsTitle = "Notify me when detected",
+                reviewNotificationsBody = "Suggestions remain available in the app even without an Android alert.",
+                monitoredAppsTitle = "Monitored apps",
+                monitoredAppsBody = "Choose exactly which financial apps may be analyzed.",
+                monitoredAppsEmpty = "No compatible financial apps were found.",
+                allowApp = "Allow {app}",
+                blockApp = "Block {app}",
+                aiTitle = "AI analysis",
+                aiBody = "AI can interpret descriptions that local rules cannot understand.",
+                aiPrivacy =
+                    "When enabled, only the minimum text from a relevant financial notification is sent to your " +
+                        "chosen provider. Access codes and irrelevant messages are filtered locally.",
+                aiProvider = "Model used for analysis",
+                aiNoProvider = "Connect a model with text and structured output to use AI analysis.",
+                configureProvider = "Configure provider",
+                pendingTitle = "Transactions to review",
+                pendingBody = "No suggestion enters your expenses without your approval.",
+                pendingEmptyTitle = "All reviewed",
+                pendingEmptyBody = "When a possible transaction is detected, it will appear here.",
+                reviewSuggestion = "Review transaction",
+                retryFailed = "Retry analyses",
+                failedCount = "{count} analyses need another attempt",
+                deleteDataTitle = "Detection data",
+                deleteDataBody = "Delete suggestions and processed notifications without affecting approved expenses.",
+                deleteDataAction = "Delete detection data",
+                deleteDataConfirmTitle = "Delete detection data?",
+                deleteDataConfirmBody =
+                    "Pending suggestions and notification-derived data will be permanently deleted.",
+                refresh = "Refresh status",
+                sourceApplication = "Source application",
+                reviewTitle = "Review transaction",
+                reviewSubtitle = "Check every field before adding this expense.",
+                suggestionUnavailableTitle = "Suggestion unavailable",
+                suggestionUnavailableBody =
+                    "It may already have been reviewed or deleted. Refresh the list to see what is still pending.",
+                confidence = "Detection confidence",
+                confidenceHigh = "High",
+                confidenceMedium = "Medium",
+                confidenceLow = "Low — check carefully",
+                warnings = "Things to check",
+                duplicateWarning = "This transaction may already exist. Confirm before adding it.",
+                extractionFailure = "Analysis did not finish. You can retry from settings.",
+                detectedDetails = "Detected details",
+                transactionType = "Transaction type",
+                transactionDate = "Date (YYYY-MM-DD)",
+                transactionTime = "Time",
+                currency = "Currency",
+                paymentMethod = "Payment method",
+                notes = "Note",
+                saveDraft = "Save review",
+                approveAndAdd = "Approve and add",
+                rejectSuggestion = "Reject",
+                deleteSuggestion = "Delete",
+                rejectConfirmTitle = "Reject this suggestion?",
+                rejectConfirmBody = "It remains in processing history but will not create an expense.",
+                deleteConfirmTitle = "Delete this suggestion?",
+                deleteConfirmBody = "This suggestion's data will be deleted and no expense will be created.",
+                approvalExpenseOnly = "The current ledger accepts BRL expenses. Other types cannot be approved.",
+                saved = "Review saved.",
+                approved = "Expense added.",
+                rejected = "Suggestion rejected.",
+                deleted = "Suggestion deleted.",
+                actionFailed = "This action could not be completed.",
+                validationTitle = "Fix before approving",
+                lowConfidenceFields = "Uncertain fields: {fields}",
+                backToPending = "Back to pending",
+            ),
     )
 
 @Composable
@@ -528,9 +1360,12 @@ fun rememberStrings(preferredLanguage: String?): AppStrings {
                 "pt", "en" -> preferredLanguage
                 else -> localeLang.lowercase()
             }
-        when (lang) {
-            "pt" -> ptBr
-            else -> enUs
-        }
+        appStringsForLanguage(lang)
     }
 }
+
+internal fun appStringsForLanguage(language: String): AppStrings =
+    when (language.lowercase()) {
+        "pt" -> ptBr
+        else -> enUs
+    }

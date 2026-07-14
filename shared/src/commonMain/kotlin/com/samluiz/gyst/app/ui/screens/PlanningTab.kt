@@ -56,17 +56,22 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.samluiz.gyst.domain.model.YearMonth
-import com.samluiz.gyst.domain.service.AdvisorApiFormat
+import com.samluiz.gyst.domain.service.AdvisorConfig
 import com.samluiz.gyst.presentation.MainState
 
 @Composable
 internal fun PlanningTab(
     s: AppStrings,
     state: MainState,
-    onConfigureAdvisor: (String, String, AdvisorApiFormat, String?) -> Unit,
+    onConfigureAdvisor: (AdvisorConfig, String?) -> Unit,
     onAskAdvisor: (String, String) -> Unit,
     onEnsureAdvisorOverview: (Boolean, String) -> Unit,
-    onClearAdvisor: () -> Unit,
+    onCreateAdvisorConversation: (String?) -> Unit,
+    onSelectAdvisorConversation: (String) -> Unit,
+    onRenameAdvisorConversation: (String, String) -> Unit,
+    onDeleteAdvisorConversation: (String) -> Unit,
+    onRetryAdvisorMessage: (String, String) -> Unit,
+    onCancelAdvisorResponse: () -> Unit,
     onDisconnectAdvisor: () -> Unit,
 ) {
     var selectedView by remember { mutableStateOf(0) }
@@ -87,7 +92,12 @@ internal fun PlanningTab(
                     onConfigure = onConfigureAdvisor,
                     onAsk = onAskAdvisor,
                     onEnsureOverview = onEnsureAdvisorOverview,
-                    onClear = onClearAdvisor,
+                    onCreateConversation = onCreateAdvisorConversation,
+                    onSelectConversation = onSelectAdvisorConversation,
+                    onRenameConversation = onRenameAdvisorConversation,
+                    onDeleteConversation = onDeleteAdvisorConversation,
+                    onRetryMessage = onRetryAdvisorMessage,
+                    onCancelResponse = onCancelAdvisorResponse,
                     onDisconnect = onDisconnectAdvisor,
                 )
             }

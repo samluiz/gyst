@@ -3,4 +3,7 @@
     <cache-path
         name="updates"
         path="updates/" />
+    <cache-path
+        name="transaction_import_images"
+        path="transaction-import-images/" />
 </paths>

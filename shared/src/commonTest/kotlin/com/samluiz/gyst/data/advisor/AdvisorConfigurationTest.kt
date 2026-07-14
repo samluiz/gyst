@@ -6,6 +6,7 @@ import com.samluiz.gyst.domain.service.AdvisorConfig
 import com.samluiz.gyst.domain.service.AdvisorProviderPreset
 import com.samluiz.gyst.domain.service.AdvisorProviderPresetId
 import com.samluiz.gyst.domain.service.AdvisorSecretStore
+import com.samluiz.gyst.domain.service.AiCapability
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -51,28 +52,85 @@ class AdvisorConfigurationTest {
     fun openCodeZenPresetUsesTheFreeDeepSeekChatCompletionsModel() {
         val preset = AdvisorProviderPreset.entries.single { it.id == AdvisorProviderPresetId.OPENCODE_ZEN }
 
-        assertEquals(
-            AdvisorConfig(
-                baseUrl = "https://opencode.ai/zen/v1",
-                model = "deepseek-v4-flash-free",
-                apiFormat = AdvisorApiFormat.CHAT_COMPLETIONS,
-            ),
-            preset.config,
-        )
+        val config = requireNotNull(preset.config)
+        assertEquals("https://opencode.ai/zen/v1", config.baseUrl)
+        assertEquals("deepseek-v4-flash-free", config.model)
+        assertEquals(AdvisorApiFormat.CHAT_COMPLETIONS, config.apiFormat)
+        assertEquals("opencode-zen", config.providerId)
+        assertEquals(setOf(AiCapability.TEXT_GENERATION, AiCapability.STREAMING), config.capabilities)
     }
 
     @Test
     fun openRouterPresetUsesTheFreeModelsRouter() {
         val preset = AdvisorProviderPreset.entries.single { it.id == AdvisorProviderPresetId.OPENROUTER }
 
+        val config = requireNotNull(preset.config)
+        assertEquals("https://openrouter.ai/api/v1", config.baseUrl)
+        assertEquals("openrouter/free", config.model)
+        assertEquals(AdvisorApiFormat.CHAT_COMPLETIONS, config.apiFormat)
+        assertEquals("openrouter", config.providerId)
+        assertEquals(setOf(AiCapability.TEXT_GENERATION, AiCapability.STREAMING), config.capabilities)
+    }
+
+    @Test
+    fun geminiPresetUsesTheStableFlashLiteVisionModel() {
+        val preset = AdvisorProviderPreset.entries.single { it.id == AdvisorProviderPresetId.GEMINI }
+
+        val config = requireNotNull(preset.config)
+        assertEquals("https://generativelanguage.googleapis.com/v1beta/openai", config.baseUrl)
+        assertEquals("gemini-3.1-flash-lite", config.model)
+        assertEquals(AdvisorApiFormat.CHAT_COMPLETIONS, config.apiFormat)
+        assertEquals("gemini", config.providerId)
         assertEquals(
-            AdvisorConfig(
-                baseUrl = "https://openrouter.ai/api/v1",
-                model = "openrouter/free",
-                apiFormat = AdvisorApiFormat.CHAT_COMPLETIONS,
+            setOf(
+                AiCapability.TEXT_GENERATION,
+                AiCapability.VISION_INPUT,
+                AiCapability.STRUCTURED_OUTPUT,
+                AiCapability.STREAMING,
             ),
-            preset.config,
+            config.capabilities,
         )
+    }
+
+    @Test
+    fun initializeUpgradesOnlyTheRetiredGeminiPresetModel() =
+        runTest {
+            val settings = MemorySettings()
+            val secrets = MemorySecretStore()
+            val service = OpenAiCompatibleAdvisorService(settings, secrets)
+            service.configure(
+                AdvisorConfig(
+                    baseUrl = "https://generativelanguage.googleapis.com/v1beta/openai",
+                    model = "gemini-3.5-flash",
+                    apiFormat = AdvisorApiFormat.CHAT_COMPLETIONS,
+                    providerId = "gemini",
+                ),
+                "secret",
+            )
+
+            val recreated = OpenAiCompatibleAdvisorService(settings, secrets)
+            recreated.initialize()
+
+            assertEquals("gemini-3.1-flash-lite", recreated.state.value.config.model)
+            assertEquals("default", recreated.state.value.config.profileId)
+            assertEquals(
+                setOf(
+                    AiCapability.TEXT_GENERATION,
+                    AiCapability.VISION_INPUT,
+                    AiCapability.STRUCTURED_OUTPUT,
+                    AiCapability.STREAMING,
+                ),
+                recreated.state.value.config.capabilities,
+            )
+        }
+
+    @Test
+    fun visionSupportIsDeclaredCentrallyByPreset() {
+        val visionProviders =
+            AdvisorProviderPreset.entries
+                .mapNotNull { preset -> preset.config?.takeIf { AiCapability.VISION_INPUT in it.capabilities }?.let { preset.id } }
+
+        assertEquals(setOf(AdvisorProviderPresetId.OPENAI, AdvisorProviderPresetId.GEMINI), visionProviders.toSet())
     }
 }
 

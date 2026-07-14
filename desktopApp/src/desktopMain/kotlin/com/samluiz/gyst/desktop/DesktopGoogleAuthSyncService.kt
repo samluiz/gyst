@@ -6,6 +6,8 @@ import com.google.api.client.googleapis.auth.oauth2.GoogleAuthorizationCodeFlow
 import com.google.api.client.googleapis.javanet.GoogleNetHttpTransport
 import com.google.api.client.json.gson.GsonFactory
 import com.google.api.client.util.store.FileDataStoreFactory
+import com.samluiz.gyst.data.repository.DatabaseRuntimeController
+import com.samluiz.gyst.db.GystDatabase
 import com.samluiz.gyst.domain.service.GoogleAuthSyncService
 import com.samluiz.gyst.domain.service.GoogleSyncErrorCode
 import com.samluiz.gyst.domain.service.GoogleSyncState
@@ -31,6 +33,7 @@ import java.net.URLEncoder
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
+import java.sql.DriverManager
 import kotlin.io.path.exists
 import kotlin.io.path.pathString
 import kotlin.time.Clock
@@ -46,6 +49,7 @@ private const val OAUTH_USER_ID = "gyst-desktop-user"
 class DesktopGoogleAuthSyncService(
     private val dbPath: Path,
     private val backupPath: Path,
+    private val databaseRuntimeController: DatabaseRuntimeController,
 ) : GoogleAuthSyncService {
     private companion object {
         const val TAG = "DesktopGoogleSync"
@@ -211,7 +215,7 @@ class DesktopGoogleAuthSyncService(
 
             val profile = runCatching { fetchProfile(token) }.getOrNull()
             val remoteBackup = runCatching { findBackupFile(token) }.getOrNull()
-            AppLogger.i(TAG, "Sign-in completed. account=${profile?.email ?: "unknown"}")
+            AppLogger.i(TAG, "Sign-in completed")
             internal.update {
                 it.copy(
                     isAvailable = true,
@@ -311,7 +315,11 @@ class DesktopGoogleAuthSyncService(
                     remote == null && localExists -> {
                         AppLogger.i(TAG, "Sync path: LOCAL_TO_CLOUD create")
                         val localBytes = readDatabaseBytes()
-                        createBackupFile(token, localBytes)
+                        try {
+                            createBackupFile(token, localBytes)
+                        } finally {
+                            localBytes.fill(0)
+                        }
                         val syncedCloudIso = findBackupFile(token)?.modifiedAt?.toString() ?: Clock.System.now().toString()
                         Files.copy(dbPath, backupPath, StandardCopyOption.REPLACE_EXISTING)
                         internal.update {
@@ -331,7 +339,11 @@ class DesktopGoogleAuthSyncService(
                     localUpdatedAt == null && remote != null -> {
                         AppLogger.i(TAG, "Sync path: CLOUD_TO_LOCAL local missing")
                         val remoteBytes = downloadBackupFile(token, remote.id)
-                        writeDatabaseBytes(remoteBytes)
+                        try {
+                            writeDatabaseBytes(remoteBytes)
+                        } finally {
+                            remoteBytes.fill(0)
+                        }
                         val syncedCloudIso = remoteUpdatedAt.toString()
                         Files.copy(dbPath, backupPath, StandardCopyOption.REPLACE_EXISTING)
                         internal.update {
@@ -343,7 +355,7 @@ class DesktopGoogleAuthSyncService(
                                 lastSyncPolicy = SyncPolicy.NEWEST_WINS,
                                 hadSyncConflict = false,
                                 statusMessage = "Recovered local data from Google Drive.",
-                                requiresAppRestart = true,
+                                requiresAppRestart = false,
                                 lastError = null,
                                 lastErrorCode = null,
                             )
@@ -352,7 +364,11 @@ class DesktopGoogleAuthSyncService(
                     remoteUpdatedAt != null && localUpdatedAt != null && remoteUpdatedAt > localUpdatedAt -> {
                         AppLogger.w(TAG, "Sync conflict resolved by cloud newer timestamp")
                         val remoteBytes = downloadBackupFile(token, remote.id)
-                        writeDatabaseBytes(remoteBytes)
+                        try {
+                            writeDatabaseBytes(remoteBytes)
+                        } finally {
+                            remoteBytes.fill(0)
+                        }
                         val syncedCloudIso = remoteUpdatedAt.toString()
                         Files.copy(dbPath, backupPath, StandardCopyOption.REPLACE_EXISTING)
                         internal.update {
@@ -364,7 +380,7 @@ class DesktopGoogleAuthSyncService(
                                 lastSyncPolicy = SyncPolicy.NEWEST_WINS,
                                 hadSyncConflict = true,
                                 statusMessage = "Conflict resolved by timestamp: cloud data applied.",
-                                requiresAppRestart = true,
+                                requiresAppRestart = false,
                                 lastError = null,
                                 lastErrorCode = null,
                             )
@@ -373,7 +389,11 @@ class DesktopGoogleAuthSyncService(
                     else -> {
                         AppLogger.i(TAG, "Sync path: LOCAL_TO_CLOUD update")
                         val localBytes = readDatabaseBytes()
-                        updateBackupFile(token, remote!!.id, localBytes)
+                        try {
+                            updateBackupFile(token, remote!!.id, localBytes)
+                        } finally {
+                            localBytes.fill(0)
+                        }
                         val syncedCloudIso = findBackupFile(token)?.modifiedAt?.toString() ?: Clock.System.now().toString()
                         Files.copy(dbPath, backupPath, StandardCopyOption.REPLACE_EXISTING)
                         internal.update {
@@ -440,7 +460,11 @@ class DesktopGoogleAuthSyncService(
             runCatching {
                 val remote = findBackupFile(token) ?: error("No backup found on Google Drive.")
                 val remoteBytes = downloadBackupFile(token, remote.id)
-                writeDatabaseBytes(remoteBytes)
+                try {
+                    writeDatabaseBytes(remoteBytes)
+                } finally {
+                    remoteBytes.fill(0)
+                }
                 val syncedCloudIso = remote.modifiedAt?.toString() ?: Clock.System.now().toString()
                 Files.copy(dbPath, backupPath, StandardCopyOption.REPLACE_EXISTING)
                 internal.update {
@@ -452,7 +476,7 @@ class DesktopGoogleAuthSyncService(
                         lastSyncPolicy = SyncPolicy.OVERWRITE_LOCAL,
                         hadSyncConflict = false,
                         statusMessage = "Backup restored from cloud.",
-                        requiresAppRestart = true,
+                        requiresAppRestart = false,
                         lastError = null,
                         lastErrorCode = null,
                     )
@@ -646,14 +670,18 @@ class DesktopGoogleAuthSyncService(
                 write("--$boundary--$newline".toByteArray())
             }.toByteArray()
 
-        requestBytes(
-            url = url,
-            method = method,
-            token = token,
-            contentType = "multipart/related; boundary=$boundary",
-            body = body,
-            extraHeaders = extraHeaders,
-        )
+        try {
+            requestBytes(
+                url = url,
+                method = method,
+                token = token,
+                contentType = "multipart/related; boundary=$boundary",
+                body = body,
+                extraHeaders = extraHeaders,
+            )
+        } finally {
+            body.fill(0)
+        }
     }
 
     private fun requestText(
@@ -727,29 +755,67 @@ class DesktopGoogleAuthSyncService(
         return Files.readAllBytes(dbPath)
     }
 
-    private fun writeDatabaseBytes(content: ByteArray) {
+    private suspend fun writeDatabaseBytes(content: ByteArray) {
         verifySqliteContent(content)
         Files.createDirectories(dbPath.parent)
         val tmp = dbPath.resolveSibling("${dbPath.fileName}.tmp")
         val previous = dbPath.resolveSibling("${dbPath.fileName}.bak")
+        var previousDatabaseMoved = false
+        var replacementDatabaseMoved = false
 
         Files.write(tmp, content)
-        runCatching { Files.deleteIfExists(dbPath.resolveSibling("${dbPath.fileName}-wal")) }
-        runCatching { Files.deleteIfExists(dbPath.resolveSibling("${dbPath.fileName}-shm")) }
-
-        if (Files.exists(dbPath)) {
-            Files.copy(dbPath, previous, StandardCopyOption.REPLACE_EXISTING)
-        }
-
-        runCatching {
-            Files.move(tmp, dbPath, StandardCopyOption.REPLACE_EXISTING)
-        }.onFailure { throwable ->
-            if (Files.exists(previous)) {
-                Files.copy(previous, dbPath, StandardCopyOption.REPLACE_EXISTING)
-            }
+        try {
+            verifyRestorableDatabase(tmp)
+            databaseRuntimeController.replaceDatabase(
+                install = {
+                    deleteDatabaseSidecars()
+                    Files.deleteIfExists(previous)
+                    if (Files.exists(dbPath)) {
+                        Files.move(dbPath, previous, StandardCopyOption.REPLACE_EXISTING)
+                        previousDatabaseMoved = true
+                    }
+                    Files.move(tmp, dbPath, StandardCopyOption.REPLACE_EXISTING)
+                    replacementDatabaseMoved = true
+                },
+                rollback = {
+                    deleteDatabaseSidecars()
+                    if (replacementDatabaseMoved) Files.deleteIfExists(dbPath)
+                    if (previousDatabaseMoved && Files.exists(previous)) {
+                        Files.move(previous, dbPath, StandardCopyOption.REPLACE_EXISTING)
+                    }
+                },
+                commit = { Files.deleteIfExists(previous) },
+            )
+        } finally {
             Files.deleteIfExists(tmp)
-            throw throwable
         }
+    }
+
+    private fun verifyRestorableDatabase(path: Path) {
+        DriverManager.getConnection("jdbc:sqlite:${path.toAbsolutePath()}").use { connection ->
+            val healthy =
+                connection.createStatement().use { statement ->
+                    statement.executeQuery("PRAGMA quick_check(1)").use { result ->
+                        result.next() && result.getString(1).equals("ok", ignoreCase = true)
+                    }
+                }
+            check(healthy) { "Invalid backup database integrity" }
+            val schemaVersion =
+                connection.createStatement().use { statement ->
+                    statement.executeQuery("PRAGMA user_version").use { result ->
+                        if (result.next()) result.getLong(1) else 0L
+                    }
+                }
+            check(schemaVersion > 0L) { "Invalid backup schema version" }
+            check(schemaVersion <= GystDatabase.Schema.version) {
+                "Backup schema version $schemaVersion is newer than this app supports"
+            }
+        }
+    }
+
+    private fun deleteDatabaseSidecars() {
+        Files.deleteIfExists(dbPath.resolveSibling("${dbPath.fileName}-wal"))
+        Files.deleteIfExists(dbPath.resolveSibling("${dbPath.fileName}-shm"))
     }
 
     private fun verifySqliteContent(bytes: ByteArray) {
@@ -796,7 +862,9 @@ private fun classifyDesktopError(
         "session expired" in msg || "token" in msg && "expired" in msg -> GoogleSyncErrorCode.SESSION_EXPIRED
         "no backup found" in msg -> GoogleSyncErrorCode.BACKUP_NOT_FOUND
         "local database was not found" in msg || "no local data available to sync" in msg -> GoogleSyncErrorCode.LOCAL_DATA_MISSING
-        "invalid backup format" in msg || "not a valid sqlite" in msg -> GoogleSyncErrorCode.INVALID_BACKUP
+        "invalid backup" in msg || "backup schema version" in msg || "not a valid sqlite" in msg -> {
+            GoogleSyncErrorCode.INVALID_BACKUP
+        }
         "api error" in msg || "google api error" in msg || "http 4" in msg || "http 5" in msg -> GoogleSyncErrorCode.API
         "timeout" in msg || "network" in msg || "connection" in msg -> GoogleSyncErrorCode.NETWORK
         else -> if (isRestore) GoogleSyncErrorCode.RESTORE_FAILED else GoogleSyncErrorCode.SYNC_FAILED

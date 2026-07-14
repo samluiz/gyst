@@ -4,18 +4,27 @@ import com.samluiz.gyst.domain.model.*
 import com.samluiz.gyst.domain.repository.*
 
 class SqlLocalDataMaintenanceRepository(private val holder: DatabaseHolder) : LocalDataMaintenanceRepository {
-    private val q get() = holder.db.financeQueries
-
     override suspend fun resetLocalData() {
-        holder.db.transaction {
-            q.deleteAllScheduleItems()
-            q.deleteAllExpenses()
-            q.deleteAllSubscriptions()
-            q.deleteAllInstallments()
-            q.deleteAllBudgetAllocations()
-            q.deleteAllBudgetMonths()
-            q.deleteAllCategories()
-            q.deleteAllSettings()
+        holder.withDatabase { db ->
+            val q = db.financeQueries
+            db.transaction {
+                q.deleteAllNotificationIngestions()
+                q.deleteAllExpenseOrigins()
+                q.deleteAllTransactionCandidates()
+                q.deleteAllTransactionImportSessions()
+                q.deleteAllAdvisorConversations()
+                q.deleteAllAdvisorProviderProfiles()
+                q.deleteAllMonitoredApplications()
+                q.deleteAllScheduleItems()
+                q.deleteAllExpenses()
+                q.deleteAllRecurringExpenseSeries()
+                q.deleteAllSubscriptions()
+                q.deleteAllInstallments()
+                q.deleteAllBudgetAllocations()
+                q.deleteAllBudgetMonths()
+                q.deleteAllCategories()
+                q.deleteAllSettings()
+            }
         }
     }
 }

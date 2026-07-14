@@ -1,0 +1,249 @@
+-- Version 1.5.0 persistence. This migration is additive so every existing
+-- ledger row remains untouched while the new durable workflows are installed.
+
+CREATE TABLE advisor_provider_profile (
+    id TEXT NOT NULL PRIMARY KEY,
+    provider_id TEXT NOT NULL,
+    display_name TEXT NOT NULL,
+    base_url TEXT NOT NULL,
+    model TEXT NOT NULL,
+    api_format TEXT NOT NULL,
+    supports_text INTEGER NOT NULL CHECK(supports_text IN (0, 1)),
+    supports_vision INTEGER NOT NULL CHECK(supports_vision IN (0, 1)),
+    supports_structured_output INTEGER NOT NULL CHECK(supports_structured_output IN (0, 1)),
+    supports_streaming INTEGER NOT NULL CHECK(supports_streaming IN (0, 1)),
+    supports_tool_calling INTEGER NOT NULL CHECK(supports_tool_calling IN (0, 1)),
+    active INTEGER NOT NULL CHECK(active IN (0, 1)),
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    last_used_at TEXT
+);
+
+CREATE TABLE advisor_conversation (
+    id TEXT NOT NULL PRIMARY KEY,
+    title TEXT,
+    title_source TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    provider_profile_id TEXT,
+    last_provider_id TEXT,
+    last_model_id TEXT,
+    system_prompt_snapshot TEXT,
+    last_message_preview TEXT,
+    archived INTEGER NOT NULL DEFAULT 0 CHECK(archived IN (0, 1)),
+    next_sequence INTEGER NOT NULL DEFAULT 0 CHECK(next_sequence >= 0),
+    CHECK(title_source IS NULL OR title_source IN ('FALLBACK', 'AI', 'MANUAL')),
+    CHECK((title IS NULL AND title_source IS NULL) OR title IS NOT NULL),
+    FOREIGN KEY (provider_profile_id) REFERENCES advisor_provider_profile(id) ON DELETE SET NULL
+);
+
+CREATE TABLE advisor_message (
+    id TEXT NOT NULL PRIMARY KEY,
+    conversation_id TEXT NOT NULL,
+    sequence_number INTEGER NOT NULL CHECK(sequence_number >= 0),
+    exchange_id TEXT,
+    retry_of_message_id TEXT,
+    role TEXT NOT NULL,
+    content TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL,
+    provider_id TEXT,
+    model_id TEXT,
+    provider_message_id TEXT,
+    input_tokens INTEGER CHECK(input_tokens IS NULL OR input_tokens >= 0),
+    output_tokens INTEGER CHECK(output_tokens IS NULL OR output_tokens >= 0),
+    error_type TEXT,
+    error_message TEXT,
+    attachment_metadata TEXT,
+    retry_count INTEGER NOT NULL DEFAULT 0 CHECK(retry_count >= 0),
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    CHECK(role IN ('SYSTEM', 'USER', 'ASSISTANT', 'TOOL')),
+    CHECK(status IN ('PENDING', 'STREAMING', 'COMPLETED', 'FAILED', 'CANCELLED')),
+    FOREIGN KEY (conversation_id) REFERENCES advisor_conversation(id) ON DELETE CASCADE,
+    FOREIGN KEY (retry_of_message_id) REFERENCES advisor_message(id) ON DELETE SET NULL,
+    UNIQUE(conversation_id, sequence_number)
+);
+
+CREATE TABLE transaction_import_session (
+    id TEXT NOT NULL PRIMARY KEY,
+    idempotency_key TEXT NOT NULL UNIQUE,
+    status TEXT NOT NULL,
+    provider_profile_id TEXT,
+    provider_id TEXT,
+    model_id TEXT,
+    locale_tag TEXT NOT NULL,
+    default_currency TEXT NOT NULL,
+    allow_partial INTEGER NOT NULL DEFAULT 0 CHECK(allow_partial IN (0, 1)),
+    selected_count INTEGER NOT NULL DEFAULT 0 CHECK(selected_count >= 0),
+    imported_count INTEGER NOT NULL DEFAULT 0 CHECK(imported_count >= 0),
+    error_type TEXT,
+    error_message TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    completed_at TEXT,
+    CHECK(status IN ('CREATED', 'ANALYZING', 'READY', 'IMPORTING', 'COMPLETED', 'FAILED', 'CANCELLED')),
+    FOREIGN KEY (provider_profile_id) REFERENCES advisor_provider_profile(id) ON DELETE SET NULL
+);
+
+CREATE TABLE transaction_import_source (
+    id TEXT NOT NULL PRIMARY KEY,
+    import_session_id TEXT NOT NULL,
+    source_hash TEXT NOT NULL,
+    source_order INTEGER NOT NULL CHECK(source_order >= 0),
+    media_type TEXT NOT NULL,
+    display_name TEXT,
+    byte_size INTEGER CHECK(byte_size IS NULL OR byte_size > 0),
+    temporary_reference TEXT,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY (import_session_id) REFERENCES transaction_import_session(id) ON DELETE CASCADE,
+    UNIQUE(import_session_id, source_hash),
+    UNIQUE(import_session_id, source_order)
+);
+
+CREATE TABLE transaction_candidate (
+    id TEXT NOT NULL PRIMARY KEY,
+    import_session_id TEXT,
+    source_type TEXT NOT NULL,
+    source_reference TEXT,
+    source_page TEXT,
+    row_order INTEGER NOT NULL DEFAULT 0 CHECK(row_order >= 0),
+    idempotency_key TEXT NOT NULL UNIQUE,
+    transaction_fingerprint TEXT,
+    description TEXT,
+    amount_cents INTEGER CHECK(amount_cents IS NULL OR amount_cents >= 0),
+    currency TEXT,
+    occurred_date TEXT,
+    occurred_time TEXT,
+    time_zone_id TEXT,
+    transaction_type TEXT NOT NULL,
+    suggested_category_id TEXT,
+    suggested_category_label TEXT,
+    account_or_payment_method TEXT,
+    installment_index INTEGER,
+    installment_total INTEGER,
+    note TEXT,
+    confidence REAL CHECK(confidence IS NULL OR (confidence >= 0.0 AND confidence <= 1.0)),
+    source_image_hash TEXT,
+    supporting_text TEXT,
+    warnings TEXT,
+    low_confidence_fields TEXT,
+    selected INTEGER NOT NULL DEFAULT 1 CHECK(selected IN (0, 1)),
+    status TEXT NOT NULL,
+    duplicate_candidate_id TEXT,
+    duplicate_expense_id TEXT,
+    linked_expense_id TEXT,
+    provider_id TEXT,
+    model_id TEXT,
+    retry_count INTEGER NOT NULL DEFAULT 0 CHECK(retry_count >= 0),
+    error_type TEXT,
+    error_message TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    CHECK(source_type IN ('IMAGE', 'ANDROID_NOTIFICATION')),
+    CHECK(transaction_type IN ('EXPENSE', 'INCOME', 'TRANSFER', 'REFUND', 'UNKNOWN')),
+    CHECK(status IN ('RECEIVED', 'PENDING_ANALYSIS', 'ANALYZING', 'NEEDS_REVIEW', 'APPROVED', 'REJECTED', 'FAILED', 'CANCELLED', 'IGNORED')),
+    FOREIGN KEY (import_session_id) REFERENCES transaction_import_session(id) ON DELETE CASCADE,
+    FOREIGN KEY (suggested_category_id) REFERENCES category(id) ON DELETE SET NULL,
+    FOREIGN KEY (duplicate_candidate_id) REFERENCES transaction_candidate(id) ON DELETE SET NULL,
+    FOREIGN KEY (duplicate_expense_id) REFERENCES expense(id) ON DELETE SET NULL,
+    FOREIGN KEY (linked_expense_id) REFERENCES expense(id) ON DELETE SET NULL
+);
+
+CREATE TABLE notification_ingestion (
+    id TEXT NOT NULL PRIMARY KEY,
+    source_package TEXT NOT NULL,
+    notification_id INTEGER,
+    notification_key TEXT NOT NULL,
+    notification_fingerprint TEXT NOT NULL UNIQUE,
+    posted_at TEXT NOT NULL,
+    title TEXT,
+    main_text TEXT,
+    expanded_text TEXT,
+    channel_id TEXT,
+    category TEXT,
+    normalized_text TEXT,
+    processing_status TEXT NOT NULL,
+    candidate_id TEXT,
+    retry_count INTEGER NOT NULL DEFAULT 0 CHECK(retry_count >= 0),
+    error_type TEXT,
+    error_message TEXT,
+    content_redacted_at TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    CHECK(processing_status IN ('RECEIVED', 'FILTERED', 'QUEUED', 'PROCESSING', 'COMPLETED', 'FAILED', 'CANCELLED')),
+    FOREIGN KEY (candidate_id) REFERENCES transaction_candidate(id) ON DELETE SET NULL
+);
+
+CREATE TABLE monitored_application (
+    package_name TEXT NOT NULL PRIMARY KEY,
+    display_name TEXT NOT NULL,
+    policy TEXT NOT NULL,
+    enabled INTEGER NOT NULL DEFAULT 1 CHECK(enabled IN (0, 1)),
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    CHECK(policy IN ('ALLOW', 'BLOCK'))
+);
+
+CREATE TABLE expense_origin (
+    id TEXT NOT NULL PRIMARY KEY,
+    expense_id TEXT NOT NULL UNIQUE,
+    candidate_id TEXT UNIQUE,
+    import_session_id TEXT,
+    source_type TEXT NOT NULL,
+    source_image_hash TEXT,
+    notification_fingerprint TEXT,
+    transaction_fingerprint TEXT NOT NULL,
+    idempotency_key TEXT NOT NULL UNIQUE,
+    confidence REAL CHECK(confidence IS NULL OR (confidence >= 0.0 AND confidence <= 1.0)),
+    provider_id TEXT,
+    model_id TEXT,
+    created_at TEXT NOT NULL,
+    CHECK(source_type IN ('IMAGE', 'ANDROID_NOTIFICATION')),
+    FOREIGN KEY (expense_id) REFERENCES expense(id) ON DELETE CASCADE,
+    FOREIGN KEY (candidate_id) REFERENCES transaction_candidate(id) ON DELETE SET NULL,
+    FOREIGN KEY (import_session_id) REFERENCES transaction_import_session(id) ON DELETE SET NULL
+);
+
+CREATE INDEX idx_advisor_provider_active
+ON advisor_provider_profile(active, updated_at DESC);
+
+CREATE INDEX idx_advisor_conversation_activity
+ON advisor_conversation(archived, updated_at DESC, id);
+
+CREATE INDEX idx_advisor_message_order
+ON advisor_message(conversation_id, sequence_number);
+
+CREATE UNIQUE INDEX idx_advisor_message_exchange_role
+ON advisor_message(conversation_id, exchange_id, role)
+WHERE exchange_id IS NOT NULL AND role IN ('USER', 'ASSISTANT');
+
+CREATE INDEX idx_advisor_message_incomplete
+ON advisor_message(conversation_id, status)
+WHERE status IN ('PENDING', 'STREAMING');
+
+CREATE INDEX idx_import_session_activity
+ON transaction_import_session(status, updated_at DESC);
+
+CREATE INDEX idx_import_source_hash
+ON transaction_import_source(source_hash);
+
+CREATE INDEX idx_candidate_import_order
+ON transaction_candidate(import_session_id, row_order, id);
+
+CREATE INDEX idx_candidate_review_queue
+ON transaction_candidate(status, updated_at DESC);
+
+CREATE INDEX idx_candidate_fingerprint
+ON transaction_candidate(transaction_fingerprint);
+
+CREATE INDEX idx_notification_source_key
+ON notification_ingestion(source_package, notification_key, posted_at DESC);
+
+CREATE INDEX idx_notification_processing
+ON notification_ingestion(processing_status, updated_at);
+
+CREATE INDEX idx_notification_candidate
+ON notification_ingestion(candidate_id);
+
+CREATE INDEX idx_expense_origin_fingerprint
+ON expense_origin(transaction_fingerprint);

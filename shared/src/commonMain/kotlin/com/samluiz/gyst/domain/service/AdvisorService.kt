@@ -1,8 +1,11 @@
 package com.samluiz.gyst.domain.service
 
+import com.samluiz.gyst.domain.model.AdvisorConversation
+import com.samluiz.gyst.domain.model.ConversationMessageStatus
 import com.samluiz.gyst.domain.model.ForecastMonth
 import com.samluiz.gyst.domain.model.MonthComparison
 import com.samluiz.gyst.domain.model.MonthlySummary
+import com.samluiz.gyst.domain.model.ProviderProfile
 import com.samluiz.gyst.domain.model.YearMonth
 import kotlinx.coroutines.flow.StateFlow
 
@@ -10,6 +13,9 @@ data class AdvisorConfig(
     val baseUrl: String = "https://api.openai.com/v1",
     val model: String = "",
     val apiFormat: AdvisorApiFormat = AdvisorApiFormat.CHAT_COMPLETIONS,
+    val providerId: String = "custom",
+    val profileId: String = DEFAULT_ADVISOR_PROFILE_ID,
+    val capabilities: Set<AiCapability> = setOf(AiCapability.TEXT_GENERATION),
 )
 
 enum class AdvisorApiFormat { CHAT_COMPLETIONS, RESPONSES }
@@ -22,6 +28,14 @@ enum class AdvisorFailureCode {
     API_KEY_REQUIRED,
     NOT_CONFIGURED,
     SECURE_STORAGE,
+    AUTHENTICATION,
+    RATE_LIMITED,
+    NETWORK,
+    TIMEOUT,
+    INVALID_RESPONSE,
+    UNSUPPORTED_CAPABILITY,
+    CANCELLED,
+    DATABASE,
     REQUEST_FAILED,
 }
 
@@ -34,6 +48,12 @@ data class AdvisorMessage(
     val role: AdvisorRole,
     val content: String,
     val id: String = "",
+    val sequence: Long = 0,
+    val status: ConversationMessageStatus = ConversationMessageStatus.COMPLETED,
+    val providerId: String? = null,
+    val modelId: String? = null,
+    val errorCode: String? = null,
+    val retryCount: Long = 0,
 )
 
 data class AdvisorCategoryContext(
@@ -82,6 +102,11 @@ data class AdvisorState(
     val isLoading: Boolean = false,
     val overview: AdvisorMessage? = null,
     val messages: List<AdvisorMessage> = emptyList(),
+    val conversations: List<AdvisorConversation> = emptyList(),
+    val selectedConversationId: String? = null,
+    val providerProfiles: List<ProviderProfile> = emptyList(),
+    val configuredProfileIds: Set<String> = emptySet(),
+    val isConversationListLoading: Boolean = false,
     val lastError: AdvisorFailure? = null,
 ) {
     val isConfigured: Boolean
@@ -94,7 +119,25 @@ interface AdvisorSecretStore {
     suspend fun writeApiKey(apiKey: String)
 
     suspend fun clearApiKey()
+
+    suspend fun readApiKey(profileId: String): String? = if (profileId == DEFAULT_ADVISOR_PROFILE_ID) readApiKey() else null
+
+    suspend fun writeApiKey(
+        profileId: String,
+        apiKey: String,
+    ) {
+        check(profileId == DEFAULT_ADVISOR_PROFILE_ID) { "This secure store does not support provider profiles." }
+        writeApiKey(apiKey)
+    }
+
+    suspend fun clearApiKey(profileId: String) {
+        if (profileId == DEFAULT_ADVISOR_PROFILE_ID) clearApiKey()
+    }
+
+    suspend fun clearAllApiKeys() = clearApiKey()
 }
+
+const val DEFAULT_ADVISOR_PROFILE_ID = "default"
 
 interface AdvisorService {
     val state: StateFlow<AdvisorState>
@@ -119,6 +162,28 @@ interface AdvisorService {
     )
 
     suspend fun clearConversation()
+
+    suspend fun createConversation(title: String? = null): String
+
+    suspend fun selectConversation(conversationId: String)
+
+    suspend fun renameConversation(
+        conversationId: String,
+        title: String,
+    )
+
+    suspend fun deleteConversation(conversationId: String)
+
+    suspend fun retryMessage(
+        messageId: String,
+        context: AdvisorFinancialContext,
+        languageCode: String,
+    )
+
+    suspend fun cancelResponse()
+
+    /** Cancels every provider request before the local database file is replaced. */
+    suspend fun suspendForDatabaseReplacement() = cancelResponse()
 
     suspend fun disconnect()
 }

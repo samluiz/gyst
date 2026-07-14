@@ -37,7 +37,13 @@ class AdvisorOverviewTest {
                 ) {
                     install(ContentNegotiation) { json(Json) }
                 }
-            val service = OpenAiCompatibleAdvisorService(OverviewMemorySettings(), OverviewMemorySecretStore(), client)
+            val service =
+                OpenAiCompatibleAdvisorService(
+                    OverviewMemorySettings(),
+                    OverviewMemorySecretStore(),
+                    client,
+                    conversationRepository = FakeConversationRepository(),
+                )
             service.configure(
                 AdvisorConfig("https://example.com/v1", "advisor-model", AdvisorApiFormat.CHAT_COMPLETIONS),
                 "secret",
@@ -58,19 +64,31 @@ class AdvisorOverviewTest {
     fun forcedRefreshBypassesTheOverviewCache() =
         runTest {
             var requests = 0
+            val conversations = FakeConversationRepository()
             val client =
                 HttpClient(
                     MockEngine {
                         requests++
                         respond(
-                            content = """{"choices":[{"message":{"content":"Updated overview."}}]}""",
+                            content =
+                                if (requests == 1) {
+                                    """{"choices":[{"message":{"content":"Original overview."}}]}"""
+                                } else {
+                                    """{"choices":[{"message":{"content":"Updated overview."}}]}"""
+                                },
                             headers = headersOf(HttpHeaders.ContentType, ContentType.Application.Json.toString()),
                         )
                     },
                 ) {
                     install(ContentNegotiation) { json(Json) }
                 }
-            val service = OpenAiCompatibleAdvisorService(OverviewMemorySettings(), OverviewMemorySecretStore(), client)
+            val service =
+                OpenAiCompatibleAdvisorService(
+                    OverviewMemorySettings(),
+                    OverviewMemorySecretStore(),
+                    client,
+                    conversationRepository = conversations,
+                )
             service.configure(
                 AdvisorConfig("https://example.com/v1", "advisor-model", AdvisorApiFormat.CHAT_COMPLETIONS),
                 "secret",
@@ -80,6 +98,8 @@ class AdvisorOverviewTest {
             service.ensureOverview(context(), "en", force = true)
 
             assertEquals(2, requests)
+            assertEquals("Updated overview.", service.state.value.overview?.content)
+            assertEquals(1, conversations.messages(checkNotNull(service.state.value.selectedConversationId)).size)
         }
 
     private fun context() =

@@ -10,6 +10,7 @@ internal class StoreSyncActions(
     private val appUpdateService: AppUpdateService,
     private val databaseRuntimeController: DatabaseRuntimeController,
     private val seedDataInitializer: SeedDataInitializer,
+    private val persistentRuntimeCoordinator: PersistentRuntimeCoordinator,
     private val setState: (MainState) -> Unit,
     private val getState: () -> MainState,
     private val refresh: suspend (Boolean) -> Unit,
@@ -23,8 +24,11 @@ internal class StoreSyncActions(
     suspend fun startUpdate() = appUpdateService.startUpdate()
 
     suspend fun syncGoogleDrive(applyHotReloadIfNeeded: suspend (String, Boolean) -> Boolean) {
-        googleAuthSyncService.syncNow()
-        applyHotReloadIfNeeded("sync", false)
+        persistentRuntimeCoordinator.whileDatabaseIsQuiesced {
+            googleAuthSyncService.syncNow()
+            applyHotReloadIfNeeded("sync", false)
+        }
+        seedDataInitializer.ensureSeedData()
         refresh(false)
     }
 
@@ -35,8 +39,10 @@ internal class StoreSyncActions(
     ) {
         setState(getState().copy(isLoading = true, blockingMessage = blockingRestoreToken))
         try {
-            googleAuthSyncService.restoreFromCloud(overwriteLocal)
-            applyHotReloadIfNeeded("restore", true)
+            persistentRuntimeCoordinator.whileDatabaseIsQuiesced {
+                googleAuthSyncService.restoreFromCloud(overwriteLocal)
+                applyHotReloadIfNeeded("restore", false)
+            }
             seedDataInitializer.ensureSeedData()
             refresh(false)
         } finally {

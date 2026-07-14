@@ -28,7 +28,7 @@ val resolvedVersionName: String =
     normalizeSemVerOrNull(providers.gradleProperty("app.version").orNull)
         ?: normalizeSemVerOrNull(System.getenv("APP_VERSION"))
         ?: normalizeSemVerOrNull(System.getenv("GITHUB_REF_NAME"))
-        ?: "1.0.0"
+        ?: "1.5.0"
 val resolvedVersionCode: Int = providers.gradleProperty("app.versionCode").orNull?.toIntOrNull()
     ?: parseVersionCode(resolvedVersionName)
 

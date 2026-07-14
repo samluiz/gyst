@@ -42,8 +42,10 @@ import platform.Security.kSecValueData
 @OptIn(ExperimentalForeignApi::class, BetaInteropApi::class)
 @Suppress("UNCHECKED_CAST")
 internal class IosAdvisorSecretStore : AdvisorSecretStore {
-    override suspend fun readApiKey(): String? =
-        withBaseQuery { query ->
+    override suspend fun readApiKey(): String? = readApiKey(DEFAULT_PROFILE_SLOT)
+
+    override suspend fun readApiKey(profileId: String): String? =
+        withBaseQuery(profileId) { query ->
             CFDictionarySetValue(query, kSecReturnData, kCFBooleanTrue)
             memScoped {
                 val result = alloc<CFTypeRefVar>()
@@ -59,12 +61,17 @@ internal class IosAdvisorSecretStore : AdvisorSecretStore {
             }
         }
 
-    override suspend fun writeApiKey(apiKey: String) {
+    override suspend fun writeApiKey(apiKey: String) = writeApiKey(DEFAULT_PROFILE_SLOT, apiKey)
+
+    override suspend fun writeApiKey(
+        profileId: String,
+        apiKey: String,
+    ) {
         val bytes = apiKey.encodeToByteArray()
         val data = bytes.usePinned { CFDataCreate(null, it.addressOf(0).reinterpret<UByteVar>(), bytes.size.toLong()) }
         checkNotNull(data) { "Unable to encode API key." }
         try {
-            withBaseQuery { query ->
+            withBaseQuery(profileId) { query ->
                 val attributes = newDictionary()
                 try {
                     CFDictionarySetValue(attributes, kSecValueData, data)
@@ -86,17 +93,22 @@ internal class IosAdvisorSecretStore : AdvisorSecretStore {
         }
     }
 
-    override suspend fun clearApiKey() {
-        withBaseQuery { query ->
+    override suspend fun clearApiKey() = clearApiKey(DEFAULT_PROFILE_SLOT)
+
+    override suspend fun clearApiKey(profileId: String) {
+        withBaseQuery(profileId) { query ->
             val status = SecItemDelete(query)
             check(status == errSecSuccess || status == errSecItemNotFound) { "Keychain could not remove the API key ($status)." }
         }
     }
 
-    private inline fun <T> withBaseQuery(block: (CFMutableDictionaryRef) -> T): T {
+    private inline fun <T> withBaseQuery(
+        profileId: String,
+        block: (CFMutableDictionaryRef) -> T,
+    ): T {
         val query = newDictionary()
         val service = CFStringCreateWithCString(null, SERVICE, kCFStringEncodingUTF8)
-        val account = CFStringCreateWithCString(null, ACCOUNT, kCFStringEncodingUTF8)
+        val account = CFStringCreateWithCString(null, account(profileId), kCFStringEncodingUTF8)
         checkNotNull(service)
         checkNotNull(account)
         return try {
@@ -123,6 +135,8 @@ internal class IosAdvisorSecretStore : AdvisorSecretStore {
 
     private companion object {
         const val SERVICE = "com.samluiz.gyst.advisor"
-        const val ACCOUNT = "api-key"
+        const val DEFAULT_PROFILE_SLOT = "default"
+
+        fun account(profileId: String): String = if (profileId == DEFAULT_PROFILE_SLOT) "api-key" else "api-key:$profileId"
     }
 }
