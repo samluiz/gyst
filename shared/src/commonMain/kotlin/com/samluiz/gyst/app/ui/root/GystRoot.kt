@@ -1,6 +1,8 @@
 package com.samluiz.gyst.app
 
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -57,6 +59,8 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -74,6 +78,12 @@ import org.jetbrains.compose.resources.Font
 import org.koin.compose.koinInject
 
 private enum class Screen { RESUMO, DESPESAS, PLANEJAMENTO, PERFIL }
+
+private data class NavDestination(
+    val screen: Screen,
+    val label: String,
+    val icon: ImageVector,
+)
 
 @Composable
 fun GystRoot() {
@@ -410,6 +420,14 @@ private fun BottomNav(
     onSelect: (Screen) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val destinations =
+        listOf(
+            NavDestination(Screen.RESUMO, s.tabSummary, Icons.Default.AutoGraph),
+            NavDestination(Screen.DESPESAS, s.tabExpenses, Icons.AutoMirrored.Filled.ReceiptLong),
+            NavDestination(Screen.PLANEJAMENTO, s.tabPlanning, Icons.Default.Savings),
+            NavDestination(Screen.PERFIL, s.profile, Icons.Default.Person),
+        )
+
     NavigationBar(
         modifier =
             modifier
@@ -425,34 +443,65 @@ private fun BottomNav(
         containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.88f),
         tonalElevation = 0.dp,
     ) {
-        NavigationBarItem(
-            selected = selected == Screen.RESUMO,
-            onClick = { onSelect(Screen.RESUMO) },
-            colors = NavigationBarItemDefaults.colors(indicatorColor = Color.Transparent),
-            icon = { Icon(Icons.Default.AutoGraph, contentDescription = null, modifier = Modifier.size(18.dp)) },
-            label = { Text(s.tabSummary, style = MaterialTheme.typography.labelMedium, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-        )
-        NavigationBarItem(
-            selected = selected == Screen.DESPESAS,
-            onClick = { onSelect(Screen.DESPESAS) },
-            colors = NavigationBarItemDefaults.colors(indicatorColor = Color.Transparent),
-            icon = { Icon(Icons.AutoMirrored.Filled.ReceiptLong, contentDescription = null, modifier = Modifier.size(18.dp)) },
-            label = { Text(s.tabExpenses, style = MaterialTheme.typography.labelMedium, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-        )
-        NavigationBarItem(
-            selected = selected == Screen.PLANEJAMENTO,
-            onClick = { onSelect(Screen.PLANEJAMENTO) },
-            colors = NavigationBarItemDefaults.colors(indicatorColor = Color.Transparent),
-            icon = { Icon(Icons.Default.Savings, contentDescription = null, modifier = Modifier.size(18.dp)) },
-            label = { Text(s.tabPlanning, style = MaterialTheme.typography.labelMedium, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-        )
-        NavigationBarItem(
-            selected = selected == Screen.PERFIL,
-            onClick = { onSelect(Screen.PERFIL) },
-            colors = NavigationBarItemDefaults.colors(indicatorColor = Color.Transparent),
-            icon = { Icon(Icons.Default.Person, contentDescription = null, modifier = Modifier.size(18.dp)) },
-            label = { Text(s.profile, style = MaterialTheme.typography.labelMedium, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-        )
+        destinations.forEach { destination ->
+            val isSelected = selected == destination.screen
+            val activeProgress by
+                animateFloatAsState(
+                    targetValue = if (isSelected) 1f else 0f,
+                    animationSpec = tween(durationMillis = 220),
+                    label = "nav-active-${destination.screen}",
+                )
+            NavigationBarItem(
+                selected = isSelected,
+                onClick = { onSelect(destination.screen) },
+                colors =
+                    NavigationBarItemDefaults.colors(
+                        selectedIconColor = MaterialTheme.colorScheme.primary,
+                        selectedTextColor = MaterialTheme.colorScheme.onSurface,
+                        indicatorColor = Color.Transparent,
+                        unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.72f),
+                        unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.78f),
+                    ),
+                icon = {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Box(
+                            modifier =
+                                Modifier
+                                    .width(28.dp)
+                                    .height(3.dp)
+                                    .graphicsLayer {
+                                        scaleX = activeProgress
+                                        alpha = activeProgress
+                                    }.background(
+                                        MaterialTheme.colorScheme.primary,
+                                        RoundedCornerShape(3.dp),
+                                    ),
+                        )
+                        Icon(
+                            destination.icon,
+                            contentDescription = null,
+                            modifier =
+                                Modifier
+                                    .padding(top = 6.dp)
+                                    .size(18.dp)
+                                    .graphicsLayer {
+                                        scaleX = 1f + (activeProgress * 0.08f)
+                                        scaleY = 1f + (activeProgress * 0.08f)
+                                    },
+                        )
+                    }
+                },
+                label = {
+                    Text(
+                        destination.label,
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                },
+            )
+        }
     }
 }
 

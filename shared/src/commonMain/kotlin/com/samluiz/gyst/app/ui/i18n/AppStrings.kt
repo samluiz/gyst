@@ -161,6 +161,7 @@ data class AppStrings(
     val advisorCustomProvider: String,
     val advisorAdvancedSettings: String,
     val advisorPresetHint: String,
+    val advisorGetApiKey: String,
     val advisorInvalidBaseUrl: String,
     val advisorModelRequired: String,
     val advisorKeyRequired: String,
@@ -314,7 +315,9 @@ private val ptBr =
         advisorResponses = "Responses",
         advisorSaveConnection = "Salvar conexão",
         advisorReplaceKeyHint = "Nova chave (deixe vazio para manter)",
-        advisorPrivacy = "A chave fica neste dispositivo. Somente totais e projeções agregadas são enviados.",
+        advisorPrivacy =
+            "A chave fica neste dispositivo. Totais, categorias, compromissos e descrições exibidos ao consultor " +
+                "são enviados ao provedor escolhido.",
         advisorAsk = "Pergunte sobre seu futuro financeiro",
         advisorEmptyBriefing = "Adicione sua renda e despesas para construir sua perspectiva.",
         advisorClear = "Limpar conversa",
@@ -327,6 +330,7 @@ private val ptBr =
         advisorCustomProvider = "Personalizado",
         advisorAdvancedSettings = "Ajustes avançados",
         advisorPresetHint = "Escolha um provedor e informe somente sua chave.",
+        advisorGetApiKey = "Obter chave de API em {provider}",
         advisorInvalidBaseUrl = "Use HTTPS ou um provedor local em localhost.",
         advisorModelRequired = "Informe o modelo.",
         advisorKeyRequired = "Informe a chave do provedor selecionado.",
@@ -480,7 +484,9 @@ private val enUs =
         advisorResponses = "Responses",
         advisorSaveConnection = "Save connection",
         advisorReplaceKeyHint = "New key (leave blank to keep it)",
-        advisorPrivacy = "The key stays on this device. Only aggregated totals and forecasts are sent.",
+        advisorPrivacy =
+            "The key stays on this device. Totals, categories, commitments, and descriptions shown to the advisor " +
+                "are sent to your chosen provider.",
         advisorAsk = "Ask about your financial future",
         advisorEmptyBriefing = "Add income and expenses to build your outlook.",
         advisorClear = "Clear conversation",
@@ -493,6 +499,7 @@ private val enUs =
         advisorCustomProvider = "Custom",
         advisorAdvancedSettings = "Advanced settings",
         advisorPresetHint = "Choose a provider, then enter only your key.",
+        advisorGetApiKey = "Get an API key from {provider}",
         advisorInvalidBaseUrl = "Use HTTPS or a local provider on localhost.",
         advisorModelRequired = "Enter the model.",
         advisorKeyRequired = "Enter the key for the selected provider.",

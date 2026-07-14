@@ -169,16 +169,15 @@ internal class StoreExpenseActions(
     suspend fun deleteExpense(expenseId: String) {
         val current = expenseRepository.getById(expenseId)
         if (current?.recurrenceSeriesId != null) {
-            recurringExpenseRepository.endBefore(
-                current.recurrenceSeriesId,
-                YearMonth.fromDate(current.occurredAt).plusMonths(-1),
-            )
-            expenseRepository.deleteFutureRecurringBySeries(
-                fromDateExclusive = current.occurredAt,
+            expenseRepository.deleteRecurringFromOccurrence(
+                expenseId = current.id,
+                occurrenceDate = current.occurredAt,
                 seriesId = current.recurrenceSeriesId,
+                lastActiveMonth = YearMonth.fromDate(current.occurredAt).plusMonths(-1),
             )
+        } else {
+            deleteExpenseUseCase(expenseId)
         }
-        deleteExpenseUseCase(expenseId)
         refresh(false)
     }
 

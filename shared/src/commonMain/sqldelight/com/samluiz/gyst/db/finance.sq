@@ -241,6 +241,22 @@ WHERE occurred_at > :fromDate
   AND schedule_item_id IS NULL
   AND recurrence_series_id = :seriesId;
 
+deleteRecurringFromOccurrence {
+DELETE FROM expense
+WHERE recurrence_series_id = :seriesId
+  AND schedule_item_id IS NULL
+  AND (id = :expenseId OR occurred_at > :occurrenceDate);
+
+DELETE FROM recurring_expense_series
+WHERE id = :seriesId
+  AND start_year_month > :lastActiveMonth;
+
+UPDATE recurring_expense_series
+SET active = 0, end_year_month = :lastActiveMonth
+WHERE id = :seriesId
+  AND start_year_month <= :lastActiveMonth;
+}
+
 updateFutureRecurringBySeries:
 UPDATE expense
 SET category_id = :newCategoryId,

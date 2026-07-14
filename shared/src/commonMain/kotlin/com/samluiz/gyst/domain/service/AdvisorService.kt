@@ -44,6 +44,21 @@ data class AdvisorCategoryContext(
     val remainingCents: Long,
 )
 
+data class AdvisorExpenseContext(
+    val description: String,
+    val category: String,
+    val occurredAt: String,
+    val amountCents: Long,
+    val recurring: Boolean,
+)
+
+data class AdvisorCommitmentContext(
+    val name: String,
+    val kind: String,
+    val monthlyCents: Long,
+    val endMonth: YearMonth?,
+)
+
 data class AdvisorFinancialContext(
     val month: YearMonth,
     val summary: MonthlySummary?,
@@ -53,6 +68,8 @@ data class AdvisorFinancialContext(
     val nextFreedCashMonth: YearMonth?,
     val nextFreedCashCents: Long,
     val categoryBreakdown: List<AdvisorCategoryContext>,
+    val largestExpenses: List<AdvisorExpenseContext> = emptyList(),
+    val commitments: List<AdvisorCommitmentContext> = emptyList(),
     val previousMonthComparison: MonthComparison?,
     val recordedMonthCount: Int,
 )

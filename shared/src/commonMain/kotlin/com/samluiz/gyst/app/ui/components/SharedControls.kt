@@ -44,6 +44,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -125,6 +126,7 @@ internal fun CompactInput(
     label: String,
     modifier: Modifier = Modifier,
     isError: Boolean = false,
+    keyboardType: KeyboardType = KeyboardType.Text,
 ) {
     var focused by remember { mutableStateOf(false) }
     var fieldValue by remember(value) {
@@ -140,7 +142,7 @@ internal fun CompactInput(
                 onValueChange(it.text)
             },
             singleLine = true,
-            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
+            keyboardOptions = KeyboardOptions(keyboardType = keyboardType, imeAction = ImeAction.Next),
             textStyle = MaterialTheme.typography.bodyMedium.copy(color = MaterialTheme.colorScheme.onSurface),
             modifier =
                 Modifier
@@ -212,7 +214,7 @@ internal fun CompactMoneyInput(
                 fieldValue = TextFieldValue(text = formatted, selection = TextRange(formatted.length))
             },
             singleLine = true,
-            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Next),
             textStyle = MaterialTheme.typography.bodyMedium.copy(color = MaterialTheme.colorScheme.onSurface),
             modifier =
                 Modifier

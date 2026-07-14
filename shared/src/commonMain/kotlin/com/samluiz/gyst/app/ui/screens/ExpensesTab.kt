@@ -70,7 +70,9 @@ internal fun DespesasTab(
     val visibleSubscriptions = remember(state.subscriptions) { state.subscriptions.filter { it.active } }
     val visibleInstallments =
         remember(state.currentMonth, state.installments) {
-            state.installments.filter { it.startYearMonth <= state.currentMonth && it.endYearMonth >= state.currentMonth }
+            state.installments.filter {
+                it.active && it.startYearMonth <= state.currentMonth && it.endYearMonth >= state.currentMonth
+            }
         }
     val sections = remember { ExpensesSection.entries.toList() }
     val initialPage = selectedSectionIndex.coerceIn(0, sections.lastIndex)
@@ -152,7 +154,7 @@ internal fun DespesasTab(
                                         }
                                     }
                                 } else {
-                                    itemsIndexed(state.expenses) { index, item ->
+                                    itemsIndexed(state.expenses, key = { _, item -> item.id }) { index, item ->
                                         Row(
                                             modifier = Modifier.fillMaxWidth(),
                                             horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -250,7 +252,7 @@ internal fun DespesasTab(
                                         }
                                     }
                                 } else {
-                                    itemsIndexed(subscriptionItems) { index, item ->
+                                    itemsIndexed(subscriptionItems, key = { _, item -> item.id }) { index, item ->
                                         Row(
                                             modifier = Modifier.fillMaxWidth(),
                                             horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -341,7 +343,7 @@ internal fun DespesasTab(
                                         }
                                     }
                                 } else {
-                                    itemsIndexed(installmentItems) { index, item ->
+                                    itemsIndexed(installmentItems, key = { _, item -> item.id }) { index, item ->
                                         Row(
                                             modifier = Modifier.fillMaxWidth(),
                                             horizontalArrangement = Arrangement.spacedBy(8.dp),

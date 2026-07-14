@@ -2,7 +2,9 @@ package com.samluiz.gyst.presentation
 
 import com.samluiz.gyst.domain.service.AdvisorApiFormat
 import com.samluiz.gyst.domain.service.AdvisorCategoryContext
+import com.samluiz.gyst.domain.service.AdvisorCommitmentContext
 import com.samluiz.gyst.domain.service.AdvisorConfig
+import com.samluiz.gyst.domain.service.AdvisorExpenseContext
 import com.samluiz.gyst.domain.service.AdvisorService
 
 internal class StoreAdvisorActions(
@@ -18,20 +20,26 @@ internal class StoreAdvisorActions(
         advisorService.configure(AdvisorConfig(baseUrl, model, apiFormat), apiKey)
     }
 
-    suspend fun ask(prompt: String) {
+    suspend fun ask(
+        prompt: String,
+        languageCode: String,
+    ) {
         val state = getState()
         advisorService.ask(
             prompt = prompt,
             context = state.toAdvisorFinancialContext(),
-            languageCode = state.language,
+            languageCode = languageCode,
         )
     }
 
-    suspend fun ensureOverview(force: Boolean) {
+    suspend fun ensureOverview(
+        force: Boolean,
+        languageCode: String,
+    ) {
         val state = getState()
         advisorService.ensureOverview(
             context = state.toAdvisorFinancialContext(),
-            languageCode = state.language,
+            languageCode = languageCode,
             force = force,
         )
     }
@@ -42,10 +50,14 @@ internal class StoreAdvisorActions(
 }
 
 internal fun MainState.toAdvisorFinancialContext(): com.samluiz.gyst.domain.service.AdvisorFinancialContext {
-    val nextEnd =
+    val activeInstallments =
         installments
             .filter { it.active && it.endYearMonth >= currentMonth }
-            .minByOrNull { it.endYearMonth.year * 100 + it.endYearMonth.month }
+    val nextFreedCashMonth = activeInstallments.minOfOrNull { it.endYearMonth }
+    val nextFreedCashCents =
+        activeInstallments
+            .filter { it.endYearMonth == nextFreedCashMonth }
+            .sumOf { it.monthlyAmountCents }
     val categoriesById = categories.associateBy { it.id }
     val categoryBreakdown =
         summary
@@ -62,15 +74,48 @@ internal fun MainState.toAdvisorFinancialContext(): com.samluiz.gyst.domain.serv
                 )
             }
             .sortedByDescending { it.spentCents }
+    val largestExpenses =
+        expenses
+            .sortedByDescending { it.amountCents }
+            .take(8)
+            .map { expense ->
+                val categoryName = categoriesById[expense.categoryId]?.name.orEmpty().ifBlank { "Uncategorized" }
+                AdvisorExpenseContext(
+                    description = expense.note ?: expense.merchant ?: categoryName,
+                    category = categoryName,
+                    occurredAt = expense.occurredAt.toString(),
+                    amountCents = expense.amountCents,
+                    recurring = expense.recurrenceType == com.samluiz.gyst.domain.model.RecurrenceType.MONTHLY,
+                )
+            }
+    val commitmentDetails =
+        subscriptions.filter { it.active }.map {
+            AdvisorCommitmentContext(
+                name = it.name,
+                kind = "SUBSCRIPTION",
+                monthlyCents = it.amountCents,
+                endMonth = null,
+            )
+        } +
+            installments.filter { it.active }.map {
+                AdvisorCommitmentContext(
+                    name = it.name,
+                    kind = "INSTALLMENT",
+                    monthlyCents = it.monthlyAmountCents,
+                    endMonth = it.endYearMonth,
+                )
+            }
     return com.samluiz.gyst.domain.service.AdvisorFinancialContext(
         month = currentMonth,
         summary = summary,
         forecast = forecast,
         activeSubscriptions = subscriptions.count { it.active },
         activeInstallments = installments.count { it.active },
-        nextFreedCashMonth = nextEnd?.endYearMonth,
-        nextFreedCashCents = nextEnd?.monthlyAmountCents ?: 0L,
+        nextFreedCashMonth = nextFreedCashMonth,
+        nextFreedCashCents = nextFreedCashCents,
         categoryBreakdown = categoryBreakdown,
+        largestExpenses = largestExpenses,
+        commitments = commitmentDetails.sortedByDescending { it.monthlyCents }.take(16),
         previousMonthComparison = comparison,
         recordedMonthCount = monthHistory.size,
     )

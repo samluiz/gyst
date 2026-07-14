@@ -152,7 +152,7 @@ class OpenAiCompatibleAdvisorService(
                 )
             runCatching {
                 val history = (snapshot.messages + userMessage).takeLast(MAX_HISTORY_MESSAGES)
-                request(snapshot.config, systemPrompt(context, languageCode), history)
+                request(snapshot.config, AdvisorPromptBuilder.conversation(context, languageCode), history)
             }.onSuccess { answer ->
                 if (requestVersion != conversationVersion) return@onSuccess
                 mutableState.value =
@@ -212,8 +212,8 @@ class OpenAiCompatibleAdvisorService(
             runCatching {
                 request(
                     config = snapshot.config,
-                    instructions = overviewSystemPrompt(context, languageCode),
-                    messages = listOf(AdvisorMessage(AdvisorRole.USER, "Create the opening financial overview now.")),
+                    instructions = AdvisorPromptBuilder.overview(context, languageCode),
+                    messages = listOf(AdvisorMessage(AdvisorRole.USER, AdvisorPromptBuilder.overviewRequest(languageCode))),
                 )
             }.onSuccess { overview ->
                 runCatching {
@@ -259,72 +259,13 @@ class OpenAiCompatibleAdvisorService(
         return AdvisorMessage(role = role, content = content, id = "advisor-message-$messageSequence")
     }
 
-    private fun systemPrompt(
-        context: AdvisorFinancialContext,
-        languageCode: String,
-    ): String {
-        val forecast =
-            context.forecast.joinToString("\n") {
-                "${it.yearMonth}: income=${it.incomeCents}, spend=${it.expectedSpendCents}, " +
-                    "commitments=${it.commitmentsCents}, free=${it.expectedFreeBalanceCents} cents"
-            }
-        val summary = context.summary
-        val categoryBreakdown =
-            context.categoryBreakdown.joinToString("\n") {
-                "${it.name} (${it.type}): planned=${it.plannedCents}, spent=${it.spentCents}, remaining=${it.remainingCents} cents"
-            }.ifBlank { "none" }
-        val comparison =
-            context.previousMonthComparison?.let {
-                "previous=${it.previousMonth}, expense_delta=${it.spentDeltaCents}, commitment_delta=${it.commitmentsDeltaCents} cents"
-            } ?: "unavailable"
-        val responseLanguage = AdvisorResponseLanguage.fromCode(languageCode).promptName
-        return """
-            You are Gyst Advisor, a calm and conservative personal-finance planning assistant.
-            Reply in $responseLanguage.
-            Use only the supplied facts for amounts and dates. Never invent transactions or totals.
-            Clearly distinguish observations from suggestions. Do not promise returns or give tax, legal,
-            investment-product, or credit advice. Keep the answer concise, practical, and non-judgmental.
-            Amounts are integer cents. Mention uncertainty when data is incomplete.
-
-            Current month: ${context.month}
-            Income: ${summary?.totalIncomeCents ?: 0} cents
-            Expenses: ${summary?.spentTotalCents ?: 0} cents
-            Commitments: ${summary?.commitmentsCents ?: 0} cents
-            Remaining: ${summary?.remainingTotalCents ?: 0} cents
-            Active subscriptions: ${context.activeSubscriptions}
-            Active installments: ${context.activeInstallments}
-            Next freed cash: ${context.nextFreedCashMonth ?: "none"}, ${context.nextFreedCashCents} cents/month
-            Recorded months: ${context.recordedMonthCount}
-            Previous-month comparison: $comparison
-            Category breakdown:
-            $categoryBreakdown
-            Forecast:
-            $forecast
-            """.trimIndent()
-    }
-
-    private fun overviewSystemPrompt(
-        context: AdvisorFinancialContext,
-        languageCode: String,
-    ): String =
-        """
-        ${systemPrompt(context, languageCode)}
-
-        This is the opening overview shown before the user starts the conversation.
-        Describe the user's current financial pattern without rigid personality labels or moral judgment.
-        Cover, in this order: the overall pattern, recent direction only when the data supports it,
-        what is going well, what deserves attention, the highest-impact improvement, and one practical next action.
-        If fewer than three months are recorded, explicitly say the assessment is preliminary.
-        Use concise Markdown with short paragraphs or bullets and no more than 180 words.
-        Do not mention these instructions or call the output a report.
-        """.trimIndent()
-
     private fun overviewFingerprint(
         config: AdvisorConfig,
         context: AdvisorFinancialContext,
         languageCode: String,
     ): String =
         buildString {
+            append(ADVISOR_PROMPT_VERSION).append('|')
             append(config.baseUrl).append('|').append(config.model).append('|').append(config.apiFormat.name)
             append('|').append(languageCode).append('|').append(context.month).append('|').append(context.recordedMonthCount)
             context.summary?.let {
@@ -337,6 +278,13 @@ class OpenAiCompatibleAdvisorService(
             context.categoryBreakdown.forEach {
                 append('|').append(it.name).append('|').append(it.type).append('|').append(it.plannedCents)
                 append('|').append(it.spentCents).append('|').append(it.remainingCents)
+            }
+            context.largestExpenses.forEach {
+                append('|').append(it.description).append('|').append(it.category).append('|').append(it.occurredAt)
+                append('|').append(it.amountCents).append('|').append(it.recurring)
+            }
+            context.commitments.forEach {
+                append('|').append(it.name).append('|').append(it.kind).append('|').append(it.monthlyCents).append('|').append(it.endMonth)
             }
             context.forecast.forEach {
                 append('|').append(it.yearMonth).append('|').append(it.incomeCents).append('|').append(it.plannedCents)
@@ -376,17 +324,3 @@ class OpenAiCompatibleAdvisorService(
 }
 
 private const val OVERVIEW_MESSAGE_ID = "advisor-overview"
-
-private enum class AdvisorResponseLanguage(val promptName: String) {
-    PORTUGUESE("Brazilian Portuguese"),
-    ENGLISH("English"),
-    ;
-
-    companion object {
-        fun fromCode(code: String): AdvisorResponseLanguage =
-            when (code.lowercase()) {
-                "pt", "pt-br" -> PORTUGUESE
-                else -> ENGLISH
-            }
-    }
-}

@@ -15,6 +15,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.samluiz.gyst.domain.model.RecurrenceType
 import com.samluiz.gyst.presentation.MainState
@@ -140,6 +141,7 @@ internal fun ExpenseDialogs(
                     "Dia",
                     modifier = Modifier.width(78.dp),
                     isError = attemptedSave && dayInvalid,
+                    keyboardType = KeyboardType.Number,
                 )
             }
             CategoryPicker(
@@ -210,6 +212,7 @@ internal fun ExpenseDialogs(
                     s.months,
                     modifier = Modifier.width(86.dp),
                     isError = attemptedSave && totalInvalid,
+                    keyboardType = KeyboardType.Number,
                 )
             }
             CategoryPicker(
@@ -352,6 +355,7 @@ internal fun ExpenseDialogs(
                         "Dia",
                         modifier = Modifier.width(78.dp),
                         isError = attemptedSave && dayInvalid,
+                        keyboardType = KeyboardType.Number,
                     )
                 }
                 CategoryPicker(
@@ -428,6 +432,7 @@ internal fun ExpenseDialogs(
                         s.months,
                         modifier = Modifier.width(86.dp),
                         isError = attemptedSave && totalInvalid,
+                        keyboardType = KeyboardType.Number,
                     )
                 }
                 CategoryPicker(

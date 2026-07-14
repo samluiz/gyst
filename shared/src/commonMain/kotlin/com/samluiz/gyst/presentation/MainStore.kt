@@ -225,12 +225,18 @@ class MainStore(
         scope.launchSafely(serialized = false) { advisorActions.configure(baseUrl, model, apiFormat, apiKey) }
     }
 
-    fun askAdvisor(prompt: String) {
-        scope.launchSafely(serialized = false) { advisorActions.ask(prompt) }
+    fun askAdvisor(
+        prompt: String,
+        languageCode: String,
+    ) {
+        scope.launchSafely(serialized = false) { advisorActions.ask(prompt, languageCode) }
     }
 
-    fun ensureAdvisorOverview(force: Boolean = false) {
-        scope.launchSafely(serialized = false) { advisorActions.ensureOverview(force) }
+    fun ensureAdvisorOverview(
+        force: Boolean = false,
+        languageCode: String,
+    ) {
+        scope.launchSafely(serialized = false) { advisorActions.ensureOverview(force, languageCode) }
     }
 
     fun clearAdvisorConversation() {

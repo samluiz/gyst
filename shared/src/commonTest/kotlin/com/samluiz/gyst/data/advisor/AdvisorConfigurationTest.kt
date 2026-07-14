@@ -42,7 +42,9 @@ class AdvisorConfigurationTest {
             val config = requireNotNull(preset.config)
             check(config.baseUrl.isNotBlank())
             check(config.model.isNotBlank())
+            check(requireNotNull(preset.apiKeyUrl).startsWith("https://"))
         }
+        assertEquals(null, AdvisorProviderPreset.entries.single { it.id == AdvisorProviderPresetId.CUSTOM }.apiKeyUrl)
     }
 
     @Test

@@ -15,6 +15,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.Settings
@@ -32,6 +33,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
@@ -51,8 +53,8 @@ internal fun AdvisorPlanningContent(
     s: AppStrings,
     state: MainState,
     onConfigure: (String, String, AdvisorApiFormat, String?) -> Unit,
-    onAsk: (String) -> Unit,
-    onEnsureOverview: (Boolean) -> Unit,
+    onAsk: (String, String) -> Unit,
+    onEnsureOverview: (Boolean, String) -> Unit,
     onClear: () -> Unit,
     onDisconnect: () -> Unit,
 ) {
@@ -63,7 +65,7 @@ internal fun AdvisorPlanningContent(
     val context = remember(state) { state.toAdvisorFinancialContext() }
 
     androidx.compose.runtime.LaunchedEffect(advisor.isConfigured, advisor.config, context, state.language) {
-        if (advisor.isConfigured) onEnsureOverview(false)
+        if (advisor.isConfigured) onEnsureOverview(false, s.languageCode)
     }
 
     androidx.compose.runtime.LaunchedEffect(advisor.config, advisor.hasApiKey, pendingConfig) {
@@ -159,7 +161,7 @@ internal fun AdvisorPlanningContent(
             IconButton(
                 enabled = advisor.isConfigured && prompt.isNotBlank() && !advisor.isLoading && !advisor.isOverviewLoading,
                 onClick = {
-                    onAsk(prompt)
+                    onAsk(prompt, s.languageCode)
                     prompt = ""
                 },
             ) {
@@ -185,7 +187,7 @@ internal fun AdvisorPlanningContent(
             onDisconnect = onDisconnect,
             onRefreshOverview = {
                 showConfig = false
-                onEnsureOverview(true)
+                onEnsureOverview(true, s.languageCode)
             },
             onSave = { baseUrl, model, apiFormat, key ->
                 pendingConfig = AdvisorConfig(baseUrl.trim().trimEnd('/'), model.trim(), apiFormat)
@@ -227,6 +229,8 @@ private fun AdvisorConfigDialog(
     var apiFormat by remember { mutableStateOf(initialConfig.apiFormat) }
     var showAdvanced by remember { mutableStateOf(initialPreset.id == AdvisorProviderPresetId.CUSTOM) }
     var apiKey by remember { mutableStateOf("") }
+    val selectedPreset = AdvisorProviderPreset.entries.first { it.id == selectedPresetId }
+    val uriHandler = LocalUriHandler.current
     val normalizedDraft = AdvisorConfig(baseUrl.trim().trimEnd('/'), model.trim(), apiFormat)
     val canReuseExistingKey = hasKey && normalizedDraft == currentConfig
     AppDialog(s.advisorSetupTitle, onClose, s.close, onDismissRequest = onClose, maxWidth = 460.dp) {
@@ -250,6 +254,27 @@ private fun AdvisorConfigDialog(
             }
         }
         Text(s.advisorPresetHint, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        selectedPreset.apiKeyUrl?.let { apiKeyUrl ->
+            Row(
+                modifier =
+                    Modifier.clickable { uriHandler.openUri(apiKeyUrl) }
+                        .padding(vertical = 2.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    s.advisorGetApiKey.replace("{provider}", selectedPreset.displayName),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.secondary,
+                )
+                Icon(
+                    Icons.AutoMirrored.Filled.OpenInNew,
+                    contentDescription = null,
+                    modifier = Modifier.size(14.dp),
+                    tint = MaterialTheme.colorScheme.secondary,
+                )
+            }
+        }
         if (selectedPresetId != AdvisorProviderPresetId.CUSTOM) {
             Text(
                 s.advisorAdvancedSettings,

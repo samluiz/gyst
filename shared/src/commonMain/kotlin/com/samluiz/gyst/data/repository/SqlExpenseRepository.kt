@@ -144,6 +144,20 @@ class SqlExpenseRepository(private val holder: DatabaseHolder) : ExpenseReposito
         )
     }
 
+    override suspend fun deleteRecurringFromOccurrence(
+        expenseId: String,
+        occurrenceDate: LocalDate,
+        seriesId: String,
+        lastActiveMonth: YearMonth,
+    ) {
+        q.deleteRecurringFromOccurrence(
+            seriesId = seriesId,
+            expenseId = expenseId,
+            occurrenceDate = occurrenceDate.toString(),
+            lastActiveMonth = lastActiveMonth.toString(),
+        )
+    }
+
     override suspend fun updateFutureRecurringBySeries(
         fromDateExclusive: LocalDate,
         seriesId: String,

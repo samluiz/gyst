@@ -440,6 +440,19 @@ private class FakeExpenseRepository : ExpenseRepository {
         }
     }
 
+    override suspend fun deleteRecurringFromOccurrence(
+        expenseId: String,
+        occurrenceDate: LocalDate,
+        seriesId: String,
+        lastActiveMonth: YearMonth,
+    ) {
+        expenses.removeAll {
+            it.recurrenceSeriesId == seriesId &&
+                it.scheduleItemId == null &&
+                (it.id == expenseId || it.occurredAt > occurrenceDate)
+        }
+    }
+
     override suspend fun updateFutureRecurringBySeries(
         fromDateExclusive: LocalDate,
         seriesId: String,

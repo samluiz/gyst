@@ -6,6 +6,7 @@ data class AdvisorProviderPreset(
     val id: AdvisorProviderPresetId,
     val displayName: String,
     val config: AdvisorConfig?,
+    val apiKeyUrl: String?,
 ) {
     companion object {
         val entries =
@@ -14,6 +15,7 @@ data class AdvisorProviderPreset(
                     id = AdvisorProviderPresetId.OPENAI,
                     displayName = "OpenAI",
                     config = AdvisorConfig("https://api.openai.com/v1", "gpt-5.4-mini", AdvisorApiFormat.RESPONSES),
+                    apiKeyUrl = "https://platform.openai.com/api-keys",
                 ),
                 AdvisorProviderPreset(
                     id = AdvisorProviderPresetId.OPENCODE_ZEN,
@@ -24,6 +26,7 @@ data class AdvisorProviderPreset(
                             "deepseek-v4-flash-free",
                             AdvisorApiFormat.CHAT_COMPLETIONS,
                         ),
+                    apiKeyUrl = "https://opencode.ai/zen",
                 ),
                 AdvisorProviderPreset(
                     id = AdvisorProviderPresetId.GEMINI,
@@ -34,21 +37,25 @@ data class AdvisorProviderPreset(
                             "gemini-3.5-flash",
                             AdvisorApiFormat.CHAT_COMPLETIONS,
                         ),
+                    apiKeyUrl = "https://aistudio.google.com/app/apikey",
                 ),
                 AdvisorProviderPreset(
                     id = AdvisorProviderPresetId.OPENROUTER,
                     displayName = "OpenRouter",
                     config = AdvisorConfig("https://openrouter.ai/api/v1", "openrouter/free", AdvisorApiFormat.CHAT_COMPLETIONS),
+                    apiKeyUrl = "https://openrouter.ai/settings/keys",
                 ),
                 AdvisorProviderPreset(
                     id = AdvisorProviderPresetId.GROQ,
                     displayName = "Groq",
                     config = AdvisorConfig("https://api.groq.com/openai/v1", "openai/gpt-oss-120b", AdvisorApiFormat.CHAT_COMPLETIONS),
+                    apiKeyUrl = "https://console.groq.com/keys",
                 ),
                 AdvisorProviderPreset(
                     id = AdvisorProviderPresetId.CUSTOM,
                     displayName = "Custom",
                     config = null,
+                    apiKeyUrl = null,
                 ),
             )
 

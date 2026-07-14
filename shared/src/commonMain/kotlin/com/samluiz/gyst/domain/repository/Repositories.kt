@@ -57,6 +57,13 @@ interface ExpenseRepository {
         seriesId: String,
     )
 
+    suspend fun deleteRecurringFromOccurrence(
+        expenseId: String,
+        occurrenceDate: LocalDate,
+        seriesId: String,
+        lastActiveMonth: YearMonth,
+    )
+
     suspend fun updateFutureRecurringBySeries(
         fromDateExclusive: LocalDate,
         seriesId: String,
