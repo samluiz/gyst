@@ -29,6 +29,7 @@ class StoreAdvisorActionsTest {
             assertEquals(listOf("conversation-1" to "House plan"), service.renamed)
             assertEquals(listOf("conversation-2"), service.deletedIds)
             assertTrue(service.cancelled)
+            assertEquals(0, service.overviewRequests)
         }
 
     @Test
@@ -56,6 +57,7 @@ private class RecordingAdvisorService : AdvisorService {
     var retriedMessageId: String? = null
     var retryLanguage: String? = null
     var retryContext: AdvisorFinancialContext? = null
+    var overviewRequests = 0
 
     override suspend fun initialize() = Unit
 
@@ -74,7 +76,9 @@ private class RecordingAdvisorService : AdvisorService {
         context: AdvisorFinancialContext,
         languageCode: String,
         force: Boolean,
-    ) = Unit
+    ) {
+        overviewRequests += 1
+    }
 
     override suspend fun clearConversation() = Unit
 

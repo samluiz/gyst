@@ -23,7 +23,10 @@ class SqlCandidateApprovalRepository(
             database.transactionWithResult {
                 val prepared = prepare(database.financeQueries, command, expectedImportSessionId = null)
                 when (prepared) {
-                    is ApprovalPreparation.Ready -> apply(database.financeQueries, prepared)
+                    is ApprovalPreparation.Ready -> {
+                        ensureCommandCategory(database.financeQueries, command)
+                        apply(database.financeQueries, prepared)
+                    }
                     is ApprovalPreparation.Result -> prepared.value
                 }
             }
@@ -77,6 +80,7 @@ class SqlCandidateApprovalRepository(
                     }
                 }
 
+                commands.forEach { ensureCommandCategory(queries, it) }
                 queries.updateTransactionImportSessionStatus(
                     status = ImportSessionStatus.IMPORTING.name,
                     selectedCount = commands.size.toLong(),
@@ -110,6 +114,30 @@ class SqlCandidateApprovalRepository(
         }
     }
 
+    private fun ensureCommandCategory(
+        queries: FinanceQueries,
+        command: ApproveExpenseCandidateCommand,
+    ) {
+        val category = command.categoryToCreate ?: return
+        queries.upsertCategory(
+            name = category.name,
+            type = category.type.name,
+            color = category.color,
+            icon = category.icon,
+            id = category.id,
+            name_ = category.name,
+            type_ = category.type.name,
+            color_ = category.color,
+            icon_ = category.icon,
+            id_ = category.id,
+        )
+        queries.assignTransactionCandidateCategory(
+            categoryId = category.id,
+            updatedAt = command.createdAt.toString(),
+            candidateId = command.candidateId,
+        )
+    }
+
     private fun prepare(
         queries: FinanceQueries,
         command: ApproveExpenseCandidateCommand,
@@ -120,7 +148,16 @@ class SqlCandidateApprovalRepository(
                 ?: return ApprovalPreparation.Result(
                     CandidateApprovalResult.Rejected(CandidateApprovalFailure.CANDIDATE_NOT_FOUND),
                 )
-        val candidate = candidateRow.toDomain()
+        val storedCandidate = candidateRow.toDomain()
+        val candidate =
+            if (storedCandidate.suggestedCategoryId == null && command.categoryToCreate != null) {
+                storedCandidate.copy(
+                    suggestedCategoryId = command.categoryToCreate.id,
+                    suggestedCategoryLabel = null,
+                )
+            } else {
+                storedCandidate
+            }
         if (expectedImportSessionId != null && candidate.importSessionId != expectedImportSessionId) {
             return ApprovalPreparation.Result(
                 CandidateApprovalResult.Rejected(CandidateApprovalFailure.IMPORT_SESSION_MISMATCH),
@@ -154,7 +191,8 @@ class SqlCandidateApprovalRepository(
                 CandidateApprovalResult.Rejected(CandidateApprovalFailure.INVALID_CANDIDATE),
             )
         }
-        if (queries.selectAllCategories().executeAsList().none { it.id == candidate.suggestedCategoryId }) {
+        val categoryWillExist = command.categoryToCreate?.id == candidate.suggestedCategoryId
+        if (!categoryWillExist && queries.selectAllCategories().executeAsList().none { it.id == candidate.suggestedCategoryId }) {
             return ApprovalPreparation.Result(
                 CandidateApprovalResult.Rejected(CandidateApprovalFailure.INVALID_CANDIDATE),
             )

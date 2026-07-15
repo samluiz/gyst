@@ -143,6 +143,7 @@ interface ImageImportService {
         providerProfileId: String,
         localeTag: String,
         defaultCurrency: String,
+        fallbackCategoryName: String = "Other",
     )
 
     suspend fun retryAnalysis()

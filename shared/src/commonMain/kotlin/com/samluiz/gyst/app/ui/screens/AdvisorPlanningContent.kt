@@ -68,7 +68,6 @@ import com.samluiz.gyst.domain.service.AdvisorApiFormat
 import com.samluiz.gyst.domain.service.AdvisorConfig
 import com.samluiz.gyst.domain.service.AdvisorFailure
 import com.samluiz.gyst.domain.service.AdvisorFailureCode
-import com.samluiz.gyst.domain.service.AdvisorFinancialContext
 import com.samluiz.gyst.domain.service.AdvisorMessage
 import com.samluiz.gyst.domain.service.AdvisorProviderPreset
 import com.samluiz.gyst.domain.service.AdvisorProviderPresetId
@@ -76,7 +75,6 @@ import com.samluiz.gyst.domain.service.AdvisorRole
 import com.samluiz.gyst.domain.service.AdvisorState
 import com.samluiz.gyst.domain.service.AiCapability
 import com.samluiz.gyst.presentation.MainState
-import com.samluiz.gyst.presentation.toAdvisorFinancialContext
 
 @Composable
 internal fun AdvisorPlanningContent(
@@ -100,19 +98,6 @@ internal fun AdvisorPlanningContent(
     var pendingConfig by remember { mutableStateOf<AdvisorConfig?>(null) }
     var pendingOpenId by remember { mutableStateOf<String?>(null) }
     var createBaseline by remember { mutableStateOf<Pair<String?, Int>?>(null) }
-    val context = remember(state) { state.toAdvisorFinancialContext() }
-
-    androidx.compose.runtime.LaunchedEffect(
-        advisor.isConfigured,
-        advisor.config,
-        advisor.selectedConversationId,
-        context,
-        state.language,
-        showConversationList,
-    ) {
-        if (advisor.isConfigured && !showConversationList) onEnsureOverview(false, s.languageCode)
-    }
-
     androidx.compose.runtime.LaunchedEffect(advisor.config, advisor.hasApiKey, pendingConfig) {
         if (advisor.hasApiKey && pendingConfig == advisor.config) {
             pendingConfig = null
@@ -162,7 +147,6 @@ internal fun AdvisorPlanningContent(
         AdvisorConversationContent(
             s = s,
             advisor = advisor,
-            context = context,
             prompt = prompt,
             onPromptChange = { prompt = it },
             onShowConversations = { showConversationList = true },
@@ -204,7 +188,6 @@ internal fun AdvisorPlanningContent(
 private fun AdvisorConversationContent(
     s: AppStrings,
     advisor: AdvisorState,
-    context: AdvisorFinancialContext,
     prompt: String,
     onPromptChange: (String) -> Unit,
     onShowConversations: () -> Unit,
@@ -246,13 +229,14 @@ private fun AdvisorConversationContent(
             modifier = Modifier.weight(1f).fillMaxWidth(),
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
-            item(key = "advisor-welcome") {
-                AdvisorOpeningMessage(
-                    s = s,
-                    advisor = advisor,
-                    context = context,
-                    onRefresh = onRefreshOverview,
-                )
+            if (advisor.isOverviewLoading || advisor.overview != null) {
+                item(key = "advisor-welcome") {
+                    AdvisorOpeningMessage(
+                        s = s,
+                        advisor = advisor,
+                        onRefresh = onRefreshOverview,
+                    )
+                }
             }
             if (advisor.messages.isEmpty() && !advisor.isLoading) {
                 item(key = "advisor-suggestions") {
@@ -378,7 +362,6 @@ private fun AdvisorConversationHeader(
 private fun AdvisorOpeningMessage(
     s: AppStrings,
     advisor: AdvisorState,
-    context: AdvisorFinancialContext,
     onRefresh: () -> Unit,
 ) {
     val overview = advisor.overview
@@ -410,14 +393,7 @@ private fun AdvisorOpeningMessage(
                 )
             }
         }
-        else -> {
-            AdvisorMessageBubble(
-                message = AdvisorMessage(role = AdvisorRole.ADVISOR, content = deterministicBriefing(context, s)),
-                s = s,
-                onRetry = onRefresh,
-                showRetryForFailure = false,
-            )
-        }
+        else -> Unit
     }
 }
 
@@ -1057,14 +1033,4 @@ private fun AdvisorMessageProgress(label: String) {
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
-}
-
-private fun deterministicBriefing(
-    context: AdvisorFinancialContext,
-    s: AppStrings,
-): String {
-    val tightest = context.forecast.minByOrNull { it.expectedFreeBalanceCents } ?: return s.advisorEmptyBriefing
-    return s.advisorTightestBriefing
-        .replace("{month}", formatYearMonthHuman(tightest.yearMonth, s.languageCode))
-        .replace("{amount}", formatBrl(tightest.expectedFreeBalanceCents))
 }

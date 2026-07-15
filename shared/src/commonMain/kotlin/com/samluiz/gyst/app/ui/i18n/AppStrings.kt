@@ -130,6 +130,12 @@ interface ImageImportStringValues {
     val imageImportDeleteRow: String
     val imageImportEditRow: String
     val imageImportSaveRow: String
+    val imageImportMoreDetails: String
+    val imageImportHideDetails: String
+    val imageImportFallbackCategory: String
+    val imageImportWarningDefaultCategory: String
+    val imageImportPickerExpanded: String
+    val imageImportPickerCollapsed: String
     val imageImportBulkEdit: String
     val imageImportApplyCategory: String
     val imageImportApplyPayment: String
@@ -245,6 +251,12 @@ data class ImageImportStrings(
     override val imageImportDeleteRow: String,
     override val imageImportEditRow: String,
     override val imageImportSaveRow: String,
+    override val imageImportMoreDetails: String,
+    override val imageImportHideDetails: String,
+    override val imageImportFallbackCategory: String,
+    override val imageImportWarningDefaultCategory: String,
+    override val imageImportPickerExpanded: String,
+    override val imageImportPickerCollapsed: String,
     override val imageImportBulkEdit: String,
     override val imageImportApplyCategory: String,
     override val imageImportApplyPayment: String,
@@ -324,6 +336,7 @@ data class ImageImportStrings(
 @Immutable
 data class AppStrings(
     val languageCode: String,
+    val localeTag: String,
     val tabSummary: String,
     val tabExpenses: String,
     val tabPlanning: String,
@@ -522,6 +535,7 @@ data class AppStrings(
 private val ptBr =
     AppStrings(
         languageCode = "pt",
+        localeTag = "pt-BR",
         tabSummary = "Resumo",
         tabExpenses = "Despesas",
         tabPlanning = "Planejamento",
@@ -718,8 +732,8 @@ private val ptBr =
         imageImportStrings =
             ImageImportStrings(
                 imageImportEntry = "Importar por imagens",
-                imageImportTitle = "Importar transações",
-                imageImportSubtitle = "Imagens viram um rascunho editável — nada entra sem sua confirmação.",
+                imageImportTitle = "Importar despesas",
+                imageImportSubtitle = "Revise o que foi identificado e confirme quando estiver tudo certo.",
                 imageImportBack = "Voltar para despesas",
                 imageImportSelectImages = "Escolher imagens",
                 imageImportTakePhoto = "Tirar foto",
@@ -764,6 +778,12 @@ private val ptBr =
                 imageImportDeleteRow = "Excluir linha",
                 imageImportEditRow = "Editar linha",
                 imageImportSaveRow = "Salvar alterações",
+                imageImportMoreDetails = "Mais detalhes",
+                imageImportHideDetails = "Ocultar detalhes",
+                imageImportFallbackCategory = "Outros",
+                imageImportWarningDefaultCategory = "Categoria definida como Outros — altere se necessário.",
+                imageImportPickerExpanded = "Lista aberta",
+                imageImportPickerCollapsed = "Lista fechada",
                 imageImportBulkEdit = "Aplicar às selecionadas",
                 imageImportApplyCategory = "Categoria em massa",
                 imageImportApplyPayment = "Pagamento em massa",
@@ -789,7 +809,7 @@ private val ptBr =
                 imageImportConfidence = "Confiança: {value}%",
                 imageImportLowConfidence = "Baixa confiança — confira os campos destacados",
                 imageImportLowConfidenceFields = "Confira: {fields}",
-                imageImportLowConfidenceFieldHint = "Valor extraído com baixa confiança — confira este campo.",
+                imageImportLowConfidenceFieldHint = "Confira este campo antes de importar.",
                 imageImportFieldDescription = "descrição",
                 imageImportFieldAmount = "valor",
                 imageImportFieldCurrency = "moeda",
@@ -939,6 +959,7 @@ private val ptBr =
 private val enUs =
     AppStrings(
         languageCode = "en",
+        localeTag = "en-US",
         tabSummary = "Summary",
         tabExpenses = "Expenses",
         tabPlanning = "Planning",
@@ -1135,8 +1156,8 @@ private val enUs =
         imageImportStrings =
             ImageImportStrings(
                 imageImportEntry = "Import from images",
-                imageImportTitle = "Import transactions",
-                imageImportSubtitle = "Images become an editable draft—nothing is added without your confirmation.",
+                imageImportTitle = "Import expenses",
+                imageImportSubtitle = "Review what was found, then confirm when everything looks right.",
                 imageImportBack = "Back to expenses",
                 imageImportSelectImages = "Choose images",
                 imageImportTakePhoto = "Take photo",
@@ -1181,6 +1202,12 @@ private val enUs =
                 imageImportDeleteRow = "Delete row",
                 imageImportEditRow = "Edit row",
                 imageImportSaveRow = "Save changes",
+                imageImportMoreDetails = "More details",
+                imageImportHideDetails = "Hide details",
+                imageImportFallbackCategory = "Other",
+                imageImportWarningDefaultCategory = "Category set to Other—change it if needed.",
+                imageImportPickerExpanded = "List expanded",
+                imageImportPickerCollapsed = "List collapsed",
                 imageImportBulkEdit = "Apply to selected",
                 imageImportApplyCategory = "Bulk category",
                 imageImportApplyPayment = "Bulk payment",
@@ -1206,7 +1233,7 @@ private val enUs =
                 imageImportConfidence = "Confidence: {value}%",
                 imageImportLowConfidence = "Low confidence—check the highlighted fields",
                 imageImportLowConfidenceFields = "Check: {fields}",
-                imageImportLowConfidenceFieldHint = "Low-confidence extracted value—check this field.",
+                imageImportLowConfidenceFieldHint = "Check this field before importing.",
                 imageImportFieldDescription = "description",
                 imageImportFieldAmount = "amount",
                 imageImportFieldCurrency = "currency",

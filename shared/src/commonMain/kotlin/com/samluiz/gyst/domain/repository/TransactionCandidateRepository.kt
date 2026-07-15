@@ -1,6 +1,7 @@
 package com.samluiz.gyst.domain.repository
 
 import com.samluiz.gyst.domain.model.CandidateStatus
+import com.samluiz.gyst.domain.model.Category
 import com.samluiz.gyst.domain.model.TransactionCandidate
 import kotlin.time.Instant
 
@@ -53,6 +54,7 @@ data class ApproveExpenseCandidateCommand(
     val expenseId: String,
     val originId: String,
     val createdAt: Instant,
+    val categoryToCreate: Category? = null,
 )
 
 enum class CandidateApprovalFailure {

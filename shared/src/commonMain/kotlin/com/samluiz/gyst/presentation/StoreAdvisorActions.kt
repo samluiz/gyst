@@ -1,5 +1,6 @@
 package com.samluiz.gyst.presentation
 
+import com.samluiz.gyst.domain.model.displayDescription
 import com.samluiz.gyst.domain.service.AdvisorCategoryContext
 import com.samluiz.gyst.domain.service.AdvisorCommitmentContext
 import com.samluiz.gyst.domain.service.AdvisorConfig
@@ -102,7 +103,7 @@ internal fun MainState.toAdvisorFinancialContext(): com.samluiz.gyst.domain.serv
             .map { expense ->
                 val categoryName = categoriesById[expense.categoryId]?.name.orEmpty().ifBlank { "Uncategorized" }
                 AdvisorExpenseContext(
-                    description = expense.note ?: expense.merchant ?: categoryName,
+                    description = expense.displayDescription() ?: categoryName,
                     category = categoryName,
                     occurredAt = expense.occurredAt.toString(),
                     amountCents = expense.amountCents,

@@ -40,6 +40,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.samluiz.gyst.domain.model.displayDescription
 import com.samluiz.gyst.presentation.MainState
 import kotlinx.coroutines.launch
 
@@ -184,7 +185,7 @@ internal fun DespesasTab(
                                         ) {
                                             Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
                                                 Text(
-                                                    item.note ?: s.noDescription,
+                                                    item.displayDescription() ?: s.noDescription,
                                                     style = MaterialTheme.typography.bodySmall,
                                                     maxLines = 1,
                                                     overflow = TextOverflow.Ellipsis,

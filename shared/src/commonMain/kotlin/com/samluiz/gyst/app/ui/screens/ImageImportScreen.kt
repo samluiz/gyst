@@ -10,12 +10,16 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -61,11 +65,15 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.samluiz.gyst.domain.model.CandidateIssueCode
@@ -96,6 +104,7 @@ internal fun ImageImportRoute(
     categories: List<Category>,
     onBack: () -> Unit,
     onConfigureProvider: () -> Unit,
+    onImportCompleted: () -> Unit,
 ) {
     val state by service.state.collectAsState()
     val scope = rememberCoroutineScope()
@@ -148,8 +157,9 @@ internal fun ImageImportRoute(
                 scope.launchImageImportAction {
                     service.analyze(
                         providerProfileId = profileId,
-                        localeTag = if (s.languageCode == "pt") "pt-BR" else "en-US",
+                        localeTag = s.localeTag,
                         defaultCurrency = "BRL",
+                        fallbackCategoryName = s.imageImportFallbackCategory,
                     )
                 }
             }
@@ -167,7 +177,15 @@ internal fun ImageImportRoute(
         onDeleteCandidate = { id -> scope.launchImageImportAction { service.deleteCandidate(id) } },
         onApplyCategory = { categoryId -> scope.launchImageImportAction { service.applyCategoryToSelected(categoryId) } },
         onApplyPayment = { payment -> scope.launchImageImportAction { service.applyPaymentMethodToSelected(payment) } },
-        onConfirm = { scope.launchImageImportAction { service.confirmImport() } },
+        onConfirm = {
+            scope.launchImageImportAction {
+                confirmImageImportAndRefresh(
+                    confirmImport = service::confirmImport,
+                    currentStage = { service.state.value.stage },
+                    onImportCompleted = onImportCompleted,
+                )
+            }
+        },
         onCancel = { showCancelConfirmation = true },
         onDone = {
             scope.launchImageImportAction(
@@ -216,6 +234,15 @@ internal fun ImageImportRoute(
     }
 }
 
+internal suspend fun confirmImageImportAndRefresh(
+    confirmImport: suspend () -> Unit,
+    currentStage: () -> ImageImportStage,
+    onImportCompleted: () -> Unit,
+) {
+    confirmImport()
+    if (currentStage() == ImageImportStage.COMPLETED) onImportCompleted()
+}
+
 private fun CoroutineScope.launchImageImportAction(
     onComplete: () -> Unit = {},
     action: suspend () -> Unit,
@@ -253,58 +280,61 @@ private fun ImageImportScreen(
     onCancel: () -> Unit,
     onDone: () -> Unit,
 ) {
-    Column(
-        modifier = Modifier.fillMaxSize(),
-        verticalArrangement = Arrangement.spacedBy(14.dp),
-    ) {
-        ImportHeader(s = s, onBack = onBack)
-        when (state.stage) {
-            ImageImportStage.ANALYZING ->
-                AnalyzingContent(
-                    s = s,
-                    progress = state.progress,
-                    failure = state.failure,
-                    onCancel = onCancelAnalysis,
-                    onRetry = onRetryAnalysis,
-                )
-            ImageImportStage.PREVIEW,
-            ImageImportStage.IMPORTING,
-            ->
-                PreviewContent(
-                    s = s,
-                    state = state,
-                    categories = categories,
-                    onSetSelected = onSetSelected,
-                    onSelectAll = onSelectAll,
-                    onUpdateCandidate = onUpdateCandidate,
-                    onAddCandidate = onAddCandidate,
-                    onDeleteCandidate = onDeleteCandidate,
-                    onApplyCategory = onApplyCategory,
-                    onApplyPayment = onApplyPayment,
-                    onConfirm = onConfirm,
-                    onRetryAnalysis = onRetryAnalysis,
-                    onCancel = onCancel,
-                )
-            ImageImportStage.COMPLETED -> CompletedContent(s = s, state = state, onDone = onDone)
-            ImageImportStage.IDLE,
-            ImageImportStage.SOURCES_SELECTED,
-            ImageImportStage.CANCELLED,
-            ->
-                SourceContent(
-                    s = s,
-                    state = state,
-                    selectedProviderId = selectedProviderId,
-                    privacyAccepted = privacyAccepted,
-                    onSelectedProviderChange = onSelectedProviderChange,
-                    onPrivacyAcceptedChange = onPrivacyAcceptedChange,
-                    onConfigureProvider = onConfigureProvider,
-                    onSelectImages = onSelectImages,
-                    onCaptureImage = onCaptureImage,
-                    onRemoveImage = onRemoveImage,
-                    onAnalyze = onAnalyze,
-                    onRetryAnalysis = onRetryAnalysis,
-                    onCancel = onCancel,
-                )
+    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
+        Column(
+            modifier = Modifier.widthIn(max = 620.dp).fillMaxWidth().fillMaxHeight(),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            ImportHeader(s = s, onBack = onBack)
+            when (state.stage) {
+                ImageImportStage.ANALYZING ->
+                    AnalyzingContent(
+                        s = s,
+                        progress = state.progress,
+                        failure = state.failure,
+                        onCancel = onCancelAnalysis,
+                        onRetry = onRetryAnalysis,
+                    )
+                ImageImportStage.PREVIEW,
+                ImageImportStage.IMPORTING,
+                ->
+                    PreviewContent(
+                        s = s,
+                        state = state,
+                        categories = categories,
+                        onSetSelected = onSetSelected,
+                        onSelectAll = onSelectAll,
+                        onUpdateCandidate = onUpdateCandidate,
+                        onAddCandidate = onAddCandidate,
+                        onDeleteCandidate = onDeleteCandidate,
+                        onApplyCategory = onApplyCategory,
+                        onApplyPayment = onApplyPayment,
+                        onConfirm = onConfirm,
+                        onRetryAnalysis = onRetryAnalysis,
+                        onCancel = onCancel,
+                    )
+                ImageImportStage.COMPLETED -> CompletedContent(s = s, state = state, onDone = onDone)
+                ImageImportStage.IDLE,
+                ImageImportStage.SOURCES_SELECTED,
+                ImageImportStage.CANCELLED,
+                ->
+                    SourceContent(
+                        s = s,
+                        state = state,
+                        selectedProviderId = selectedProviderId,
+                        privacyAccepted = privacyAccepted,
+                        onSelectedProviderChange = onSelectedProviderChange,
+                        onPrivacyAcceptedChange = onPrivacyAcceptedChange,
+                        onConfigureProvider = onConfigureProvider,
+                        onSelectImages = onSelectImages,
+                        onCaptureImage = onCaptureImage,
+                        onRemoveImage = onRemoveImage,
+                        onAnalyze = onAnalyze,
+                        onRetryAnalysis = onRetryAnalysis,
+                        onCancel = onCancel,
+                    )
+            }
         }
     }
 }
@@ -314,26 +344,29 @@ private fun ImportHeader(
     s: AppStrings,
     onBack: () -> Unit,
 ) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
-        verticalAlignment = Alignment.Top,
-    ) {
+    Box(modifier = Modifier.fillMaxWidth().heightIn(min = 54.dp)) {
         IconCompactButton(
+            modifier = Modifier.align(Alignment.CenterStart).sizeIn(minWidth = 48.dp, minHeight = 48.dp),
             onClick = onBack,
             icon = Icons.AutoMirrored.Filled.ArrowBack,
             contentDescription = s.imageImportBack,
         )
-        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Column(
+            modifier = Modifier.align(Alignment.Center).padding(horizontal = 52.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
             Text(
                 s.imageImportTitle,
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.SemiBold,
+                textAlign = TextAlign.Center,
             )
             Text(
                 s.imageImportSubtitle,
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
             )
         }
     }
@@ -547,6 +580,7 @@ private fun SourceRow(
             )
         }
         IconCompactButton(
+            modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp),
             onClick = onRemove,
             icon = Icons.Default.RemoveCircleOutline,
             contentDescription = s.imageImportRemoveImage,
@@ -724,16 +758,6 @@ private fun PreviewContent(
         modifier = Modifier.fillMaxSize(),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        item {
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(s.imageImportPreviewTitle, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                Text(
-                    s.imageImportPreviewBody,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-        }
         state.failure?.let { failure ->
             item { ImportFailureNotice(s = s, failure = failure) }
         }
@@ -743,29 +767,36 @@ private fun PreviewContent(
                 state = state,
                 categories = categories,
                 onSelectAll = onSelectAll,
-                onApplyCategory = onApplyCategory,
-                onApplyPayment = onApplyPayment,
+                onApplyCategory = {
+                    expandedCandidateId = null
+                    onApplyCategory(it)
+                },
+                onApplyPayment = {
+                    expandedCandidateId = null
+                    onApplyPayment(it)
+                },
                 onAddCandidate = {
                     onAddCandidate(blankCandidateEdit())
                 },
             )
         }
         items(state.candidates, key = { it.candidate.id }) { row ->
-            key(row.candidate.id, row.candidate.updatedAt) {
-                CandidateReviewRow(
-                    s = s,
-                    reviewable = row,
-                    categories = categories,
-                    expanded = expandedCandidateId == row.candidate.id,
-                    enabled = state.stage != ImageImportStage.IMPORTING,
-                    onExpandChange = {
-                        expandedCandidateId = if (expandedCandidateId == row.candidate.id) null else row.candidate.id
-                    },
-                    onSelectedChange = { selectedValue -> onSetSelected(row.candidate.id, selectedValue) },
-                    onSave = { edit -> onUpdateCandidate(row.candidate.id, edit) },
-                    onDelete = { onDeleteCandidate(row.candidate.id) },
-                )
-            }
+            CandidateReviewRow(
+                s = s,
+                reviewable = row,
+                categories = categories,
+                expanded = expandedCandidateId == row.candidate.id,
+                enabled = state.stage != ImageImportStage.IMPORTING,
+                onExpandChange = {
+                    expandedCandidateId = if (expandedCandidateId == row.candidate.id) null else row.candidate.id
+                },
+                onSelectedChange = { selectedValue -> onSetSelected(row.candidate.id, selectedValue) },
+                onSave = { edit ->
+                    onUpdateCandidate(row.candidate.id, edit)
+                    expandedCandidateId = null
+                },
+                onDelete = { onDeleteCandidate(row.candidate.id) },
+            )
         }
         item {
             Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
@@ -863,10 +894,10 @@ private fun ReviewToolbar(
     onAddCandidate: () -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Row(
+        FlowRow(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
+            verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             Text(
                 tokenized(
@@ -884,6 +915,7 @@ private fun ReviewToolbar(
                     onClick = { onSelectAll(state.selectedCandidates.size != state.candidates.size) },
                 )
                 IconCompactButton(
+                    modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp),
                     onClick = onAddCandidate,
                     icon = Icons.Default.Add,
                     contentDescription = s.imageImportAddRow,
@@ -897,12 +929,14 @@ private fun ReviewToolbar(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 OptionPicker(
+                    s = s,
                     label = s.imageImportApplyCategory,
                     currentLabel = s.imageImportApplyCategory,
                     options = categories.map { it.id to it.name },
                     onSelected = onApplyCategory,
                 )
                 OptionPicker(
+                    s = s,
                     label = s.imageImportApplyPayment,
                     currentLabel = s.imageImportApplyPayment,
                     options = paymentMethodOptions(s),
@@ -954,17 +988,17 @@ private fun CandidateReviewRow(
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Checkbox(
-                    checked = candidate.selected,
-                    onCheckedChange = onSelectedChange,
-                    enabled = enabled,
-                    modifier =
-                        Modifier
-                            .size(34.dp)
-                            .semantics {
+                Box(modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp), contentAlignment = Alignment.Center) {
+                    Checkbox(
+                        checked = candidate.selected,
+                        onCheckedChange = onSelectedChange,
+                        enabled = enabled,
+                        modifier =
+                            Modifier.semantics {
                                 contentDescription = candidateSelectionDescription(candidate, s)
                             },
-                )
+                    )
+                }
                 Column(
                     modifier = Modifier.weight(1f).clickable(enabled = enabled, onClick = onExpandChange),
                     verticalArrangement = Arrangement.spacedBy(1.dp),
@@ -997,6 +1031,7 @@ private fun CandidateReviewRow(
                     Icon(Icons.Default.WarningAmber, contentDescription = s.imageImportWarning, tint = MaterialTheme.colorScheme.tertiary)
                 }
                 IconCompactButton(
+                    modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp),
                     onClick = onExpandChange,
                     icon = if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
                     contentDescription = s.imageImportEditRow,
@@ -1043,14 +1078,6 @@ private fun CandidateSignals(
                     ),
                 color = MaterialTheme.colorScheme.tertiary,
             )
-        } else {
-            candidate.confidence?.let {
-                Text(
-                    tokenized(s.imageImportConfidence, "value" to (it * 100).toInt()),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
         }
         if (duplicate) {
             SignalLine(
@@ -1116,17 +1143,17 @@ private fun CandidateEditor(
     onSave: (TransactionCandidateEdit) -> Unit,
     onDelete: () -> Unit,
 ) {
-    var description by remember { mutableStateOf(candidate.description.orEmpty()) }
-    var centsDigits by remember { mutableStateOf(candidate.amountCents?.toString().orEmpty()) }
-    var currency by remember { mutableStateOf(candidate.currency.orEmpty()) }
-    var date by remember { mutableStateOf(candidate.occurredDate?.toString().orEmpty()) }
-    var time by remember { mutableStateOf(candidate.occurredTime.orEmpty()) }
-    var type by remember { mutableStateOf(candidate.transactionType) }
-    var categoryId by remember { mutableStateOf(candidate.suggestedCategoryId) }
-    var payment by remember { mutableStateOf(candidate.accountOrPaymentMethod) }
-    var installmentIndex by remember { mutableStateOf(candidate.installmentIndex?.toString().orEmpty()) }
-    var installmentTotal by remember { mutableStateOf(candidate.installmentTotal?.toString().orEmpty()) }
-    var note by remember { mutableStateOf(candidate.note.orEmpty()) }
+    val saveableInputs = arrayOf(candidate.id)
+    var description by rememberSaveable(*saveableInputs) { mutableStateOf(candidate.description.orEmpty()) }
+    var centsDigits by rememberSaveable(*saveableInputs) { mutableStateOf(candidate.amountCents?.toString().orEmpty()) }
+    var date by rememberSaveable(*saveableInputs) { mutableStateOf(candidate.occurredDate?.toString().orEmpty()) }
+    var time by rememberSaveable(*saveableInputs) { mutableStateOf(candidate.occurredTime.orEmpty()) }
+    var categoryId by rememberSaveable(*saveableInputs) { mutableStateOf(candidate.suggestedCategoryId) }
+    var payment by rememberSaveable(*saveableInputs) { mutableStateOf(candidate.accountOrPaymentMethod) }
+    var installmentIndex by rememberSaveable(*saveableInputs) { mutableStateOf(candidate.installmentIndex?.toString().orEmpty()) }
+    var installmentTotal by rememberSaveable(*saveableInputs) { mutableStateOf(candidate.installmentTotal?.toString().orEmpty()) }
+    var note by rememberSaveable(*saveableInputs) { mutableStateOf(candidate.note.orEmpty()) }
+    var showDetails by rememberSaveable(*saveableInputs) { mutableStateOf(false) }
 
     fun hasError(field: String): Boolean = issues.any { it.severity == CandidateIssueSeverity.ERROR && it.field == field }
 
@@ -1144,117 +1171,114 @@ private fun CandidateEditor(
             isWarning = hasLowConfidence("description"),
             supportingText = lowConfidenceHint("description"),
         )
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            CompactMoneyInput(
-                centsDigits = centsDigits,
-                onCentsDigitsChange = { centsDigits = it },
-                label = s.amount,
-                isError = hasError("amount"),
-                isWarning = hasLowConfidence("amount"),
-                supportingText = lowConfidenceHint("amount"),
-                modifier = Modifier.weight(1f),
-            )
-            CompactInput(
-                value = currency,
-                onValueChange = { currency = it },
-                label = s.imageImportCurrency,
-                isError = hasError("currency"),
-                isWarning = hasLowConfidence("currency"),
-                supportingText = lowConfidenceHint("currency"),
-                modifier = Modifier.width(86.dp),
-            )
-        }
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            CompactInput(
-                value = date,
-                onValueChange = { date = it },
-                label = s.imageImportDate,
-                isError = hasError("date"),
-                keyboardType = KeyboardType.Number,
-                isWarning = hasLowConfidence("date"),
-                supportingText = lowConfidenceHint("date"),
-                modifier = Modifier.weight(1f),
-            )
-            CompactInput(
-                value = time,
-                onValueChange = { time = it },
-                label = s.imageImportTime,
-                keyboardType = KeyboardType.Number,
-                modifier = Modifier.width(90.dp),
-            )
-        }
-        Text(s.imageImportTransactionType, style = MaterialTheme.typography.labelMedium)
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-            CandidateTransactionType.entries.forEach { option ->
-                AppToggleChip(
-                    selected = type == option,
-                    onClick = { type = option },
-                    text = candidateTypeLabel(option, s),
+        CompactMoneyInput(
+            centsDigits = centsDigits,
+            onCentsDigitsChange = { centsDigits = it },
+            label = s.amount,
+            isError = hasError("amount"),
+            isWarning = hasLowConfidence("amount"),
+            supportingText = lowConfidenceHint("amount"),
+            modifier = Modifier.fillMaxWidth(),
+        )
+        OptionPicker(
+            s = s,
+            label = s.category,
+            currentLabel =
+                categories.firstOrNull { it.id == categoryId }?.name
+                    ?: candidate.suggestedCategoryLabel?.takeIf(String::isNotBlank)?.let {
+                        tokenized(s.imageImportUnmatchedCategory, "category" to it)
+                    }
+                    ?: s.selectCategory,
+            options = categories.map { it.id to it.name },
+            isError = hasError("category"),
+            isWarning = hasLowConfidence("category"),
+            supportingText = lowConfidenceHint("category"),
+            modifier = Modifier.fillMaxWidth(),
+            onSelected = { categoryId = it },
+        )
+        CompactPrimaryButton(
+            text = if (showDetails) s.imageImportHideDetails else s.imageImportMoreDetails,
+            compact = true,
+            subtle = true,
+            leadingContent = {
+                Icon(
+                    if (showDetails) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                    contentDescription = null,
+                    modifier = Modifier.size(14.dp),
+                )
+            },
+            onClick = { showDetails = !showDetails },
+        )
+        AnimatedVisibility(visible = showDetails) {
+            Column(verticalArrangement = Arrangement.spacedBy(9.dp)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    CompactInput(
+                        value = date,
+                        onValueChange = { date = it },
+                        label = s.imageImportDate,
+                        isError = hasError("date"),
+                        keyboardType = KeyboardType.Number,
+                        isWarning = hasLowConfidence("date"),
+                        supportingText = lowConfidenceHint("date"),
+                        modifier = Modifier.weight(1f),
+                    )
+                    CompactInput(
+                        value = time,
+                        onValueChange = { time = it },
+                        label = s.imageImportTime,
+                        keyboardType = KeyboardType.Number,
+                        modifier = Modifier.width(90.dp),
+                    )
+                }
+                OptionPicker(
+                    s = s,
+                    label = s.imageImportPaymentMethod,
+                    currentLabel = paymentMethodLabel(payment, s),
+                    options = paymentMethodOptions(s),
+                    isError = hasError("paymentMethod"),
+                    isWarning = hasLowConfidence("paymentMethod") || hasLowConfidence("accountOrPaymentMethod"),
+                    supportingText =
+                        lowConfidenceHint("paymentMethod")
+                            ?: lowConfidenceHint("accountOrPaymentMethod"),
+                    modifier = Modifier.fillMaxWidth(),
+                    onSelected = { payment = it },
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    CompactInput(
+                        value = installmentIndex,
+                        onValueChange = { installmentIndex = it.filter(Char::isDigit) },
+                        label = s.imageImportInstallmentCurrent,
+                        keyboardType = KeyboardType.Number,
+                        isError = hasError("installment"),
+                        isWarning = hasLowConfidence("installmentIndex"),
+                        supportingText = lowConfidenceHint("installmentIndex"),
+                        modifier = Modifier.weight(1f),
+                    )
+                    CompactInput(
+                        value = installmentTotal,
+                        onValueChange = { installmentTotal = it.filter(Char::isDigit) },
+                        label = s.imageImportInstallmentTotal,
+                        keyboardType = KeyboardType.Number,
+                        isError = hasError("installment"),
+                        isWarning = hasLowConfidence("installmentTotal"),
+                        supportingText = lowConfidenceHint("installmentTotal"),
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+                CompactInput(
+                    value = note,
+                    onValueChange = { note = it },
+                    label = s.imageImportNote,
+                    isWarning = hasLowConfidence("note"),
+                    supportingText = lowConfidenceHint("note"),
                 )
             }
         }
-        if (hasLowConfidence("transactionType")) {
-            FieldReviewHint(s.imageImportLowConfidenceFieldHint)
-        }
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OptionPicker(
-                label = s.category,
-                currentLabel =
-                    categories.firstOrNull { it.id == categoryId }?.name
-                        ?: candidate.suggestedCategoryLabel?.takeIf(String::isNotBlank)?.let {
-                            tokenized(s.imageImportUnmatchedCategory, "category" to it)
-                        }
-                        ?: s.selectCategory,
-                options = categories.map { it.id to it.name },
-                isError = hasError("category"),
-                isWarning = hasLowConfidence("category"),
-                supportingText = lowConfidenceHint("category"),
-                modifier = Modifier.weight(1f),
-                onSelected = { categoryId = it },
-            )
-            OptionPicker(
-                label = s.imageImportPaymentMethod,
-                currentLabel = paymentMethodLabel(payment, s),
-                options = paymentMethodOptions(s),
-                isError = hasError("paymentMethod"),
-                isWarning = hasLowConfidence("paymentMethod") || hasLowConfidence("accountOrPaymentMethod"),
-                supportingText =
-                    lowConfidenceHint("paymentMethod")
-                        ?: lowConfidenceHint("accountOrPaymentMethod"),
-                modifier = Modifier.weight(1f),
-                onSelected = { payment = it },
-            )
-        }
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            CompactInput(
-                value = installmentIndex,
-                onValueChange = { installmentIndex = it.filter(Char::isDigit) },
-                label = s.imageImportInstallmentCurrent,
-                keyboardType = KeyboardType.Number,
-                isError = hasError("installment"),
-                isWarning = hasLowConfidence("installmentIndex"),
-                supportingText = lowConfidenceHint("installmentIndex"),
-                modifier = Modifier.weight(1f),
-            )
-            CompactInput(
-                value = installmentTotal,
-                onValueChange = { installmentTotal = it.filter(Char::isDigit) },
-                label = s.imageImportInstallmentTotal,
-                keyboardType = KeyboardType.Number,
-                isError = hasError("installment"),
-                isWarning = hasLowConfidence("installmentTotal"),
-                supportingText = lowConfidenceHint("installmentTotal"),
-                modifier = Modifier.weight(1f),
-            )
-        }
-        CompactInput(
-            value = note,
-            onValueChange = { note = it },
-            label = s.imageImportNote,
-            isWarning = hasLowConfidence("note"),
-            supportingText = lowConfidenceHint("note"),
-        )
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+        FlowRow(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
             CompactPrimaryButton(
                 text = s.imageImportDeleteRow,
                 enabled = enabled,
@@ -1278,11 +1302,11 @@ private fun CandidateEditor(
                         TransactionCandidateEdit(
                             description = description,
                             amountCents = centsDigits.toLongOrNull(),
-                            currency = currency,
+                            currency = candidate.currency ?: "BRL",
                             occurredDate = parseImportDate(date),
                             occurredTime = time,
                             timeZoneId = candidate.timeZoneId,
-                            transactionType = type,
+                            transactionType = CandidateTransactionType.EXPENSE,
                             suggestedCategoryId = categoryId,
                             accountOrPaymentMethod = payment,
                             installmentIndex = installmentIndex.toIntOrNull(),
@@ -1298,6 +1322,7 @@ private fun CandidateEditor(
 
 @Composable
 private fun OptionPicker(
+    s: AppStrings,
     label: String,
     currentLabel: String,
     options: List<Pair<String, String>>,
@@ -1315,6 +1340,12 @@ private fun OptionPicker(
                 modifier =
                     Modifier
                         .fillMaxWidth()
+                        .heightIn(min = 48.dp)
+                        .semantics(mergeDescendants = true) {
+                            role = Role.Button
+                            contentDescription = "$label: $currentLabel"
+                            stateDescription = if (expanded) s.imageImportPickerExpanded else s.imageImportPickerCollapsed
+                        }
                         .clickable(enabled = options.isNotEmpty()) { expanded = true },
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f)),
                 border =
@@ -1365,15 +1396,6 @@ private fun OptionPicker(
             )
         }
     }
-}
-
-@Composable
-private fun FieldReviewHint(text: String) {
-    SignalLine(
-        icon = Icons.Default.WarningAmber,
-        text = text,
-        color = MaterialTheme.colorScheme.tertiary,
-    )
 }
 
 @Composable
@@ -1530,6 +1552,7 @@ internal fun imageImportWarningLabel(
         "ambiguous-source-image" -> s.imageImportWarningAmbiguousSource
         "source-image-seen-before" -> s.imageImportWarningRepeatedSource
         "possible-duplicate" -> s.imageImportDuplicateWarning
+        "category-defaulted" -> s.imageImportWarningDefaultCategory
         else -> s.imageImportWarningExtractedValue
     }
 
@@ -1545,6 +1568,7 @@ internal fun imageImportLowConfidenceFieldLabels(
             "date" to s.imageImportFieldDate,
             "transactionType" to s.imageImportFieldType,
             "confidence" to s.imageImportFieldConfidence,
+            "category" to s.category,
         )
     val knownKeys = knownFields.mapTo(mutableSetOf(), Pair<String, String>::first)
     return buildList {

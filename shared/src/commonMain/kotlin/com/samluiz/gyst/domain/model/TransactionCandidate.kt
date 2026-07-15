@@ -131,6 +131,7 @@ data class CandidateNormalizationContext(
     val defaultCurrency: String? = null,
     val localeTag: String,
     val timeZoneId: String? = null,
+    val defaultDate: LocalDate? = null,
 )
 
 enum class CandidateIssueSeverity {
@@ -173,23 +174,34 @@ fun normalizeExtraction(
 ): CandidateNormalizationResult {
     val parsedAmount = parseMoneyToCents(raw.amount)
     val currency = normalizeCurrency(raw.currency, raw.amount, context.defaultCurrency)
-    val parsedDate = parseUnambiguousDate(raw.transactionDate, context.localeTag)
-    val type = normalizeTransactionType(raw.transactionType, raw.supportingText)
-    val lowConfidence =
-        candidateLowConfidenceFields(
-            description = raw.description,
-            amountCents = parsedAmount,
-            occurredDate = parsedDate,
-            currency = currency,
-            transactionType = type,
-            confidence = raw.confidence,
+    val extractedDate = parseUnambiguousDate(raw.transactionDate, context.localeTag)
+    val parsedDate = extractedDate ?: context.defaultDate
+    val type =
+        normalizeTransactionType(
+            explicit = raw.transactionType,
+            evidence = listOfNotNull(raw.description, raw.notes, raw.supportingText).joinToString(" "),
         )
+    val description = deriveCandidateDescription(raw)
+    val lowConfidence =
+        buildSet {
+            addAll(
+                candidateLowConfidenceFields(
+                    description = description,
+                    amountCents = parsedAmount,
+                    occurredDate = parsedDate,
+                    currency = currency,
+                    transactionType = type,
+                    confidence = raw.confidence,
+                ),
+            )
+            if (extractedDate == null && context.defaultDate != null) add("date")
+        }
     val draft =
         CandidateDraft(
             source = context.source,
             sourceReference = context.sourceReference,
             sourcePage = raw.sourcePage,
-            description = raw.description?.trim()?.takeIf(String::isNotEmpty),
+            description = description,
             amountCents = parsedAmount?.let { kotlin.math.abs(it) },
             currency = currency,
             occurredDate = parsedDate,
@@ -208,6 +220,49 @@ fun normalizeExtraction(
             lowConfidenceFields = lowConfidence,
         )
     return CandidateNormalizationResult(draft, validateCandidatePreview(draft))
+}
+
+/** Resolves a provider suggestion against the user's real category set, with local evidence as fallback. */
+fun inferExpenseCategory(
+    categories: List<Category>,
+    suggestedName: String?,
+    description: String?,
+    supportingText: String?,
+): Category? {
+    if (categories.isEmpty()) return null
+    val suggestion = normalizeTransactionText(suggestedName.orEmpty())
+    val evidence = normalizeTransactionText(listOfNotNull(description, supportingText, suggestedName).joinToString(" "))
+
+    categories.firstOrNull { normalizeTransactionText(it.name) == suggestion && suggestion.isNotEmpty() }?.let { return it }
+    categories.firstOrNull {
+        val name = normalizeTransactionText(it.name)
+        name.isNotEmpty() &&
+            (
+                evidence.containsNormalizedPhrase(name) ||
+                    suggestion.containsNormalizedPhrase(name) ||
+                    (suggestion.isNotEmpty() && name.containsNormalizedPhrase(suggestion))
+            )
+    }?.let { return it }
+
+    CATEGORY_INFERENCE_RULES.forEach { rule ->
+        if (rule.evidenceTerms.any(evidence::containsNormalizedTerm)) {
+            categories.firstOrNull { category ->
+                val name = normalizeTransactionText(category.name)
+                rule.categoryTerms.any(name::containsNormalizedTerm)
+            }?.let { return it }
+        }
+    }
+    return null
+}
+
+fun inferExpensePaymentMethod(vararg evidence: String?): PaymentMethod {
+    val normalized = normalizeTransactionText(evidence.filterNotNull().joinToString(" "))
+    return when {
+        normalized.containsAny("pix", "instant payment") -> PaymentMethod.PIX
+        normalized.containsAny("cash", "dinheiro", "especie") -> PaymentMethod.CASH
+        normalized.containsAny("transfer", "transferencia", "ted", "doc") -> PaymentMethod.TRANSFER
+        else -> PaymentMethod.DEBIT
+    }
 }
 
 fun validateCandidatePreview(candidate: CandidateDraft): List<CandidateValidationIssue> =
@@ -449,26 +504,150 @@ private fun normalizeTransactionType(
     explicit: String?,
     evidence: String?,
 ): CandidateTransactionType {
-    val normalized = listOfNotNull(explicit, evidence).joinToString(" ").lowercase()
+    val normalizedExplicit = normalizeTransactionText(explicit.orEmpty())
+    val normalizedEvidence = normalizeTransactionText(evidence.orEmpty())
+    when {
+        normalizedExplicit.containsAny("refund", "estorno", "reembolso") -> return CandidateTransactionType.REFUND
+        normalizedExplicit.containsAny(
+            "income",
+            "receita",
+            "deposit",
+            "deposito",
+            "pix recebido",
+            "credito recebido",
+            "salary",
+            "salario",
+            "wage",
+            "renda",
+        ) ||
+            normalizedExplicit in setOf("credit", "credito") && !normalizedEvidence.hasExpenseEvidence() -> {
+            return CandidateTransactionType.INCOME
+        }
+        normalizedExplicit.containsAny("transfer", "transferencia", "pix enviado") -> return CandidateTransactionType.TRANSFER
+        normalizedExplicit.hasCardPurchaseEvidence() -> return CandidateTransactionType.EXPENSE
+        normalizedExplicit.containsAny(
+            "expense",
+            "purchase",
+            "compra",
+            "debit",
+            "debito",
+            "pagamento",
+            "paid",
+            "fee",
+            "charge",
+            "bill",
+            "tarifa",
+            "boleto",
+        ) -> {
+            return CandidateTransactionType.EXPENSE
+        }
+    }
+
+    val normalized = normalizedEvidence
     return when {
         normalized.containsAny("refund", "estorno", "reembolso") -> CandidateTransactionType.REFUND
-        normalized.containsAny("pix recebido", "income", "credit", "crédito", "recebido", "deposit", "depósito") -> {
+        normalized.containsAny(
+            "pix recebido",
+            "income",
+            "receita",
+            "credito recebido",
+            "valor creditado",
+            "recebido",
+            "deposit",
+            "deposito",
+            "salary",
+            "salario",
+            "wage",
+            "renda",
+        ) -> {
             CandidateTransactionType.INCOME
         }
         normalized.containsAny("transfer", "transferência", "pix enviado") -> {
             CandidateTransactionType.TRANSFER
         }
-        normalized.containsAny("expense", "purchase", "compra", "debit", "débito", "pagamento", "paid") -> {
+        normalized.containsAny(
+            "expense",
+            "purchase",
+            "compra",
+            "debit",
+            "debito",
+            "pagamento",
+            "paid",
+            "fee",
+            "charge",
+            "bill",
+            "tarifa",
+            "boleto",
+        ) -> {
             CandidateTransactionType.EXPENSE
         }
         else -> CandidateTransactionType.UNKNOWN
     }
 }
 
+private fun String.hasCardPurchaseEvidence(): Boolean =
+    containsAny("credit card purchase", "card purchase", "compra no credito", "compra cartao", "cartao de credito")
+
+private fun String.hasExpenseEvidence(): Boolean =
+    hasCardPurchaseEvidence() ||
+        containsAny("purchase", "compra", "payment", "pagamento", "paid", "charge", "debit", "debito", "tarifa", "fee")
+
 private fun String.containsAny(vararg needles: String): Boolean = needles.any(::contains)
+
+private fun String.containsNormalizedPhrase(phrase: String): Boolean {
+    if (phrase.isBlank()) return false
+    return " $this ".contains(" $phrase ")
+}
+
+private fun String.containsNormalizedTerm(term: String): Boolean = split(' ').any { token -> token == term || token.startsWith(term) }
+
+private fun deriveCandidateDescription(raw: RawTransactionExtraction): String? {
+    raw.description?.sanitizeDescriptionEvidence()?.let { return it }
+    raw.notes?.sanitizeDescriptionEvidence()?.let { return it }
+    raw.supportingText?.sanitizeDescriptionEvidence()?.let {
+        return it
+    }
+    raw.suggestedCategory?.sanitizeDescriptionEvidence()?.let { return it }
+    return raw.accountOrPaymentMethod?.sanitizeDescriptionEvidence()
+}
+
+private fun String.sanitizeDescriptionEvidence(): String? =
+    trim()
+        .replace(Regex("(?i)(?:R\\$|US\\$|€|BRL|USD|EUR)?\\s*-?\\d[\\d.,]*"), " ")
+        .replace(Regex("\\b\\d{1,4}[/.-]\\d{1,2}(?:[/.-]\\d{1,4})?\\b"), " ")
+        .replace(Regex("\\s+"), " ")
+        .trim(' ', '-', '·', ':', ';', ',')
+        .take(MAX_CANDIDATE_DESCRIPTION_LENGTH)
+        .takeIf(String::isNotEmpty)
 
 private const val LOW_CONFIDENCE_THRESHOLD = 0.65
 private const val SUPPORTED_LEDGER_CURRENCY = "BRL"
+private const val MAX_CANDIDATE_DESCRIPTION_LENGTH = 120
+
+private data class CategoryInferenceRule(
+    val categoryTerms: Set<String>,
+    val evidenceTerms: Set<String>,
+)
+
+private val CATEGORY_INFERENCE_RULES =
+    listOf(
+        CategoryInferenceRule(
+            categoryTerms = setOf("moradia", "housing", "casa", "home"),
+            evidenceTerms = setOf("aluguel", "condominio", "energia", "eletric", "agua", "gas", "internet", "imovel"),
+        ),
+        CategoryInferenceRule(
+            categoryTerms = setOf("mercado", "food", "aliment", "grocer"),
+            evidenceTerms = setOf("mercado", "supermerc", "padaria", "restaurante", "lanch", "delivery", "ifood", "comida"),
+        ),
+        CategoryInferenceRule(
+            categoryTerms = setOf("transporte", "transport", "mobilidade"),
+            evidenceTerms = setOf("uber", "99", "taxi", "onibus", "metro", "combust", "gasolina", "posto", "pedagio"),
+        ),
+        CategoryInferenceRule(
+            categoryTerms = setOf("assinatura", "subscription", "servico"),
+            evidenceTerms = setOf("netflix", "spotify", "youtube", "prime", "assinatura", "subscription", "mensalidade"),
+        ),
+    )
 private val SUMMARY_ROW_TERMS =
     arrayOf(
         "statement total",

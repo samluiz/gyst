@@ -45,6 +45,10 @@ data class Expense(
     val recurrenceSeriesId: String? = null,
 )
 
+fun Expense.displayDescription(): String? =
+    note?.trim()?.takeIf(String::isNotEmpty)
+        ?: merchant?.trim()?.takeIf(String::isNotEmpty)
+
 data class RecurringExpenseSeries(
     val id: String,
     val startYearMonth: YearMonth,

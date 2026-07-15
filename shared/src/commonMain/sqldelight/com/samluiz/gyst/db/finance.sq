@@ -411,6 +411,14 @@ VALUES (?, ?, ?, ?, ?);
 deleteCategory:
 DELETE FROM category WHERE id = ?;
 
+assignTransactionCandidateCategory:
+UPDATE transaction_candidate
+SET suggested_category_id = :categoryId,
+    suggested_category_label = NULL,
+    updated_at = :updatedAt
+WHERE id = :candidateId
+  AND suggested_category_id IS NULL;
+
 countCategoryUsage:
 SELECT (
   (SELECT COUNT(*) FROM expense WHERE category_id = :categoryId) +

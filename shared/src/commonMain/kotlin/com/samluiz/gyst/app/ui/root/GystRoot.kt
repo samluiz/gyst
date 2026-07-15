@@ -214,6 +214,7 @@ fun GystRoot() {
                                         categories = state.categories,
                                         onBack = { navigator.back() },
                                         onConfigureProvider = { navigator.selectTab(MainTab.PLANNING) },
+                                        onImportCompleted = store::refresh,
                                     )
                                 AppDestination.DetectionSettings ->
                                     AutomaticDetectionSettingsRoute(

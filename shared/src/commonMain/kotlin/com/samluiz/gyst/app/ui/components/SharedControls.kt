@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -315,7 +316,7 @@ internal fun CompactPrimaryButton(
                 horizontal = if (compact || subtle) 8.dp else 10.dp,
                 vertical = if (compact || subtle) 4.dp else 6.dp,
             ),
-        modifier = modifier.heightIn(min = if (compact || subtle) 30.dp else 34.dp),
+        modifier = modifier.heightIn(min = 48.dp),
     ) {
         if (loading) {
             CircularProgressIndicator(
@@ -353,7 +354,7 @@ internal fun IconCompactButton(
                 contentColor = MaterialTheme.colorScheme.onSurface,
                 disabledContainerColor = Color.Transparent,
             ),
-        modifier = modifier.heightIn(min = if (subtle || compact) 24.dp else 28.dp),
+        modifier = modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp),
     ) {
         Icon(icon, contentDescription = contentDescription, modifier = Modifier.size(if (subtle || compact) 14.dp else 16.dp))
     }

@@ -9,6 +9,8 @@ import com.samluiz.gyst.domain.model.CandidateSource
 import com.samluiz.gyst.domain.model.CandidateStatus
 import com.samluiz.gyst.domain.model.CandidateTransactionType
 import com.samluiz.gyst.domain.model.CandidateValidationIssue
+import com.samluiz.gyst.domain.model.Category
+import com.samluiz.gyst.domain.model.CategoryType
 import com.samluiz.gyst.domain.model.ImportSessionStatus
 import com.samluiz.gyst.domain.model.PaymentMethod
 import com.samluiz.gyst.domain.model.ProviderCapabilities
@@ -18,6 +20,8 @@ import com.samluiz.gyst.domain.model.TransactionCandidate
 import com.samluiz.gyst.domain.model.TransactionImportSession
 import com.samluiz.gyst.domain.model.TransactionImportSource
 import com.samluiz.gyst.domain.model.candidateLowConfidenceFields
+import com.samluiz.gyst.domain.model.inferExpenseCategory
+import com.samluiz.gyst.domain.model.inferExpensePaymentMethod
 import com.samluiz.gyst.domain.model.normalizeExtraction
 import com.samluiz.gyst.domain.model.normalizeTransactionText
 import com.samluiz.gyst.domain.model.sha256
@@ -64,6 +68,9 @@ import kotlinx.coroutines.job
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import kotlinx.datetime.LocalDate
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.toLocalDateTime
 import kotlin.time.Clock
 import kotlin.time.Instant
 
@@ -198,6 +205,10 @@ class DefaultImageImportService(
                     providerProfileId = it,
                     localeTag = session.localeTag,
                     defaultCurrency = session.defaultCurrency,
+                    fallbackCategoryName =
+                        categoryRepository.list().firstOrNull { category ->
+                            category.id == IMAGE_IMPORT_FALLBACK_CATEGORY_ID
+                        }?.name ?: DEFAULT_FALLBACK_CATEGORY_NAME,
                 )
             }
         mutableState.value =
@@ -350,9 +361,10 @@ class DefaultImageImportService(
         providerProfileId: String,
         localeTag: String,
         defaultCurrency: String,
+        fallbackCategoryName: String,
     ) {
         val job = currentCoroutineContext().job
-        val request = AnalysisRequest(providerProfileId, localeTag, defaultCurrency.uppercase())
+        val request = AnalysisRequest(providerProfileId, localeTag, defaultCurrency.uppercase(), fallbackCategoryName)
         val selectedHandles =
             mutationMutex.withLock {
                 if (activeAnalysisJob != null) {
@@ -386,8 +398,11 @@ class DefaultImageImportService(
                 }
             if (apiKey.isEmpty()) throw ImageImportOperationException(ImageImportFailureCode.PROVIDER_NOT_CONFIGURED)
 
+            val categories = categoryRepository.list()
+            val fallbackCategory = resolveFallbackCategory(categories, request.fallbackCategoryName)
             session = prepareSession(profile, request, selectedHandles)
             prepareSessionForAnalysis(session)
+            val defaultDate = now().toLocalDateTime(TimeZone.currentSystemDefault()).date
             mutableState.update {
                 it.copy(
                     stage = ImageImportStage.ANALYZING,
@@ -408,6 +423,8 @@ class DefaultImageImportService(
                         imageExtractionInstructions(
                             localeTag = request.localeTag,
                             defaultCurrency = request.defaultCurrency,
+                            defaultDate = defaultDate.toString(),
+                            categoryNames = categories.map { it.name },
                             sourceIds = selectedHandles.map { it.id },
                         ),
                     messages = emptyList(),
@@ -416,7 +433,17 @@ class DefaultImageImportService(
                 )
             mutableState.update { it.copy(progress = 0.7f) }
             val rawRows = extractionParser.parse(response.content)
-            val candidates = buildCandidates(session, profile, selectedHandles, rawRows, request)
+            val candidates =
+                buildCandidates(
+                    session,
+                    profile,
+                    selectedHandles,
+                    rawRows,
+                    request,
+                    categories,
+                    fallbackCategory,
+                    defaultDate,
+                )
             val persistedCandidates = candidateRepository.insertAllAtomically(candidates)
             importRepository.updateStatus(
                 id = session.id,
@@ -492,7 +519,7 @@ class DefaultImageImportService(
             showFailure(ImageImportFailureCode.NO_IMAGES, retryable = false)
             return
         }
-        analyze(request.providerProfileId, request.localeTag, request.defaultCurrency)
+        analyze(request.providerProfileId, request.localeTag, request.defaultCurrency, request.fallbackCategoryName)
     }
 
     override suspend fun cancelAnalysis() {
@@ -532,6 +559,10 @@ class DefaultImageImportService(
             val session = importRepository.get(sessionId) ?: return
             if (session.status != ImportSessionStatus.READY) return
             val current = candidateRepository.byImportSession(sessionId)
+            val categories = categoryRepository.list()
+            val defaultCategory = inferExpenseCategory(categories, null, edit.description, null)
+            val defaultCurrency = session.defaultCurrency.takeUnless { it == UNDEFINED_CURRENCY } ?: "BRL"
+            val defaultDate = now().toLocalDateTime(TimeZone.currentSystemDefault()).date
             val candidateId = idFactory("transaction-candidate")
             val candidate =
                 TransactionCandidate(
@@ -543,15 +574,15 @@ class DefaultImageImportService(
                     rowOrder = (current.maxOfOrNull { it.rowOrder } ?: -1L) + 1L,
                     idempotencyKey = "image:$sessionId:manual:$candidateId",
                     fingerprint = null,
-                    description = null,
+                    description = defaultCategory?.name,
                     amountCents = null,
-                    currency = session.defaultCurrency,
-                    occurredDate = null,
+                    currency = defaultCurrency,
+                    occurredDate = defaultDate,
                     occurredTime = null,
                     timeZoneId = null,
                     transactionType = CandidateTransactionType.EXPENSE,
-                    suggestedCategoryId = null,
-                    accountOrPaymentMethod = null,
+                    suggestedCategoryId = defaultCategory?.id,
+                    accountOrPaymentMethod = PaymentMethod.DEBIT.name,
                     installmentIndex = null,
                     installmentTotal = null,
                     note = null,
@@ -572,7 +603,16 @@ class DefaultImageImportService(
                     errorMessage = null,
                     createdAt = now(),
                     updatedAt = now(),
-                ).applyEdit(edit)
+                ).applyEdit(
+                    edit.copy(
+                        description = edit.description?.takeIf(String::isNotBlank) ?: defaultCategory?.name,
+                        currency = edit.currency?.takeIf(String::isNotBlank) ?: defaultCurrency,
+                        occurredDate = edit.occurredDate ?: defaultDate,
+                        transactionType = CandidateTransactionType.EXPENSE,
+                        suggestedCategoryId = edit.suggestedCategoryId ?: defaultCategory?.id,
+                        accountOrPaymentMethod = edit.accountOrPaymentMethod ?: PaymentMethod.DEBIT.name,
+                    ),
+                )
             candidateRepository.insert(candidate)
             persistEdited(candidate)
             recomputeSessionDuplicates(sessionId)
@@ -590,7 +630,14 @@ class DefaultImageImportService(
     }
 
     override suspend fun applyCategoryToSelected(categoryId: String) {
-        editSelected { it.copy(suggestedCategoryId = categoryId) }
+        editSelected {
+            it.copy(
+                suggestedCategoryId = categoryId,
+                suggestedCategoryLabel = null,
+                warnings = it.warnings - WARNING_DEFAULT_CATEGORY,
+                lowConfidenceFields = it.lowConfidenceFields - "category",
+            )
+        }
     }
 
     override suspend fun applyPaymentMethodToSelected(paymentMethod: String) {
@@ -618,6 +665,7 @@ class DefaultImageImportService(
                         expenseId = "expense-import-$stableSuffix",
                         originId = "expense-origin-$stableSuffix",
                         createdAt = now(),
+                        categoryToCreate = fallbackCategoryFor(candidate, lastAnalysisRequest?.fallbackCategoryName),
                     )
                 }
             val results =
@@ -932,8 +980,10 @@ class DefaultImageImportService(
         selectedHandles: List<TemporaryImageHandle>,
         rows: List<RawTransactionExtraction>,
         request: AnalysisRequest,
+        categories: List<Category>,
+        fallbackCategory: Category,
+        defaultDate: LocalDate,
     ): List<TransactionCandidate> {
-        val categories = categoryRepository.list()
         val sourceByReference =
             selectedHandles.flatMap { handle ->
                 listOf(handle.id, handle.displayName, handle.sha256).map { it to handle }
@@ -944,30 +994,65 @@ class DefaultImageImportService(
                     importRepository.priorSources(handle.sha256).any { it.importSessionId != session.id }
             }
         val firstCandidateByFingerprint = mutableMapOf<String, String>()
-        return rows.mapIndexed { index, raw ->
+        return rows.mapIndexedNotNull { index, raw ->
             val sourceHandle = raw.sourcePage?.let(sourceByReference::get) ?: selectedHandles.singleOrNull()
+            val aggregateSourceHash =
+                selectedHandles.takeIf { sourceHandle == null }
+                    ?.map(TemporaryImageHandle::sha256)
+                    ?.sorted()
+                    ?.joinToString("|")
+                    ?.encodeToByteArray()
+                    ?.let(::sha256)
+            val sourceReference = sourceHandle?.id ?: "image-import-session:${session.id}"
+            val sourceHash = sourceHandle?.sha256 ?: aggregateSourceHash
             val normalization =
                 normalizeExtraction(
                     raw = raw,
                     context =
                         CandidateNormalizationContext(
                             source = CandidateSource.IMAGE,
-                            sourceReference = sourceHandle?.id,
-                            sourceImageHash = sourceHandle?.sha256,
+                            sourceReference = sourceReference,
+                            sourceImageHash = sourceHash,
                             defaultCurrency = request.defaultCurrency,
                             localeTag = request.localeTag,
+                            defaultDate = defaultDate,
                         ),
                 )
             val draft = normalization.candidate
-            val stableRowKey = sha256("${session.id}|${sourceHandle?.sha256}|$index".encodeToByteArray())
+            if (draft.transactionType in NON_EXPENSE_TYPES ||
+                draft.transactionType == CandidateTransactionType.UNKNOWN && raw.transactionType != null
+            ) {
+                return@mapIndexedNotNull null
+            }
+            val stableRowKey = sha256("${session.id}|$sourceHash|$index".encodeToByteArray())
             val candidateId = "transaction-candidate-${stableRowKey.take(24)}"
-            val categoryId =
-                draft.suggestedCategoryName?.let { suggestion ->
-                    categories.firstOrNull {
-                        normalizeTransactionText(it.name) == normalizeTransactionText(suggestion)
-                    }?.id
-                }
-            val paymentMethod = normalizePaymentMethod(draft.accountOrPaymentMethod)
+            val inferredCategory =
+                inferExpenseCategory(
+                    categories = categories,
+                    suggestedName = draft.suggestedCategoryName,
+                    description = draft.description,
+                    supportingText = draft.supportingText,
+                ) ?: fallbackCategory
+            val usedFallbackCategory = inferredCategory.id == fallbackCategory.id
+            val categoryId = inferredCategory.id.takeIf { id -> categories.any { it.id == id } }
+            val categoryLabel = inferredCategory.name.takeIf { categoryId == null }
+            val paymentMethod =
+                normalizePaymentMethod(draft.accountOrPaymentMethod)
+                    ?: inferExpensePaymentMethod(
+                        draft.accountOrPaymentMethod,
+                        draft.description,
+                        draft.supportingText,
+                    ).name
+            val description = draft.description ?: inferredCategory.name
+            val fingerprint =
+                transactionFingerprint(
+                    date = draft.occurredDate,
+                    amountCents = draft.amountCents,
+                    currency = draft.currency,
+                    description = description,
+                    account = paymentMethod,
+                    type = CandidateTransactionType.EXPENSE,
+                )
             var candidate =
                 TransactionCandidate(
                     id = candidateId,
@@ -977,17 +1062,17 @@ class DefaultImageImportService(
                     sourcePage = draft.sourcePage,
                     rowOrder = index.toLong(),
                     idempotencyKey = "image:${session.id}:$stableRowKey",
-                    fingerprint = draft.fingerprint,
-                    description = draft.description,
+                    fingerprint = fingerprint,
+                    description = description,
                     amountCents = draft.amountCents,
                     currency = draft.currency,
                     occurredDate = draft.occurredDate,
                     occurredTime = draft.occurredTime,
                     timeZoneId = draft.timeZoneId,
-                    transactionType = draft.transactionType,
+                    transactionType = CandidateTransactionType.EXPENSE,
                     suggestedCategoryId = categoryId,
-                    suggestedCategoryLabel = draft.suggestedCategoryName.takeIf { categoryId == null },
-                    accountOrPaymentMethod = paymentMethod ?: draft.accountOrPaymentMethod,
+                    suggestedCategoryLabel = categoryLabel,
+                    accountOrPaymentMethod = paymentMethod,
                     installmentIndex = draft.installmentIndex,
                     installmentTotal = draft.installmentTotal,
                     note = draft.note,
@@ -997,6 +1082,7 @@ class DefaultImageImportService(
                     warnings =
                         buildList {
                             addAll(draft.warnings)
+                            if (usedFallbackCategory) add(WARNING_DEFAULT_CATEGORY)
                             if (sourceHandle == null) add(WARNING_AMBIGUOUS_SOURCE)
                             if (sourceHandle?.let { priorSourceHashes[it.sha256] } == true) {
                                 add(WARNING_REPEATED_SOURCE)
@@ -1005,7 +1091,7 @@ class DefaultImageImportService(
                     lowConfidenceFields = draft.lowConfidenceFields,
                     selected = normalization.issues.none { it.code == CandidateIssueCode.POSSIBLE_SUMMARY_ROW },
                     status = CandidateStatus.NEEDS_REVIEW,
-                    duplicateCandidateId = draft.fingerprint?.let(firstCandidateByFingerprint::get),
+                    duplicateCandidateId = fingerprint?.let(firstCandidateByFingerprint::get),
                     duplicateExpenseId = null,
                     linkedExpenseId = null,
                     providerId = profile.providerId,
@@ -1041,6 +1127,35 @@ class DefaultImageImportService(
             candidate
         }
     }
+
+    private fun resolveFallbackCategory(
+        categories: List<Category>,
+        requestedName: String,
+    ): Category {
+        categories.firstOrNull { it.id == IMAGE_IMPORT_FALLBACK_CATEGORY_ID }?.let { return it }
+        categories.firstOrNull {
+            normalizeTransactionText(it.name) in GENERIC_CATEGORY_NAMES
+        }?.let { return it }
+        return Category(
+            id = IMAGE_IMPORT_FALLBACK_CATEGORY_ID,
+            name = requestedName.trim().take(MAX_FALLBACK_CATEGORY_NAME_LENGTH).ifBlank { DEFAULT_FALLBACK_CATEGORY_NAME },
+            type = CategoryType.VARIABLE,
+        )
+    }
+
+    private fun fallbackCategoryFor(
+        candidate: TransactionCandidate,
+        requestedName: String?,
+    ): Category? =
+        candidate.suggestedCategoryLabel
+            ?.takeIf { candidate.suggestedCategoryId == null && WARNING_DEFAULT_CATEGORY in candidate.warnings }
+            ?.let { label ->
+                Category(
+                    id = IMAGE_IMPORT_FALLBACK_CATEGORY_ID,
+                    name = requestedName?.trim()?.take(MAX_FALLBACK_CATEGORY_NAME_LENGTH).orEmpty().ifBlank { label },
+                    type = CategoryType.VARIABLE,
+                )
+            }
 
     private suspend fun persistEdited(candidate: TransactionCandidate) {
         val fingerprint =
@@ -1259,6 +1374,7 @@ class DefaultImageImportService(
             transactionType = edit.transactionType,
             suggestedCategoryId = edit.suggestedCategoryId,
             suggestedCategoryLabel = suggestedCategoryLabel.takeIf { edit.suggestedCategoryId == null },
+            warnings = warnings.filterNot { it == WARNING_DEFAULT_CATEGORY && edit.suggestedCategoryId != null },
             accountOrPaymentMethod =
                 edit.accountOrPaymentMethod?.let(::normalizePaymentMethod)
                     ?: edit.accountOrPaymentMethod?.trim()?.uppercase()?.takeIf(String::isNotEmpty),
@@ -1308,7 +1424,13 @@ class DefaultImageImportService(
             )
         return buildList {
             addAll(validateCandidatePreview(previewDraft))
-            addAll(validateCandidateForExpenseApproval(this@reviewIssues))
+            addAll(
+                validateCandidateForExpenseApproval(this@reviewIssues).filterNot { issue ->
+                    issue.code == CandidateIssueCode.MISSING_CATEGORY &&
+                        suggestedCategoryLabel != null &&
+                        WARNING_DEFAULT_CATEGORY in warnings
+                },
+            )
             if (duplicateCandidateId != null || duplicateExpenseId != null) {
                 add(
                     CandidateValidationIssue(
@@ -1325,6 +1447,7 @@ class DefaultImageImportService(
         val providerProfileId: String,
         val localeTag: String,
         val defaultCurrency: String,
+        val fallbackCategoryName: String,
     )
 }
 
@@ -1416,6 +1539,17 @@ private val REQUIRED_IMAGE_CAPABILITIES =
 private const val WARNING_AMBIGUOUS_SOURCE = "ambiguous-source-image"
 private const val WARNING_REPEATED_SOURCE = "source-image-seen-before"
 private const val WARNING_POSSIBLE_DUPLICATE = "possible-duplicate"
+private const val WARNING_DEFAULT_CATEGORY = "category-defaulted"
 private const val UNDEFINED_LOCALE_TAG = "und"
 private const val UNDEFINED_CURRENCY = "XXX"
 private const val LOG_TAG = "ImageImport"
+private const val IMAGE_IMPORT_FALLBACK_CATEGORY_ID = "category-image-import-other"
+private const val DEFAULT_FALLBACK_CATEGORY_NAME = "Other"
+private const val MAX_FALLBACK_CATEGORY_NAME_LENGTH = 40
+private val GENERIC_CATEGORY_NAMES = setOf("other", "others", "outro", "outros", "uncategorized", "sem categoria")
+private val NON_EXPENSE_TYPES =
+    setOf(
+        CandidateTransactionType.INCOME,
+        CandidateTransactionType.TRANSFER,
+        CandidateTransactionType.REFUND,
+    )

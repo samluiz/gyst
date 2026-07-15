@@ -2,6 +2,22 @@
 
 All notable changes are documented here. Versions follow Semantic Versioning.
 
+## [1.5.2] - 2026-07-14
+
+### Fixed
+
+- Simplified image imports with current-day date defaults, conservative category and payment inference, recovered merchant descriptions, and expense-only filtering.
+- Made fallback-category creation atomic with confirmed imports and preserved deterministic multi-image provenance.
+- Refreshed ledger totals immediately after image imports and displayed imported merchant descriptions in existing expense rows and edit forms.
+- Stopped generating an automatic advisor overview when opening an empty or newly created conversation.
+- Improved the image-import layout on narrow screens, accessible touch targets, editable preview stability, and localized review guidance.
+
+### Changed
+
+- Installed applications in Android automatic-detection settings now show their actual app icons when available.
+- Finance applications are not guessed or automatically enabled because Android does not expose a reliable finance-app classification for installed packages.
+- The default application version is now `1.5.2` (`versionCode` `10502`).
+
 ## [1.5.0] - 2026-07-14
 
 ### Added

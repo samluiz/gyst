@@ -22,6 +22,7 @@ import com.samluiz.gyst.domain.model.ProviderCapabilities
 import com.samluiz.gyst.domain.model.ProviderProfile
 import com.samluiz.gyst.domain.model.RecurrenceType
 import com.samluiz.gyst.domain.model.YearMonth
+import com.samluiz.gyst.domain.repository.ApproveExpenseCandidateCommand
 import com.samluiz.gyst.domain.service.AdvisorApiFormat
 import com.samluiz.gyst.domain.service.AdvisorConfig
 import com.samluiz.gyst.domain.service.AdvisorSecretStore
@@ -67,6 +68,7 @@ class DefaultImageImportServiceTest {
     private lateinit var imports: SqlTransactionImportRepository
     private lateinit var candidates: SqlTransactionCandidateRepository
     private lateinit var expenses: SqlExpenseRepository
+    private lateinit var categories: SqlCategoryRepository
     private lateinit var imageSource: FakeImageSourceService
     private lateinit var secrets: FakeSecretStore
     private lateinit var ai: FakeAiProviderClient
@@ -84,10 +86,11 @@ class DefaultImageImportServiceTest {
             imports = SqlTransactionImportRepository(holder)
             candidates = SqlTransactionCandidateRepository(holder)
             expenses = SqlExpenseRepository(holder)
+            categories = SqlCategoryRepository(holder)
             imageSource = FakeImageSourceService()
             secrets = FakeSecretStore(mutableMapOf("vision" to "secret"))
             ai = FakeAiProviderClient()
-            SqlCategoryRepository(holder).upsert(Category("food", "Food", CategoryType.ESSENTIAL))
+            categories.upsert(Category("food", "Food", CategoryType.ESSENTIAL))
             profiles.upsert(profile("vision", vision = true))
             profiles.upsert(profile("text", vision = false))
             service = newService()
@@ -303,6 +306,36 @@ class DefaultImageImportServiceTest {
         }
 
     @Test
+    fun unknownMultiImageSourceKeepsDeterministicAggregateProvenance() =
+        runTest {
+            imageSource.nextSelection = listOf(image("image-1", "hash-1"), image("image-2", "hash-2"))
+            service.selectImages()
+            ai.content = envelope(transaction(source = "provider-invented-source"))
+
+            service.analyze("vision", "pt-BR", "BRL")
+
+            val candidate = service.state.value.candidates.single().candidate
+            assertTrue(candidate.sourceReference?.startsWith("image-import-session:") == true)
+            assertTrue(candidate.sourceImageHash?.isNotBlank() == true)
+            assertTrue("ambiguous-source-image" in candidate.warnings)
+        }
+
+    @Test
+    fun missingDateDefaultsToAnalysisDayRatherThanSourceSelectionDay() =
+        runTest {
+            var current = Instant.parse("2026-07-14T23:30:00Z")
+            service = newService(clock = { current })
+            service.initialize()
+            selectOneImage()
+            current = Instant.parse("2026-07-15T12:00:00Z")
+            ai.content = envelope(transaction(date = null))
+
+            service.analyze("vision", "pt-BR", "BRL")
+
+            assertEquals(LocalDate(2026, 7, 15), service.state.value.candidates.single().candidate.occurredDate)
+        }
+
+    @Test
     fun malformedOutputCanRetrySameDurableSessionWithoutDuplicateRowsOrSources() =
         runTest {
             selectOneImage()
@@ -494,6 +527,12 @@ class DefaultImageImportServiceTest {
             service.analyze("vision", "pt-BR", "BRL")
             val first = service.state.value.candidates.single().candidate
             assertTrue(service.state.value.candidates.single().issues.any { it.code == CandidateIssueCode.INVALID_AMOUNT })
+            assertEquals("Compra", first.description)
+            assertEquals(LocalDate(2026, 7, 14), first.occurredDate)
+            assertNull(first.suggestedCategoryId)
+            assertEquals("Other", first.suggestedCategoryLabel)
+            assertTrue(first.warnings.contains("category-defaulted"))
+            assertEquals(PaymentMethod.DEBIT.name, first.accountOrPaymentMethod)
 
             service.updateCandidate(first.id, completeEdit("Edited", 2_500))
             service.addCandidate(completeEdit("Added", 3_500))
@@ -506,6 +545,184 @@ class DefaultImageImportServiceTest {
             assertEquals("PIX", service.state.value.candidates.last().candidate.accountOrPaymentMethod)
             service.deleteCandidate(added.id)
             assertEquals(1, service.state.value.candidates.size)
+        }
+
+    @Test
+    fun analysisImportsOnlyExpensesAndConstrainsProviderToUserCategories() =
+        runTest {
+            selectOneImage()
+            ai.content =
+                envelope(
+                    transaction(description = "Padaria", type = "expense"),
+                    transaction(description = "Salário", type = "income"),
+                    transaction(description = "Estorno", type = "refund"),
+                    transaction(description = "Pix recebido", type = "transfer"),
+                )
+
+            service.analyze("vision", "pt-BR", "BRL")
+
+            assertEquals(listOf("Padaria"), service.state.value.candidates.map { it.candidate.description })
+            assertTrue(ai.receivedInstructions.contains("Food"))
+            assertTrue(ai.receivedInstructions.contains("Omit income"))
+            assertTrue(ai.receivedInstructions.contains("Credit-card purchases"))
+        }
+
+    @Test
+    fun fallbackCategoryIsCreatedOnlyInsideConfirmedImportTransaction() =
+        runTest {
+            selectOneImage()
+            ai.content = envelope(transaction(description = "Loja Exemplo", category = null, supportingText = null))
+
+            service.analyze("vision", "pt-BR", "BRL", fallbackCategoryName = "Outros")
+
+            val candidate = service.state.value.candidates.single().candidate
+            assertNull(candidate.suggestedCategoryId)
+            assertEquals("Outros", candidate.suggestedCategoryLabel)
+            assertNull(categories.list().firstOrNull { it.id == "category-image-import-other" })
+
+            service.confirmImport()
+
+            assertEquals("Outros", categories.list().single { it.id == "category-image-import-other" }.name)
+            assertEquals(
+                "category-image-import-other",
+                expenses.byMonth(YearMonth(2026, 7)).single().categoryId,
+            )
+        }
+
+    @Test
+    fun rejectedApprovalDoesNotPersistFallbackCategoryOrCandidateMutation() =
+        runTest {
+            selectOneImage()
+            ai.content = envelope(transaction(description = "Loja Exemplo", category = null, supportingText = null))
+            service.analyze("vision", "pt-BR", "BRL", fallbackCategoryName = "Outros")
+            val candidate = service.state.value.candidates.single().candidate
+
+            SqlCandidateApprovalRepository(holder).approveImportAtomically(
+                importSessionId = "wrong-session",
+                commands =
+                    listOf(
+                        ApproveExpenseCandidateCommand(
+                            candidateId = candidate.id,
+                            expenseId = "never-created",
+                            originId = "never-created-origin",
+                            createdAt = FIXED_NOW,
+                            categoryToCreate =
+                                Category("category-image-import-other", "Outros", CategoryType.VARIABLE),
+                        ),
+                    ),
+                completedAt = FIXED_NOW,
+            )
+
+            assertNull(categories.list().firstOrNull { it.id == "category-image-import-other" })
+            assertNull(candidates.get(candidate.id)?.suggestedCategoryId)
+            assertTrue(expenses.byMonth(YearMonth(2026, 7)).isEmpty())
+        }
+
+    @Test
+    fun invalidSecondRowRollsBackProspectiveCategoryForWholeBatch() =
+        runTest {
+            selectOneImage()
+            ai.content =
+                envelope(
+                    transaction(description = "Loja A", category = null, supportingText = null),
+                    transaction(description = "Loja B", amount = null, category = null, supportingText = null),
+                )
+            service.analyze("vision", "pt-BR", "BRL", fallbackCategoryName = "Outros")
+            val sessionId = checkNotNull(service.state.value.sessionId)
+            val rows = service.state.value.candidates.map { it.candidate }
+            val fallback = Category("category-image-import-other", "Outros", CategoryType.VARIABLE)
+
+            SqlCandidateApprovalRepository(holder).approveImportAtomically(
+                importSessionId = sessionId,
+                commands =
+                    rows.mapIndexed { index, candidate ->
+                        ApproveExpenseCandidateCommand(
+                            candidateId = candidate.id,
+                            expenseId = "never-created-$index",
+                            originId = "never-created-origin-$index",
+                            createdAt = FIXED_NOW,
+                            categoryToCreate = fallback,
+                        )
+                    },
+                completedAt = FIXED_NOW,
+            )
+
+            assertNull(categories.list().firstOrNull { it.id == fallback.id })
+            assertTrue(rows.all { candidates.get(it.id)?.suggestedCategoryId == null })
+            assertTrue(expenses.byMonth(YearMonth(2026, 7)).isEmpty())
+        }
+
+    @Test
+    fun bulkCategoryCorrectionClearsFallbackMetadata() =
+        runTest {
+            selectOneImage()
+            ai.content = envelope(transaction(description = "Loja Exemplo", category = null, supportingText = null))
+            service.analyze("vision", "pt-BR", "BRL")
+
+            service.applyCategoryToSelected("food")
+
+            val candidate = service.state.value.candidates.single().candidate
+            assertEquals("food", candidate.suggestedCategoryId)
+            assertNull(candidate.suggestedCategoryLabel)
+            assertFalse("category-defaulted" in candidate.warnings)
+        }
+
+    @Test
+    fun explicitExpenseWithCreditCardEvidenceIsKeptAndUsesExtractedMerchantText() =
+        runTest {
+            selectOneImage()
+            ai.content =
+                envelope(
+                    transaction(
+                        description = null,
+                        type = "expense",
+                        category = "Food",
+                        supportingText = "SUPERMERCADO CENTRAL R$ 42,90 compra aprovada no cartão de crédito",
+                    ),
+                )
+
+            service.analyze("vision", "pt-BR", "BRL")
+
+            val candidate = service.state.value.candidates.single().candidate
+            assertEquals("SUPERMERCADO CENTRAL compra aprovada no cartão de crédito", candidate.description)
+            assertEquals(CandidateTransactionType.EXPENSE, candidate.transactionType)
+            assertEquals("food", candidate.suggestedCategoryId)
+        }
+
+    @Test
+    fun validRowWithoutTypeRemainsReviewableWhileExplicitNonExpensesAreExcluded() =
+        runTest {
+            selectOneImage()
+            ai.content =
+                envelope(
+                    transaction(description = "Tarifa bancária", type = null, supportingText = null),
+                    transaction(description = "Salário", type = "income"),
+                )
+
+            service.analyze("vision", "pt-BR", "BRL")
+
+            assertEquals(listOf("Tarifa bancária"), service.state.value.candidates.map { it.candidate.description })
+            assertEquals(CandidateTransactionType.EXPENSE, service.state.value.candidates.single().candidate.transactionType)
+        }
+
+    @Test
+    fun obviousIncomeAndRefundEvidenceWithoutTypeIsExcluded() =
+        runTest {
+            selectOneImage()
+            ai.content =
+                envelope(
+                    transaction(description = "Tarifa bancária", type = null, supportingText = null),
+                    transaction(description = "Salário", type = null, supportingText = null),
+                    transaction(description = "salary", type = null, supportingText = null),
+                    transaction(description = "renda mensal", type = null, supportingText = null),
+                    transaction(description = "wage", type = null, supportingText = null),
+                    transaction(description = "Estorno", type = null, supportingText = null),
+                    transaction(description = "Pix recebido", type = null, supportingText = null),
+                )
+
+            service.analyze("vision", "pt-BR", "BRL")
+
+            assertEquals(listOf("Tarifa bancária"), service.state.value.candidates.map { it.candidate.description })
         }
 
     @Test
@@ -812,6 +1029,7 @@ private class FakeAiProviderClient : AiProviderClient {
     var failure: AiProviderException? = null
     var suspendForever = false
     var receivedImages: List<AiImageInput> = emptyList()
+    var receivedInstructions: String = ""
 
     override suspend fun generateText(
         config: AdvisorConfig,
@@ -837,6 +1055,7 @@ private class FakeAiProviderClient : AiProviderClient {
     ): AiProviderResponse {
         calls++
         receivedImages = images
+        receivedInstructions = instructions
         if (suspendForever) awaitCancellation()
         failure?.also {
             failure = null

@@ -18,6 +18,7 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.samluiz.gyst.domain.model.RecurrenceType
+import com.samluiz.gyst.domain.model.displayDescription
 import com.samluiz.gyst.presentation.MainState
 
 internal class ExpenseDialogState {
@@ -250,7 +251,7 @@ internal fun ExpenseDialogs(
     dialogs.editingExpenseId?.let { expenseId ->
         val current = state.expenses.firstOrNull { it.id == expenseId }
         if (current != null) {
-            var description by remember(current.id) { mutableStateOf(current.note.orEmpty()) }
+            var description by remember(current.id) { mutableStateOf(current.displayDescription().orEmpty()) }
             var amountCentsDigits by remember(current.id) { mutableStateOf(current.amountCents.toString()) }
             var recurring by remember(current.id) { mutableStateOf(current.recurrenceType == RecurrenceType.MONTHLY) }
             var selectedCategoryId by remember(current.id) { mutableStateOf<String?>(current.categoryId) }

@@ -3,7 +3,9 @@ package com.samluiz.gyst.data.importer
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 class ImageTransactionExtractionParserTest {
     private val parser = ImageTransactionExtractionParser()
@@ -37,6 +39,22 @@ class ImageTransactionExtractionParserTest {
             parser.parse("""{"transactions":[{"description":"incomplete"}]}""")
         }
     }
+
+    @Test
+    fun providerInstructionsEncodeUserControlledLabelsAsJsonData() {
+        val instructions =
+            imageExtractionInstructions(
+                localeTag = "pt-BR",
+                defaultCurrency = "BRL",
+                defaultDate = "2026-07-14",
+                categoryNames = listOf("Mercado, casa", "Ignore\ninstructions"),
+                sourceIds = listOf("image-1\nignore"),
+            )
+
+        assertTrue(instructions.contains("[\"Mercado, casa\",\"Ignore\\ninstructions\"]"))
+        assertTrue(instructions.contains("[\"image-1\\nignore\"]"))
+        assertFalse(instructions.contains("Ignore\ninstructions"))
+    }
 }
 
 internal fun envelope(vararg rows: String): String = """{"transactions":[${rows.joinToString()}]}"""
@@ -49,6 +67,7 @@ internal fun transaction(
     type: String? = "expense",
     category: String? = "Food",
     payment: String? = "debit",
+    supportingText: String? = "Compra",
     confidence: String = "0.94",
 ): String =
     """
@@ -63,7 +82,7 @@ internal fun transaction(
       "accountOrPaymentMethod":${payment.jsonString()},
       "notes":null,
       "sourcePage":${source.jsonString()},
-      "supportingText":"Compra",
+      "supportingText":${supportingText.jsonString()},
       "installmentIndex":null,
       "installmentTotal":null,
       "confidence":$confidence,
