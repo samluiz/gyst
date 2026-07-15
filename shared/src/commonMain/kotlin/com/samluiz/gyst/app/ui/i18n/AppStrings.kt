@@ -12,6 +12,10 @@ data class AutomaticDetectionStrings(
     val pendingCount: String,
     val settingsTitle: String,
     val settingsSubtitle: String,
+    val permissionsTitle: String,
+    val advancedTitle: String,
+    val advancedBody: String,
+    val selectedAppsCount: String,
     val unsupportedTitle: String,
     val unsupportedBody: String,
     val detectionTitle: String,
@@ -94,6 +98,7 @@ data class AutomaticDetectionStrings(
 
 interface ImageImportStringValues {
     val imageImportEntry: String
+    val imageImportManualEntry: String
     val imageImportTitle: String
     val imageImportSubtitle: String
     val imageImportBack: String
@@ -105,6 +110,10 @@ interface ImageImportStringValues {
     val imageImportNoSourcesTitle: String
     val imageImportNoSourcesBody: String
     val imageImportSourceUnavailable: String
+    val imageImportSourceReadFailure: String
+    val imageImportSourceTooLarge: String
+    val imageImportSourceUnsupportedFormat: String
+    val imageImportSourcePermissionDenied: String
     val imageImportCameraUnavailable: String
     val imageImportProvider: String
     val imageImportProviderHint: String
@@ -137,6 +146,9 @@ interface ImageImportStringValues {
     val imageImportPickerExpanded: String
     val imageImportPickerCollapsed: String
     val imageImportBulkEdit: String
+    val imageImportBulkConfirmTitle: String
+    val imageImportBulkConfirmBody: String
+    val imageImportBulkConfirmAction: String
     val imageImportApplyCategory: String
     val imageImportApplyPayment: String
     val imageImportUnmatchedCategory: String
@@ -215,6 +227,7 @@ interface ImageImportStringValues {
 @Immutable
 data class ImageImportStrings(
     override val imageImportEntry: String,
+    override val imageImportManualEntry: String,
     override val imageImportTitle: String,
     override val imageImportSubtitle: String,
     override val imageImportBack: String,
@@ -226,6 +239,10 @@ data class ImageImportStrings(
     override val imageImportNoSourcesTitle: String,
     override val imageImportNoSourcesBody: String,
     override val imageImportSourceUnavailable: String,
+    override val imageImportSourceReadFailure: String,
+    override val imageImportSourceTooLarge: String,
+    override val imageImportSourceUnsupportedFormat: String,
+    override val imageImportSourcePermissionDenied: String,
     override val imageImportCameraUnavailable: String,
     override val imageImportProvider: String,
     override val imageImportProviderHint: String,
@@ -258,6 +275,9 @@ data class ImageImportStrings(
     override val imageImportPickerExpanded: String,
     override val imageImportPickerCollapsed: String,
     override val imageImportBulkEdit: String,
+    override val imageImportBulkConfirmTitle: String,
+    override val imageImportBulkConfirmBody: String,
+    override val imageImportBulkConfirmAction: String,
     override val imageImportApplyCategory: String,
     override val imageImportApplyPayment: String,
     override val imageImportUnmatchedCategory: String,
@@ -732,6 +752,7 @@ private val ptBr =
         imageImportStrings =
             ImageImportStrings(
                 imageImportEntry = "Importar por imagens",
+                imageImportManualEntry = "Adicionar manualmente",
                 imageImportTitle = "Importar despesas",
                 imageImportSubtitle = "Revise o que foi identificado e confirme quando estiver tudo certo.",
                 imageImportBack = "Voltar para despesas",
@@ -745,6 +766,11 @@ private val ptBr =
                     "Escolha extratos, comprovantes, recibos ou capturas de tela. " +
                         "Você pode combinar várias imagens.",
                 imageImportSourceUnavailable = "A seleção de imagens não está disponível nesta plataforma.",
+                imageImportSourceReadFailure = "Não foi possível abrir esta imagem. Tente escolhê-la novamente.",
+                imageImportSourceTooLarge = "A imagem é grande demais para ser processada com segurança.",
+                imageImportSourceUnsupportedFormat =
+                    "Esse formato não pôde ser lido. Use JPEG, PNG, WebP ou uma foto compatível com o dispositivo.",
+                imageImportSourcePermissionDenied = "O Gyst não tem permissão para abrir essa imagem.",
                 imageImportCameraUnavailable = "A câmera não está disponível nesta plataforma.",
                 imageImportProvider = "Modelo de análise",
                 imageImportProviderHint = "Somente modelos configurados com visão e saída estruturada aparecem aqui.",
@@ -785,6 +811,9 @@ private val ptBr =
                 imageImportPickerExpanded = "Lista aberta",
                 imageImportPickerCollapsed = "Lista fechada",
                 imageImportBulkEdit = "Aplicar às selecionadas",
+                imageImportBulkConfirmTitle = "Alterar despesas selecionadas?",
+                imageImportBulkConfirmBody = "Essa alteração será aplicada a {count} despesas da revisão.",
+                imageImportBulkConfirmAction = "Aplicar alteração",
                 imageImportApplyCategory = "Categoria em massa",
                 imageImportApplyPayment = "Pagamento em massa",
                 imageImportUnmatchedCategory = "Sugestão não vinculada: {category}",
@@ -868,6 +897,10 @@ private val ptBr =
                 pendingCount = "{count} para revisar",
                 settingsTitle = "Detecção automática",
                 settingsSubtitle = "O Gyst identifica possíveis transações e sempre pede sua confirmação.",
+                permissionsTitle = "Acessos",
+                advancedTitle = "Opções avançadas",
+                advancedBody = "Notificações de revisão, análise por IA e dados armazenados.",
+                selectedAppsCount = "{count} aplicativos selecionados",
                 unsupportedTitle = "Disponível no Android",
                 unsupportedBody = "A leitura de notificações não é oferecida nesta plataforma.",
                 detectionTitle = "Detectar transações",
@@ -1156,6 +1189,7 @@ private val enUs =
         imageImportStrings =
             ImageImportStrings(
                 imageImportEntry = "Import from images",
+                imageImportManualEntry = "Add manually",
                 imageImportTitle = "Import expenses",
                 imageImportSubtitle = "Review what was found, then confirm when everything looks right.",
                 imageImportBack = "Back to expenses",
@@ -1169,6 +1203,11 @@ private val enUs =
                     "Choose statements, payment confirmations, receipts, or screenshots. " +
                         "You can combine multiple images.",
                 imageImportSourceUnavailable = "Image selection is not available on this platform.",
+                imageImportSourceReadFailure = "This image could not be opened. Try choosing it again.",
+                imageImportSourceTooLarge = "This image is too large to process safely.",
+                imageImportSourceUnsupportedFormat =
+                    "This format could not be read. Use JPEG, PNG, WebP, or a photo supported by this device.",
+                imageImportSourcePermissionDenied = "Gyst does not have permission to open this image.",
                 imageImportCameraUnavailable = "The camera is not available on this platform.",
                 imageImportProvider = "Analysis model",
                 imageImportProviderHint = "Only configured models with vision and structured output appear here.",
@@ -1209,6 +1248,9 @@ private val enUs =
                 imageImportPickerExpanded = "List expanded",
                 imageImportPickerCollapsed = "List collapsed",
                 imageImportBulkEdit = "Apply to selected",
+                imageImportBulkConfirmTitle = "Change selected expenses?",
+                imageImportBulkConfirmBody = "This change will be applied to {count} expenses in the review.",
+                imageImportBulkConfirmAction = "Apply change",
                 imageImportApplyCategory = "Bulk category",
                 imageImportApplyPayment = "Bulk payment",
                 imageImportUnmatchedCategory = "Unmatched suggestion: {category}",
@@ -1290,6 +1332,10 @@ private val enUs =
                 pendingCount = "{count} to review",
                 settingsTitle = "Automatic detection",
                 settingsSubtitle = "Gyst finds possible transactions and always asks for your confirmation.",
+                permissionsTitle = "Access",
+                advancedTitle = "Advanced options",
+                advancedBody = "Review notifications, AI analysis, and stored data.",
+                selectedAppsCount = "{count} apps selected",
                 unsupportedTitle = "Available on Android",
                 unsupportedBody = "Notification reading is not offered on this platform.",
                 detectionTitle = "Detect transactions",

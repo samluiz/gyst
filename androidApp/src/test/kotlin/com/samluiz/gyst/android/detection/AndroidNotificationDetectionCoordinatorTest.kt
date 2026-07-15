@@ -1043,6 +1043,10 @@ private class FakeCandidates : TransactionCandidateRepository {
         values[candidate.id] = candidate
     }
 
+    override suspend fun updateAllAtomically(candidates: List<TransactionCandidate>) {
+        candidates.forEach { values[it.id] = it }
+    }
+
     override suspend fun updateStatus(
         id: String,
         status: CandidateStatus,

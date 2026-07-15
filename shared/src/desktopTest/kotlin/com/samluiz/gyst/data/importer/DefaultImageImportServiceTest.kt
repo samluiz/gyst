@@ -37,6 +37,7 @@ import com.samluiz.gyst.domain.service.AiStructuredOutputSchema
 import com.samluiz.gyst.domain.service.ImageImportFailureCode
 import com.samluiz.gyst.domain.service.ImageImportStage
 import com.samluiz.gyst.domain.service.ImageSourceCapabilities
+import com.samluiz.gyst.domain.service.ImageSourceFailure
 import com.samluiz.gyst.domain.service.ImageSourceResult
 import com.samluiz.gyst.domain.service.ImageSourceService
 import com.samluiz.gyst.domain.service.TEMPORARY_IMAGE_TTL_MILLIS
@@ -276,6 +277,25 @@ class DefaultImageImportServiceTest {
             assertEquals(0, ai.calls)
             service.initialize()
             assertTrue(service.state.value.compatibleProfiles.isEmpty())
+        }
+
+    @Test
+    fun imageSourceFailuresRemainActionableInsteadOfLookingPlatformUnsupported() =
+        runTest {
+            val expected =
+                listOf(
+                    ImageSourceFailure.UNSUPPORTED to ImageImportFailureCode.IMAGE_SOURCE,
+                    ImageSourceFailure.PERMISSION_DENIED to ImageImportFailureCode.IMAGE_SOURCE_PERMISSION_DENIED,
+                    ImageSourceFailure.FILE_TOO_LARGE to ImageImportFailureCode.IMAGE_SOURCE_TOO_LARGE,
+                    ImageSourceFailure.UNSUPPORTED_FORMAT to ImageImportFailureCode.IMAGE_SOURCE_UNSUPPORTED_FORMAT,
+                    ImageSourceFailure.IO_FAILURE to ImageImportFailureCode.IMAGE_SOURCE_READ_FAILURE,
+                )
+
+            expected.forEach { (sourceFailure, importFailure) ->
+                imageSource.nextResult = ImageSourceResult.Failed(sourceFailure)
+                service.selectImages()
+                assertEquals(importFailure, service.state.value.failure?.code)
+            }
         }
 
     @Test
@@ -538,11 +558,13 @@ class DefaultImageImportServiceTest {
             service.addCandidate(completeEdit("Added", 3_500))
             val added = service.state.value.candidates.last().candidate
             service.setCandidateSelected(first.id, false)
-            service.applyCategoryToSelected("food")
-            service.applyPaymentMethodToSelected("PIX")
+            service.applyCategory(setOf(added.id), "food")
+            service.applyPaymentMethod(setOf(added.id), "PIX")
 
             assertFalse(service.state.value.candidates.first().candidate.selected)
             assertEquals("PIX", service.state.value.candidates.last().candidate.accountOrPaymentMethod)
+            service.setAllCandidatesSelected(true)
+            assertTrue(service.state.value.candidates.all { it.candidate.selected })
             service.deleteCandidate(added.id)
             assertEquals(1, service.state.value.candidates.size)
         }
@@ -659,7 +681,8 @@ class DefaultImageImportServiceTest {
             ai.content = envelope(transaction(description = "Loja Exemplo", category = null, supportingText = null))
             service.analyze("vision", "pt-BR", "BRL")
 
-            service.applyCategoryToSelected("food")
+            val candidateId = service.state.value.candidates.single().candidate.id
+            service.applyCategory(setOf(candidateId), "food")
 
             val candidate = service.state.value.candidates.single().candidate
             assertEquals("food", candidate.suggestedCategoryId)
@@ -947,6 +970,7 @@ class DefaultImageImportServiceTest {
 private class FakeImageSourceService : ImageSourceService {
     override val capabilities = ImageSourceCapabilities(true, true, maximumSelection = 10)
     var nextSelection: List<TemporaryImageHandle> = emptyList()
+    var nextResult: ImageSourceResult? = null
     var recoveredImages: List<TemporaryImageHandle> = emptyList()
     var failAcknowledgement = false
     var blockPendingRecovery = false
@@ -958,7 +982,7 @@ private class FakeImageSourceService : ImageSourceService {
     val cleaned = mutableListOf<String>()
     val acknowledged = mutableListOf<String>()
 
-    override suspend fun selectImages(): ImageSourceResult = ImageSourceResult.Selected(nextSelection)
+    override suspend fun selectImages(): ImageSourceResult = nextResult ?: ImageSourceResult.Selected(nextSelection)
 
     override suspend fun captureImage(): ImageSourceResult = ImageSourceResult.Selected(nextSelection)
 

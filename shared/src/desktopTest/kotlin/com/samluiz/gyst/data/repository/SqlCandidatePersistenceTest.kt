@@ -23,6 +23,7 @@ import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertIs
 import kotlin.test.assertNull
 import kotlin.time.Instant
@@ -64,6 +65,28 @@ class SqlCandidatePersistenceTest {
 
             val recreated = SqlTransactionCandidateRepository(holder)
             assertEquals(listOf(original.id), recreated.byImportSession("session").map { it.id })
+        }
+
+    @Test
+    fun candidateBatchUpdateRejectsTheWholeBatchBeforeWriting() =
+        runTest {
+            val first = candidates.insert(candidate("first", null))
+            val second =
+                candidates.insert(
+                    candidate("second", null).copy(idempotencyKey = "candidate-key-second"),
+                )
+
+            assertFailsWith<IllegalArgumentException> {
+                candidates.updateAllAtomically(
+                    listOf(
+                        first.copy(description = "Changed"),
+                        second.copy(status = CandidateStatus.FAILED),
+                    ),
+                )
+            }
+
+            assertEquals(first.description, candidates.get(first.id)?.description)
+            assertEquals(second.description, candidates.get(second.id)?.description)
         }
 
     @Test

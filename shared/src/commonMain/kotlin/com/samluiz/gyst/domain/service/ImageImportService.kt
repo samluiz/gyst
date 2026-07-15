@@ -20,6 +20,10 @@ enum class ImageImportStage {
 enum class ImageImportFailureCode {
     NO_IMAGES,
     IMAGE_SOURCE,
+    IMAGE_SOURCE_READ_FAILURE,
+    IMAGE_SOURCE_TOO_LARGE,
+    IMAGE_SOURCE_UNSUPPORTED_FORMAT,
+    IMAGE_SOURCE_PERMISSION_DENIED,
     PROVIDER_NOT_FOUND,
     PROVIDER_NOT_CONFIGURED,
     UNSUPPORTED_PROVIDER_CAPABILITY,
@@ -160,13 +164,21 @@ interface ImageImportService {
         selected: Boolean,
     )
 
+    suspend fun setAllCandidatesSelected(selected: Boolean)
+
     suspend fun addCandidate(edit: TransactionCandidateEdit)
 
     suspend fun deleteCandidate(candidateId: String)
 
-    suspend fun applyCategoryToSelected(categoryId: String)
+    suspend fun applyCategory(
+        candidateIds: Set<String>,
+        categoryId: String,
+    )
 
-    suspend fun applyPaymentMethodToSelected(paymentMethod: String)
+    suspend fun applyPaymentMethod(
+        candidateIds: Set<String>,
+        paymentMethod: String,
+    )
 
     suspend fun confirmImport()
 

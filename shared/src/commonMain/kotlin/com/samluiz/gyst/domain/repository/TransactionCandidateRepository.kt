@@ -27,6 +27,8 @@ interface TransactionCandidateRepository {
 
     suspend fun update(candidate: TransactionCandidate)
 
+    suspend fun updateAllAtomically(candidates: List<TransactionCandidate>)
+
     suspend fun updateStatus(
         id: String,
         status: CandidateStatus,

@@ -553,6 +553,18 @@ class DefaultImageImportService(
         }
     }
 
+    override suspend fun setAllCandidatesSelected(selected: Boolean) {
+        mutationMutex.withLock {
+            val sessionId = mutableState.value.sessionId ?: return
+            val updated =
+                candidateRepository.byImportSession(sessionId)
+                    .filter { it.status == CandidateStatus.NEEDS_REVIEW }
+                    .map { it.copy(selected = selected, updatedAt = now()) }
+            candidateRepository.updateAllAtomically(updated)
+            refreshCandidates(sessionId)
+        }
+    }
+
     override suspend fun addCandidate(edit: TransactionCandidateEdit) {
         mutationMutex.withLock {
             val sessionId = mutableState.value.sessionId ?: return
@@ -629,8 +641,11 @@ class DefaultImageImportService(
         }
     }
 
-    override suspend fun applyCategoryToSelected(categoryId: String) {
-        editSelected {
+    override suspend fun applyCategory(
+        candidateIds: Set<String>,
+        categoryId: String,
+    ) {
+        editCandidates(candidateIds) {
             it.copy(
                 suggestedCategoryId = categoryId,
                 suggestedCategoryLabel = null,
@@ -640,9 +655,12 @@ class DefaultImageImportService(
         }
     }
 
-    override suspend fun applyPaymentMethodToSelected(paymentMethod: String) {
+    override suspend fun applyPaymentMethod(
+        candidateIds: Set<String>,
+        paymentMethod: String,
+    ) {
         val normalized = normalizePaymentMethod(paymentMethod) ?: paymentMethod.trim().uppercase()
-        editSelected { it.copy(accountOrPaymentMethod = normalized) }
+        editCandidates(candidateIds) { it.copy(accountOrPaymentMethod = normalized) }
     }
 
     override suspend fun confirmImport() {
@@ -969,7 +987,7 @@ class DefaultImageImportService(
             throw cancelled
         } catch (_: Exception) {
             inputs.forEach { it.bytes.fill(0) }
-            throw ImageImportOperationException(ImageImportFailureCode.IMAGE_SOURCE)
+            throw ImageImportOperationException(ImageImportFailureCode.IMAGE_SOURCE_READ_FAILURE)
         }
         return inputs
     }
@@ -1190,14 +1208,62 @@ class DefaultImageImportService(
         candidateRepository.update(updated)
     }
 
-    private suspend fun editSelected(transform: (TransactionCandidate) -> TransactionCandidate) {
+    private suspend fun editCandidates(
+        candidateIds: Set<String>,
+        transform: (TransactionCandidate) -> TransactionCandidate,
+    ) {
+        if (candidateIds.isEmpty()) return
         mutationMutex.withLock {
             val sessionId = mutableState.value.sessionId ?: return
-            candidateRepository.byImportSession(sessionId)
-                .filter { it.selected && it.status == CandidateStatus.NEEDS_REVIEW }
-                .forEach { persistEdited(transform(it)) }
-            recomputeSessionDuplicates(sessionId)
+            val sessionCandidates = candidateRepository.byImportSession(sessionId)
+            val updated = prepareBulkEdit(sessionCandidates, candidateIds, transform)
+            candidateRepository.updateAllAtomically(updated)
             refreshCandidates(sessionId)
+        }
+    }
+
+    private suspend fun prepareBulkEdit(
+        sessionCandidates: List<TransactionCandidate>,
+        candidateIds: Set<String>,
+        transform: (TransactionCandidate) -> TransactionCandidate,
+    ): List<TransactionCandidate> {
+        val reviewable = sessionCandidates.filter { it.status == CandidateStatus.NEEDS_REVIEW }
+        val editedAt = now()
+        val normalized =
+            reviewable.map { candidate ->
+                val edited = if (candidate.id in candidateIds) transform(candidate) else candidate
+                edited.copy(
+                    fingerprint =
+                        transactionFingerprint(
+                            date = edited.occurredDate,
+                            amountCents = edited.amountCents,
+                            currency = edited.currency,
+                            description = edited.description,
+                            account = edited.accountOrPaymentMethod,
+                            type = edited.transactionType,
+                        ),
+                    duplicateCandidateId = null,
+                    duplicateExpenseId = null,
+                    warnings = edited.warnings - WARNING_POSSIBLE_DUPLICATE,
+                    updatedAt = editedAt,
+                )
+            }
+        return normalized.map { candidate ->
+            val duplicateCandidateId =
+                candidate.fingerprint?.let { fingerprint ->
+                    normalized.firstOrNull { it.id != candidate.id && it.fingerprint == fingerprint }?.id
+                }
+            val duplicateExpenseId = candidateRepository.potentialExistingExpenseIds(candidate).firstOrNull()
+            candidate.copy(
+                duplicateCandidateId = duplicateCandidateId,
+                duplicateExpenseId = duplicateExpenseId,
+                warnings =
+                    if (duplicateCandidateId != null || duplicateExpenseId != null) {
+                        candidate.warnings + WARNING_POSSIBLE_DUPLICATE
+                    } else {
+                        candidate.warnings
+                    },
+            )
         }
     }
 
@@ -1345,8 +1411,16 @@ class DefaultImageImportService(
     }
 
     private fun showImageSourceFailure(failure: ImageSourceFailure) {
+        val code =
+            when (failure) {
+                ImageSourceFailure.UNSUPPORTED -> ImageImportFailureCode.IMAGE_SOURCE
+                ImageSourceFailure.PERMISSION_DENIED -> ImageImportFailureCode.IMAGE_SOURCE_PERMISSION_DENIED
+                ImageSourceFailure.FILE_TOO_LARGE -> ImageImportFailureCode.IMAGE_SOURCE_TOO_LARGE
+                ImageSourceFailure.UNSUPPORTED_FORMAT -> ImageImportFailureCode.IMAGE_SOURCE_UNSUPPORTED_FORMAT
+                ImageSourceFailure.IO_FAILURE -> ImageImportFailureCode.IMAGE_SOURCE_READ_FAILURE
+            }
         showFailure(
-            code = ImageImportFailureCode.IMAGE_SOURCE,
+            code = code,
             retryable = failure == ImageSourceFailure.IO_FAILURE,
         )
     }

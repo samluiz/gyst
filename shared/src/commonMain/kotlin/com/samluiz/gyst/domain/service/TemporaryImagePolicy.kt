@@ -2,8 +2,8 @@ package com.samluiz.gyst.domain.service
 
 import com.samluiz.gyst.domain.model.sha256
 
-const val MAX_TEMPORARY_IMAGE_BYTES: Long = 12L * 1024L * 1024L
-const val MAX_TEMPORARY_IMAGE_BATCH_BYTES: Long = 40L * 1024L * 1024L
+const val MAX_TEMPORARY_IMAGE_BYTES: Long = 3L * 1024L * 1024L
+const val MAX_TEMPORARY_IMAGE_BATCH_BYTES: Long = 6L * 1024L * 1024L
 const val TEMPORARY_IMAGE_TTL_MILLIS: Long = 24L * 60L * 60L * 1_000L
 
 private val supportedImageMimeTypes =

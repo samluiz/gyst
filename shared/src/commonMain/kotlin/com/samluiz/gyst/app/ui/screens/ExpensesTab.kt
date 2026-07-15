@@ -83,6 +83,7 @@ internal fun DespesasTab(
     val pagerScope = rememberCoroutineScope()
     val section = sections[pagerState.currentPage]
     var rowMenuId by remember { mutableStateOf<String?>(null) }
+    var addExpenseMenuExpanded by remember { mutableStateOf(false) }
     var subscriptionsVisibleCount by remember { mutableStateOf(30) }
     var installmentsVisibleCount by remember { mutableStateOf(30) }
     val expensesListState = rememberLazyListState()
@@ -105,26 +106,6 @@ internal fun DespesasTab(
     }
 
     LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxSize()) {
-        item {
-            Box(
-                modifier = Modifier.fillMaxWidth(),
-                contentAlignment = Alignment.CenterEnd,
-            ) {
-                CompactPrimaryButton(
-                    text = s.imageImportEntry,
-                    compact = true,
-                    subtle = true,
-                    leadingContent = {
-                        androidx.compose.material3.Icon(
-                            Icons.Default.AddPhotoAlternate,
-                            contentDescription = null,
-                            modifier = Modifier.size(16.dp),
-                        )
-                    },
-                    onClick = onOpenImageImport,
-                )
-            }
-        }
         item {
             PanelCard(
                 title = "",
@@ -451,29 +432,59 @@ internal fun DespesasTab(
                     }
                 }
                 Spacer(Modifier.height(8.dp))
-                Box(modifier = Modifier.fillMaxWidth()) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
                     Text(
                         text = "${s.total}: ${formatBrl(activeSectionTotal)}",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.align(Alignment.CenterStart),
+                        modifier = Modifier.weight(1f),
                     )
-                    IconCompactButton(
-                        icon = Icons.Default.Add,
-                        contentDescription = s.add,
-                        compact = true,
-                        subtle = true,
-                        onClick = {
-                            when (section) {
-                                ExpensesSection.DESPESAS -> dialogs.showAddExpenseDialog = true
-                                ExpensesSection.ASSINATURAS -> dialogs.showAddSubscriptionDialog = true
-                                ExpensesSection.PARCELAMENTOS -> dialogs.showAddInstallmentDialog = true
-                            }
-                        },
-                        modifier = Modifier.align(Alignment.Center),
-                    )
+                    Box {
+                        IconCompactButton(
+                            icon = Icons.Default.Add,
+                            contentDescription = s.add,
+                            compact = true,
+                            subtle = true,
+                            onClick = {
+                                when (section) {
+                                    ExpensesSection.DESPESAS -> addExpenseMenuExpanded = true
+                                    ExpensesSection.ASSINATURAS -> dialogs.showAddSubscriptionDialog = true
+                                    ExpensesSection.PARCELAMENTOS -> dialogs.showAddInstallmentDialog = true
+                                }
+                            },
+                        )
+                        DropdownMenu(
+                            expanded = addExpenseMenuExpanded && section == ExpensesSection.DESPESAS,
+                            onDismissRequest = { addExpenseMenuExpanded = false },
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text(s.imageImportManualEntry) },
+                                leadingIcon = {
+                                    androidx.compose.material3.Icon(Icons.Default.Add, contentDescription = null)
+                                },
+                                onClick = {
+                                    addExpenseMenuExpanded = false
+                                    dialogs.showAddExpenseDialog = true
+                                },
+                            )
+                            DropdownMenuItem(
+                                text = { Text(s.imageImportEntry) },
+                                leadingIcon = {
+                                    androidx.compose.material3.Icon(Icons.Default.AddPhotoAlternate, contentDescription = null)
+                                },
+                                onClick = {
+                                    addExpenseMenuExpanded = false
+                                    onOpenImageImport()
+                                },
+                            )
+                        }
+                    }
+                    Spacer(modifier = Modifier.weight(1f))
                 }
             }
         }

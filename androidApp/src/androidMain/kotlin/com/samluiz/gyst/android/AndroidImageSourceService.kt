@@ -1,7 +1,12 @@
 package com.samluiz.gyst.android
 
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.ImageDecoder
+import android.graphics.Matrix
 import android.net.Uri
+import android.os.Build
 import android.os.Looper
 import android.provider.OpenableColumns
 import androidx.activity.ComponentActivity
@@ -9,12 +14,12 @@ import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.FileProvider
+import androidx.exifinterface.media.ExifInterface
 import com.samluiz.gyst.domain.service.ImageSourceCapabilities
 import com.samluiz.gyst.domain.service.ImageSourceFailure
 import com.samluiz.gyst.domain.service.ImageSourceResult
 import com.samluiz.gyst.domain.service.ImageSourceService
 import com.samluiz.gyst.domain.service.MAX_TEMPORARY_IMAGE_BATCH_BYTES
-import com.samluiz.gyst.domain.service.MAX_TEMPORARY_IMAGE_BYTES
 import com.samluiz.gyst.domain.service.TemporaryImageHandle
 import com.samluiz.gyst.domain.service.canonicalImageMimeType
 import com.samluiz.gyst.domain.service.detectedImageMimeType
@@ -26,8 +31,12 @@ import com.samluiz.gyst.domain.service.temporaryImageSha256
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
@@ -49,6 +58,7 @@ class AndroidImageSourceService(
     private var selectLauncher: ActivityResultLauncher<PickVisualMediaRequest>? = null
     private var captureLauncher: ActivityResultLauncher<Uri>? = null
     private var pendingOperation: PendingOperation? = null
+    private val selectCallbackGate = SelectCallbackGate()
 
     init {
         serviceScope.launch { cleanupExpired() }
@@ -88,7 +98,9 @@ class AndroidImageSourceService(
         val operation = PendingOperation.Select(CompletableDeferred())
         val launcher =
             synchronized(operationLock) {
-                if (pendingOperation != null) return ImageSourceResult.Failed(ImageSourceFailure.IO_FAILURE)
+                if (pendingOperation != null || !selectCallbackGate.canLaunch()) {
+                    return ImageSourceResult.Failed(ImageSourceFailure.IO_FAILURE)
+                }
                 selectLauncher ?: return ImageSourceResult.Failed(ImageSourceFailure.UNSUPPORTED)
                 pendingOperation = operation
                 selectLauncher
@@ -223,7 +235,14 @@ class AndroidImageSourceService(
     }
 
     private fun onImagesSelected(uris: List<Uri>) {
-        val operation = synchronized(operationLock) { pendingOperation as? PendingOperation.Select }
+        var cancelledCallback = false
+        val operation =
+            synchronized(operationLock) {
+                cancelledCallback = selectCallbackGate.consumeCancelledCallback()
+                val current = pendingOperation as? PendingOperation.Select
+                current
+            }
+        if (cancelledCallback) return
         if (operation == null) {
             if (uris.isNotEmpty()) {
                 serviceScope.launch { queueRecoveredResult(importUris(uris.take(MAX_SELECTION))) }
@@ -234,9 +253,7 @@ class AndroidImageSourceService(
             finish(operation, ImageSourceResult.Cancelled)
             return
         }
-        serviceScope.launch {
-            finish(operation, queueRecoveredResult(importUris(uris.take(MAX_SELECTION))))
-        }
+        launchProcessing(operation) { importUris(uris.take(MAX_SELECTION)) }
     }
 
     private fun onImageCaptured(saved: Boolean) {
@@ -249,7 +266,10 @@ class AndroidImageSourceService(
                 return
             }
             serviceScope.launch {
-                val queued = queueRecoveredResult(capturedImageResult(recoveredTarget))
+                val queued =
+                    queueRecoveredResult(
+                        importCapturedFile(recoveredTarget.file, recoveredTarget.id, recoveredTarget.displayName),
+                    )
                 if (queued is ImageSourceResult.Selected || !recoveredTarget.file.isFile) {
                     clearPendingCaptureTarget(recoveredTarget.id)
                 }
@@ -261,34 +281,62 @@ class AndroidImageSourceService(
             finish(operation, ImageSourceResult.Cancelled)
             return
         }
-        serviceScope.launch {
-            finish(operation, queueRecoveredResult(capturedImageResult(operation.target)))
+        launchProcessing(operation) {
+            importCapturedFile(operation.target.file, operation.target.id, operation.target.displayName)
         }
     }
 
-    private fun importUris(uris: List<Uri>): ImageSourceResult {
+    private fun launchProcessing(
+        operation: PendingOperation,
+        process: suspend () -> ImageSourceResult,
+    ) {
+        val job =
+            serviceScope.launch(start = CoroutineStart.LAZY) {
+                var result: ImageSourceResult? = null
+                var recoveryCustodyTransferred = false
+                try {
+                    result = process()
+                    currentCoroutineContext().ensureActive()
+                    val queued = queueRecoveredResult(result)
+                    recoveryCustodyTransferred = queued is ImageSourceResult.Selected
+                    finish(operation, queued)
+                } catch (cancelled: CancellationException) {
+                    if (!recoveryCustodyTransferred) cleanupSelectedResult(result)
+                    throw cancelled
+                }
+            }
+        val accepted =
+            synchronized(operationLock) {
+                if (pendingOperation === operation) {
+                    operation.processingJob = job
+                    true
+                } else {
+                    false
+                }
+            }
+        if (accepted) job.start() else job.cancel()
+    }
+
+    internal suspend fun importUris(uris: List<Uri>): ImageSourceResult {
         val imported = mutableListOf<TemporaryImageHandle>()
         return try {
             var batchBytes = 0L
             uris.forEach { uri ->
                 val metadata = queryMetadata(uri)
-                if (metadata.declaredSize != null && !isTemporaryImageSizeAllowed(metadata.declaredSize)) {
-                    throw ImageCustodyException(ImageSourceFailure.FILE_TOO_LARGE)
-                }
-                val bytes = readBounded(uri)
+                val prepared = prepareImage(uri, metadata)
+                val bytes = prepared.bytes
                 try {
                     batchBytes += bytes.size
                     if (batchBytes > MAX_TEMPORARY_IMAGE_BATCH_BYTES) {
                         throw ImageCustodyException(ImageSourceFailure.FILE_TOO_LARGE)
                     }
-                    val detectedMime = validatedMimeType(metadata.mimeType, bytes)
                     val id = UUID.randomUUID().toString()
-                    val target = File(ensureCacheDirectory(), "$id.${imageFileExtension(detectedMime)}")
+                    val target = File(ensureCacheDirectory(), "$id.${imageFileExtension(prepared.mimeType)}")
                     val handle =
                         TemporaryImageHandle(
                             id = id,
                             displayName = sanitizedImageDisplayName(metadata.displayName),
-                            mimeType = detectedMime,
+                            mimeType = prepared.mimeType,
                             byteSize = bytes.size.toLong(),
                             sha256 = temporaryImageSha256(bytes),
                             temporaryReference = target.name,
@@ -306,29 +354,202 @@ class AndroidImageSourceService(
         } catch (_: CancellationException) {
             cleanupImported(imported)
             ImageSourceResult.Cancelled
+        } catch (_: SecurityException) {
+            cleanupImported(imported)
+            ImageSourceResult.Failed(ImageSourceFailure.PERMISSION_DENIED)
         } catch (_: Throwable) {
             cleanupImported(imported)
             ImageSourceResult.Failed(ImageSourceFailure.IO_FAILURE)
         }
     }
 
-    private fun capturedImageResult(target: CaptureTarget): ImageSourceResult =
-        try {
-            val bytes = target.file.readBytes()
-            try {
-                if (!isTemporaryImageSizeAllowed(bytes.size.toLong())) {
-                    throw ImageCustodyException(ImageSourceFailure.FILE_TOO_LARGE)
+    private suspend fun prepareImage(
+        uri: Uri,
+        metadata: SourceMetadata,
+    ): PreparedImage {
+        if (metadata.declaredSize != null && metadata.declaredSize > MAX_TRANSCODE_SOURCE_BYTES) {
+            throw ImageCustodyException(ImageSourceFailure.FILE_TOO_LARGE)
+        }
+        val stagingFile = File(ensureCacheDirectory(), "${UUID.randomUUID()}.source")
+        return try {
+            copyUriToStagingFile(uri, stagingFile)
+            prepareFile(stagingFile, metadata.mimeType)
+        } finally {
+            stagingFile.delete()
+        }
+    }
+
+    private suspend fun copyUriToStagingFile(
+        uri: Uri,
+        stagingFile: File,
+    ) {
+        val input =
+            appContext.contentResolver.openInputStream(uri)
+                ?: throw ImageCustodyException(ImageSourceFailure.IO_FAILURE)
+        input.use { source ->
+            stagingFile.outputStream().use { target ->
+                val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+                var total = 0L
+                while (true) {
+                    currentCoroutineContext().ensureActive()
+                    val count = source.read(buffer)
+                    if (count < 0) break
+                    total += count
+                    if (total > MAX_TRANSCODE_SOURCE_BYTES) {
+                        throw ImageCustodyException(ImageSourceFailure.FILE_TOO_LARGE)
+                    }
+                    target.write(buffer, 0, count)
                 }
-                val mimeType = validatedMimeType("image/jpeg", bytes)
+                if (total <= 0L) throw ImageCustodyException(ImageSourceFailure.IO_FAILURE)
+            }
+        }
+    }
+
+    private fun prepareFile(
+        file: File,
+        declaredMimeType: String?,
+    ): PreparedImage {
+        if (file.length() !in 1..MAX_TRANSCODE_SOURCE_BYTES) {
+            throw ImageCustodyException(ImageSourceFailure.FILE_TOO_LARGE)
+        }
+        val dimensions = probeDimensions(file)
+        dimensions?.requireSafeSourceDimensions()
+        if (
+            isTemporaryImageSizeAllowed(file.length()) &&
+            dimensions != null &&
+            maxOf(dimensions.width, dimensions.height) <= NORMALIZED_IMAGE_MAX_DIMENSION
+        ) {
+            val original = file.readBytes()
+            try {
+                val mimeType = validatedMimeType(declaredMimeType, original)
+                return PreparedImage(mimeType = mimeType, bytes = original)
+            } catch (error: ImageCustodyException) {
+                original.fill(0)
+                if (error.failure != ImageSourceFailure.UNSUPPORTED_FORMAT) throw error
+            }
+        }
+        return transcodeToJpeg(file)
+    }
+
+    private fun transcodeToJpeg(file: File): PreparedImage {
+        val bitmap =
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                    decodeModernBitmap(file)
+                } else {
+                    decodeLegacyBitmap(file)
+                }
+            } catch (error: ImageCustodyException) {
+                throw error
+            } catch (_: Exception) {
+                null
+            } ?: throw ImageCustodyException(ImageSourceFailure.UNSUPPORTED_FORMAT)
+        return try {
+            val output = ByteArrayOutputStream()
+            if (!bitmap.compress(Bitmap.CompressFormat.JPEG, NORMALIZED_JPEG_QUALITY, output)) {
+                throw ImageCustodyException(ImageSourceFailure.IO_FAILURE)
+            }
+            val bytes = output.toByteArray()
+            if (!isTemporaryImageSizeAllowed(bytes.size.toLong())) {
+                bytes.fill(0)
+                throw ImageCustodyException(ImageSourceFailure.FILE_TOO_LARGE)
+            }
+            PreparedImage(mimeType = "image/jpeg", bytes = bytes)
+        } finally {
+            bitmap.recycle()
+        }
+    }
+
+    @androidx.annotation.RequiresApi(Build.VERSION_CODES.P)
+    private fun decodeModernBitmap(file: File): Bitmap {
+        val source = ImageDecoder.createSource(file)
+        return ImageDecoder.decodeBitmap(source) { decoder, info, _ ->
+            decoder.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
+            val width = info.size.width
+            val height = info.size.height
+            ImageDimensions(width, height).requireSafeSourceDimensions()
+            val scale = minOf(1f, NORMALIZED_IMAGE_MAX_DIMENSION.toFloat() / maxOf(width, height))
+            if (scale < 1f) {
+                decoder.setTargetSize((width * scale).toInt().coerceAtLeast(1), (height * scale).toInt().coerceAtLeast(1))
+            }
+        }
+    }
+
+    private fun decodeLegacyBitmap(file: File): Bitmap? {
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeFile(file.absolutePath, bounds)
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
+        ImageDimensions(bounds.outWidth, bounds.outHeight).requireSafeSourceDimensions()
+        var sampleSize = 1
+        while (maxOf(bounds.outWidth / sampleSize, bounds.outHeight / sampleSize) > NORMALIZED_IMAGE_MAX_DIMENSION) {
+            sampleSize *= 2
+        }
+        val options = BitmapFactory.Options().apply { inSampleSize = sampleSize }
+        val decoded = BitmapFactory.decodeFile(file.absolutePath, options) ?: return null
+        return applyExifOrientation(file, decoded)
+    }
+
+    internal fun applyExifOrientation(
+        file: File,
+        bitmap: Bitmap,
+    ): Bitmap {
+        val exif = runCatching { ExifInterface(file) }.getOrNull() ?: return bitmap
+        val rotation = exif.rotationDegrees.toFloat()
+        val flipped = exif.isFlipped
+        if (rotation == 0f && !flipped) return bitmap
+        val matrix =
+            Matrix().apply {
+                if (flipped) postScale(-1f, 1f)
+                if (rotation != 0f) postRotate(rotation)
+            }
+        return Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true).also { transformed ->
+            if (transformed !== bitmap) bitmap.recycle()
+        }
+    }
+
+    private fun probeDimensions(file: File): ImageDimensions? {
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeFile(file.absolutePath, bounds)
+        return if (bounds.outWidth > 0 && bounds.outHeight > 0) {
+            ImageDimensions(bounds.outWidth, bounds.outHeight)
+        } else {
+            null
+        }
+    }
+
+    private fun ImageDimensions.requireSafeSourceDimensions() {
+        val pixels = width.toLong() * height.toLong()
+        if (
+            width <= 0 ||
+            height <= 0 ||
+            width > MAX_SOURCE_DIMENSION ||
+            height > MAX_SOURCE_DIMENSION ||
+            pixels > MAX_SOURCE_PIXEL_COUNT
+        ) {
+            throw ImageCustodyException(ImageSourceFailure.FILE_TOO_LARGE)
+        }
+    }
+
+    internal suspend fun importCapturedFile(
+        file: File,
+        id: String,
+        displayName: String,
+    ): ImageSourceResult =
+        try {
+            val prepared = prepareFile(file, "image/jpeg")
+            val bytes = prepared.bytes
+            try {
+                currentCoroutineContext().ensureActive()
+                file.writeBytes(bytes)
                 ImageSourceResult.Selected(
                     listOf(
                         TemporaryImageHandle(
-                            id = target.id,
-                            displayName = target.displayName,
-                            mimeType = mimeType,
+                            id = id,
+                            displayName = displayName,
+                            mimeType = prepared.mimeType,
                             byteSize = bytes.size.toLong(),
                             sha256 = temporaryImageSha256(bytes),
-                            temporaryReference = target.file.name,
+                            temporaryReference = file.name,
                         ),
                     ),
                 )
@@ -336,36 +557,15 @@ class AndroidImageSourceService(
                 bytes.fill(0)
             }
         } catch (error: ImageCustodyException) {
-            target.file.delete()
+            file.delete()
             ImageSourceResult.Failed(error.failure)
+        } catch (_: CancellationException) {
+            file.delete()
+            ImageSourceResult.Cancelled
         } catch (_: Throwable) {
-            target.file.delete()
+            file.delete()
             ImageSourceResult.Failed(ImageSourceFailure.IO_FAILURE)
         }
-
-    private fun readBounded(uri: Uri): ByteArray {
-        val input =
-            appContext.contentResolver.openInputStream(uri)
-                ?: throw ImageCustodyException(ImageSourceFailure.IO_FAILURE)
-        return input.use { stream ->
-            val output = ByteArrayOutputStream()
-            val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
-            var total = 0L
-            while (true) {
-                val count = stream.read(buffer)
-                if (count < 0) break
-                total += count
-                if (total > MAX_TEMPORARY_IMAGE_BYTES) {
-                    throw ImageCustodyException(ImageSourceFailure.FILE_TOO_LARGE)
-                }
-                output.write(buffer, 0, count)
-            }
-            if (!isTemporaryImageSizeAllowed(total)) {
-                throw ImageCustodyException(ImageSourceFailure.IO_FAILURE)
-            }
-            output.toByteArray()
-        }
-    }
 
     private fun validatedMimeType(
         declaredMimeType: String?,
@@ -433,6 +633,10 @@ class AndroidImageSourceService(
         imported.forEach { handle -> runCatching { resolveOwnedFile(handle.temporaryReference).delete() } }
     }
 
+    private fun cleanupSelectedResult(result: ImageSourceResult?) {
+        if (result is ImageSourceResult.Selected) cleanupImported(result.images)
+    }
+
     private fun finish(
         operation: PendingOperation,
         result: ImageSourceResult,
@@ -460,8 +664,20 @@ class AndroidImageSourceService(
         try {
             operation.result.await()
         } catch (error: CancellationException) {
+            var processingJob: Job? = null
             synchronized(operationLock) {
-                if (pendingOperation === operation) pendingOperation = null
+                if (pendingOperation === operation) {
+                    pendingOperation = null
+                    processingJob = operation.processingJob
+                    if (operation is PendingOperation.Select) {
+                        selectCallbackGate.onCancelled(callbackReceived = processingJob != null)
+                    }
+                }
+            }
+            processingJob?.cancel(error)
+            (operation as? PendingOperation.Capture)?.let { capture ->
+                capture.target.file.delete()
+                clearPendingCaptureTarget(capture.target.id)
             }
             operation.result.cancel(error)
             throw error
@@ -480,7 +696,10 @@ class AndroidImageSourceService(
                 discarded = result.images.filter { incoming -> combined.none { it.id == incoming.id } }
                 writeRecoveredImages(combined)
             }
-        if (!persisted) return ImageSourceResult.Failed(ImageSourceFailure.IO_FAILURE)
+        if (!persisted) {
+            cleanupImported(result.images)
+            return ImageSourceResult.Failed(ImageSourceFailure.IO_FAILURE)
+        }
         cleanupImported(discarded)
         return if (delivered.isEmpty()) {
             ImageSourceResult.Failed(ImageSourceFailure.IO_FAILURE)
@@ -489,10 +708,10 @@ class AndroidImageSourceService(
         }
     }
 
-    private fun recoverCompletedCaptureIfPresent() {
+    private suspend fun recoverCompletedCaptureIfPresent() {
         val target = synchronized(operationLock) { readPendingCaptureTarget() } ?: return
         if (!target.file.isFile || target.file.length() <= 0L) return
-        val queued = queueRecoveredResult(capturedImageResult(target))
+        val queued = queueRecoveredResult(importCapturedFile(target.file, target.id, target.displayName))
         if (queued is ImageSourceResult.Selected || !target.file.isFile) {
             clearPendingCaptureTarget(target.id)
         }
@@ -586,15 +805,34 @@ class AndroidImageSourceService(
 
     private sealed interface PendingOperation {
         val result: CompletableDeferred<ImageSourceResult>
+        var processingJob: Job?
 
         data class Select(
             override val result: CompletableDeferred<ImageSourceResult>,
+            override var processingJob: Job? = null,
         ) : PendingOperation
 
         data class Capture(
             override val result: CompletableDeferred<ImageSourceResult>,
             val target: CaptureTarget,
+            override var processingJob: Job? = null,
         ) : PendingOperation
+    }
+
+    internal class SelectCallbackGate {
+        private var awaitingCancelledCallback = false
+
+        fun canLaunch(): Boolean = !awaitingCancelledCallback
+
+        fun onCancelled(callbackReceived: Boolean) {
+            if (!callbackReceived) awaitingCancelledCallback = true
+        }
+
+        fun consumeCancelledCallback(): Boolean {
+            if (!awaitingCancelledCallback) return false
+            awaitingCancelledCallback = false
+            return true
+        }
     }
 
     private data class CaptureTarget(
@@ -609,6 +847,16 @@ class AndroidImageSourceService(
         val mimeType: String?,
     )
 
+    private data class PreparedImage(
+        val mimeType: String,
+        val bytes: ByteArray,
+    )
+
+    private data class ImageDimensions(
+        val width: Int,
+        val height: Int,
+    )
+
     private class ImageCustodyException(
         val failure: ImageSourceFailure,
     ) : RuntimeException()
@@ -618,6 +866,11 @@ class AndroidImageSourceService(
         const val CACHE_DIRECTORY_NAME = "transaction-import-images"
         const val SELECT_REGISTRY_KEY = "gyst.transaction-import.select-images"
         const val CAPTURE_REGISTRY_KEY = "gyst.transaction-import.capture-image"
+        const val NORMALIZED_IMAGE_MAX_DIMENSION = 2_048
+        const val NORMALIZED_JPEG_QUALITY = 88
+        const val MAX_TRANSCODE_SOURCE_BYTES = 40L * 1024L * 1024L
+        const val MAX_SOURCE_DIMENSION = 32_768
+        const val MAX_SOURCE_PIXEL_COUNT = 100_000_000L
         const val RECOVERY_PREFERENCES_NAME = "gyst.image-import.activity-result-recovery"
         const val RECOVERED_IMAGES_KEY = "recovered-images-v1"
         const val PENDING_CAPTURE_KEY = "pending-capture-v1"

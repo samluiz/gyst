@@ -104,31 +104,18 @@ class SqlTransactionCandidateRepository(
     override suspend fun update(candidate: TransactionCandidate) {
         require(candidate.status == CandidateStatus.NEEDS_REVIEW) { "Only reviewable candidates can be edited" }
         holder.withDatabase { database ->
-            database.financeQueries.updateTransactionCandidate(
-                fingerprint = candidate.fingerprint,
-                description = candidate.description,
-                amountCents = candidate.amountCents,
-                currency = candidate.currency,
-                occurredDate = candidate.occurredDate?.toString(),
-                occurredTime = candidate.occurredTime,
-                timeZoneId = candidate.timeZoneId,
-                transactionType = candidate.transactionType.name,
-                suggestedCategoryId = candidate.suggestedCategoryId,
-                suggestedCategoryLabel = candidate.suggestedCategoryLabel,
-                accountOrPaymentMethod = candidate.accountOrPaymentMethod,
-                installmentIndex = candidate.installmentIndex?.toLong(),
-                installmentTotal = candidate.installmentTotal?.toLong(),
-                note = candidate.note,
-                confidence = candidate.confidence,
-                supportingText = candidate.supportingText,
-                warnings = json.encodeToString(candidate.warnings),
-                lowConfidenceFields = json.encodeToString(candidate.lowConfidenceFields),
-                selected = candidate.selected.asLong(),
-                duplicateCandidateId = candidate.duplicateCandidateId,
-                duplicateExpenseId = candidate.duplicateExpenseId,
-                updatedAt = candidate.updatedAt.toString(),
-                id = candidate.id,
-            )
+            database.financeQueries.updateTransactionCandidateRecord(candidate, json)
+        }
+    }
+
+    override suspend fun updateAllAtomically(candidates: List<TransactionCandidate>) {
+        require(candidates.all { it.status == CandidateStatus.NEEDS_REVIEW }) {
+            "Only reviewable candidates can be edited"
+        }
+        holder.withDatabase { database ->
+            database.transaction {
+                candidates.forEach { database.financeQueries.updateTransactionCandidateRecord(it, json) }
+            }
         }
     }
 
@@ -233,6 +220,37 @@ internal fun com.samluiz.gyst.db.FinanceQueries.insertTransactionCandidateRecord
         error_message = candidate.errorMessage,
         created_at = candidate.createdAt.toString(),
         updated_at = candidate.updatedAt.toString(),
+    )
+}
+
+private fun com.samluiz.gyst.db.FinanceQueries.updateTransactionCandidateRecord(
+    candidate: TransactionCandidate,
+    json: Json,
+) {
+    updateTransactionCandidate(
+        fingerprint = candidate.fingerprint,
+        description = candidate.description,
+        amountCents = candidate.amountCents,
+        currency = candidate.currency,
+        occurredDate = candidate.occurredDate?.toString(),
+        occurredTime = candidate.occurredTime,
+        timeZoneId = candidate.timeZoneId,
+        transactionType = candidate.transactionType.name,
+        suggestedCategoryId = candidate.suggestedCategoryId,
+        suggestedCategoryLabel = candidate.suggestedCategoryLabel,
+        accountOrPaymentMethod = candidate.accountOrPaymentMethod,
+        installmentIndex = candidate.installmentIndex?.toLong(),
+        installmentTotal = candidate.installmentTotal?.toLong(),
+        note = candidate.note,
+        confidence = candidate.confidence,
+        supportingText = candidate.supportingText,
+        warnings = json.encodeToString(candidate.warnings),
+        lowConfidenceFields = json.encodeToString(candidate.lowConfidenceFields),
+        selected = candidate.selected.asLong(),
+        duplicateCandidateId = candidate.duplicateCandidateId,
+        duplicateExpenseId = candidate.duplicateExpenseId,
+        updatedAt = candidate.updatedAt.toString(),
+        id = candidate.id,
     )
 }
 

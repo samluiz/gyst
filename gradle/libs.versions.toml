@@ -24,6 +24,7 @@ google-oauth-client = "1.39.0"
 androidx-core-splashscreen = "1.0.1"
 androidx-work = "2.11.2"
 androidx-sqlite = "2.5.0"
+androidx-exifinterface = "1.3.7"
 junit4 = "4.13.2"
 androidx-test-core = "1.7.0"
 androidx-test-ext-junit = "1.3.0"
@@ -73,6 +74,7 @@ google-oauth-client-jetty = { module = "com.google.oauth-client:google-oauth-cli
 androidx-core-splashscreen = { module = "androidx.core:core-splashscreen", version.ref = "androidx-core-splashscreen" }
 androidx-work-runtime-ktx = { module = "androidx.work:work-runtime-ktx", version.ref = "androidx-work" }
 androidx-sqlite-framework = { module = "androidx.sqlite:sqlite-framework", version.ref = "androidx-sqlite" }
+androidx-exifinterface = { module = "androidx.exifinterface:exifinterface", version.ref = "androidx-exifinterface" }
 
 kotlin-test = { module = "org.jetbrains.kotlin:kotlin-test", version.ref = "kotlin" }
 junit4 = { module = "junit:junit", version.ref = "junit4" }

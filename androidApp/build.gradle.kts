@@ -83,6 +83,7 @@ dependencies {
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.sqldelight.android.driver)
     implementation(libs.androidx.sqlite.framework)
+    implementation(libs.androidx.exifinterface)
     implementation(libs.google.play.services.auth)
     implementation(libs.androidx.core.splashscreen)
     implementation(libs.androidx.work.runtime.ktx)

@@ -35,6 +35,19 @@ class TemporaryImagePolicyTest {
     }
 
     @Test
+    fun `provider request image budget stays inside a mobile-safe envelope`() {
+        val worstCaseBase64Characters = ((MAX_TEMPORARY_IMAGE_BATCH_BYTES + 2) / 3) * 4
+        val estimatedPeakBytes =
+            MAX_TEMPORARY_IMAGE_BATCH_BYTES +
+                (worstCaseBase64Characters * 2) + // Data URL strings retained by the request model.
+                (worstCaseBase64Characters * 2) + // Serialized JSON UTF-16 string.
+                worstCaseBase64Characters // UTF-8 HTTP request body.
+
+        assertTrue(MAX_TEMPORARY_IMAGE_BYTES <= 3L * 1024L * 1024L)
+        assertTrue(estimatedPeakBytes <= 48L * 1024L * 1024L)
+    }
+
+    @Test
     fun `expiry uses the shared custody TTL`() {
         val now = TEMPORARY_IMAGE_TTL_MILLIS * 2
         assertTrue(isTemporaryImageExpired(now - TEMPORARY_IMAGE_TTL_MILLIS, now))

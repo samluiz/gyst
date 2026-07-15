@@ -25,6 +25,8 @@ import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Android
 import androidx.compose.material.icons.filled.CheckCircleOutline
 import androidx.compose.material.icons.filled.ErrorOutline
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.NotificationsOff
 import androidx.compose.material.icons.filled.PhoneAndroid
@@ -56,9 +58,12 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
@@ -243,6 +248,8 @@ private fun AutomaticDetectionSettingsScreen(
     onRefresh: () -> Unit,
 ) {
     val strings = s.automaticDetection
+    var appsExpanded by rememberSaveable { mutableStateOf(false) }
+    var advancedExpanded by rememberSaveable { mutableStateOf(false) }
     Column(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         DetectionRouteHeader(
             title = strings.settingsTitle,
@@ -307,7 +314,7 @@ private fun AutomaticDetectionSettingsScreen(
                 )
             }
             item {
-                DetectionSettingsSection(title = strings.listenerAccessTitle) {
+                DetectionSettingsSection(title = strings.permissionsTitle) {
                     PermissionRow(
                         title =
                             if (state.notificationListenerAccessGranted) {
@@ -320,10 +327,7 @@ private fun AutomaticDetectionSettingsScreen(
                         action = strings.openListenerSettings,
                         onAction = onOpenListenerSettings,
                     )
-                }
-            }
-            item {
-                DetectionSettingsSection(title = strings.appNotificationsTitle) {
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.16f))
                     PermissionRow(
                         title =
                             if (state.applicationNotificationsEnabled) {
@@ -346,20 +350,20 @@ private fun AutomaticDetectionSettingsScreen(
                                 onOpenNotificationSettings
                             },
                     )
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.16f))
-                    DetectionSwitchRow(
-                        title = strings.reviewNotificationsTitle,
-                        body = strings.reviewNotificationsBody,
-                        checked = state.userNotificationsEnabled,
-                        enabled = !busy,
-                        onCheckedChange = onUserNotificationsChange,
-                    )
                 }
             }
             item {
-                DetectionSettingsSection(
+                CollapsibleDetectionSettingsSection(
                     title = strings.monitoredAppsTitle,
-                    subtitle = strings.monitoredAppsBody,
+                    summary =
+                        tokenizedDetection(
+                            strings.selectedAppsCount,
+                            "count" to installedApplications.count(DetectionApplication::enabled),
+                        ),
+                    expanded = appsExpanded,
+                    expandedStateDescription = s.imageImportPickerExpanded,
+                    collapsedStateDescription = s.imageImportPickerCollapsed,
+                    onExpandedChange = { appsExpanded = !appsExpanded },
                 ) {
                     if (installedApplications.isEmpty()) {
                         Text(
@@ -383,10 +387,22 @@ private fun AutomaticDetectionSettingsScreen(
                 }
             }
             item {
-                DetectionSettingsSection(
-                    title = strings.aiTitle,
-                    subtitle = strings.aiBody,
+                CollapsibleDetectionSettingsSection(
+                    title = strings.advancedTitle,
+                    summary = strings.advancedBody,
+                    expanded = advancedExpanded,
+                    expandedStateDescription = s.imageImportPickerExpanded,
+                    collapsedStateDescription = s.imageImportPickerCollapsed,
+                    onExpandedChange = { advancedExpanded = !advancedExpanded },
                 ) {
+                    DetectionSwitchRow(
+                        title = strings.reviewNotificationsTitle,
+                        body = strings.reviewNotificationsBody,
+                        checked = state.userNotificationsEnabled,
+                        enabled = !busy,
+                        onCheckedChange = onUserNotificationsChange,
+                    )
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.16f))
                     DetectionSwitchRow(
                         title = strings.aiTitle,
                         body = strings.aiPrivacy,
@@ -423,6 +439,23 @@ private fun AutomaticDetectionSettingsScreen(
                             }
                         }
                     }
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.16f))
+                    Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                        Text(strings.deleteDataTitle, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+                        Text(
+                            strings.deleteDataBody,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    CompactPrimaryButton(
+                        text = strings.deleteDataAction,
+                        danger = true,
+                        subtle = true,
+                        compact = true,
+                        enabled = !busy,
+                        onClick = onDeleteData,
+                    )
                 }
             }
             item {
@@ -456,21 +489,6 @@ private fun AutomaticDetectionSettingsScreen(
                             onClick = onRetryFailed,
                         )
                     }
-                }
-            }
-            item {
-                DetectionSettingsSection(
-                    title = strings.deleteDataTitle,
-                    subtitle = strings.deleteDataBody,
-                ) {
-                    CompactPrimaryButton(
-                        text = strings.deleteDataAction,
-                        danger = true,
-                        subtle = true,
-                        compact = true,
-                        enabled = !busy,
-                        onClick = onDeleteData,
-                    )
                 }
             }
             item { Spacer(modifier = Modifier.height(6.dp)) }
@@ -894,30 +912,32 @@ private fun TransactionSuggestionReviewScreen(
                         modifier = Modifier.fillMaxWidth(),
                         onClick = { onApprove(editedCandidate) },
                     )
-                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    FlowRow(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
                         CompactPrimaryButton(
                             text = s.automaticDetection.saveDraft,
                             compact = true,
                             enabled = !actionBusy,
                             onClick = { onSave(editedCandidate) },
                         )
-                        Row {
-                            CompactPrimaryButton(
-                                text = s.automaticDetection.rejectSuggestion,
-                                compact = true,
-                                subtle = true,
-                                enabled = !actionBusy,
-                                onClick = onReject,
-                            )
-                            CompactPrimaryButton(
-                                text = s.automaticDetection.deleteSuggestion,
-                                compact = true,
-                                subtle = true,
-                                danger = true,
-                                enabled = !actionBusy,
-                                onClick = onDelete,
-                            )
-                        }
+                        CompactPrimaryButton(
+                            text = s.automaticDetection.rejectSuggestion,
+                            compact = true,
+                            subtle = true,
+                            enabled = !actionBusy,
+                            onClick = onReject,
+                        )
+                        CompactPrimaryButton(
+                            text = s.automaticDetection.deleteSuggestion,
+                            compact = true,
+                            subtle = true,
+                            danger = true,
+                            enabled = !actionBusy,
+                            onClick = onDelete,
+                        )
                     }
                 }
             }
@@ -999,6 +1019,61 @@ private fun DetectionSettingsSection(
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             content()
+        }
+    }
+}
+
+@Composable
+private fun CollapsibleDetectionSettingsSection(
+    title: String,
+    summary: String,
+    expanded: Boolean,
+    expandedStateDescription: String,
+    collapsedStateDescription: String,
+    onExpandedChange: () -> Unit,
+    content: @Composable () -> Unit,
+) {
+    Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .semantics(mergeDescendants = true) {
+                        role = Role.Button
+                        stateDescription = if (expanded) expandedStateDescription else collapsedStateDescription
+                    }
+                    .clickable(onClick = onExpandedChange)
+                    .padding(vertical = 6.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                Text(
+                    summary,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = if (expanded) 2 else 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            Icon(
+                if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                contentDescription = null,
+                modifier = Modifier.size(18.dp),
+            )
+        }
+        if (expanded) {
+            Column(
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.55f), RoundedCornerShape(10.dp))
+                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                content()
+            }
         }
     }
 }

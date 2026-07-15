@@ -36,7 +36,6 @@ import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Image
-import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.RemoveCircleOutline
 import androidx.compose.material.icons.filled.WarningAmber
 import androidx.compose.material3.Card
@@ -168,15 +167,17 @@ internal fun ImageImportRoute(
         onRetryAnalysis = { scope.launchImageImportAction { service.retryAnalysis() } },
         onSetSelected = { id, selected -> scope.launchImageImportAction { service.setCandidateSelected(id, selected) } },
         onSelectAll = { selected ->
-            scope.launchImageImportAction {
-                state.candidates.forEach { service.setCandidateSelected(it.candidate.id, selected) }
-            }
+            scope.launchImageImportAction { service.setAllCandidatesSelected(selected) }
         },
         onUpdateCandidate = { id, edit -> scope.launchImageImportAction { service.updateCandidate(id, edit) } },
         onAddCandidate = { edit -> scope.launchImageImportAction { service.addCandidate(edit) } },
         onDeleteCandidate = { id -> scope.launchImageImportAction { service.deleteCandidate(id) } },
-        onApplyCategory = { categoryId -> scope.launchImageImportAction { service.applyCategoryToSelected(categoryId) } },
-        onApplyPayment = { payment -> scope.launchImageImportAction { service.applyPaymentMethodToSelected(payment) } },
+        onApplyCategory = { candidateIds, categoryId ->
+            scope.launchImageImportAction { service.applyCategory(candidateIds, categoryId) }
+        },
+        onApplyPayment = { candidateIds, payment ->
+            scope.launchImageImportAction { service.applyPaymentMethod(candidateIds, payment) }
+        },
         onConfirm = {
             scope.launchImageImportAction {
                 confirmImageImportAndRefresh(
@@ -207,7 +208,11 @@ internal fun ImageImportRoute(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+            FlowRow(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End,
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
                 CompactPrimaryButton(
                     text = s.imageImportKeepReviewing,
                     compact = true,
@@ -274,8 +279,8 @@ private fun ImageImportScreen(
     onUpdateCandidate: (String, TransactionCandidateEdit) -> Unit,
     onAddCandidate: (TransactionCandidateEdit) -> Unit,
     onDeleteCandidate: (String) -> Unit,
-    onApplyCategory: (String) -> Unit,
-    onApplyPayment: (String) -> Unit,
+    onApplyCategory: (Set<String>, String) -> Unit,
+    onApplyPayment: (Set<String>, String) -> Unit,
     onConfirm: () -> Unit,
     onCancel: () -> Unit,
     onDone: () -> Unit,
@@ -432,7 +437,7 @@ private fun SourceContent(
                     modifier = Modifier.fillMaxWidth(),
                     onClick = onAnalyze,
                 )
-                if (state.failure?.retryable == true && state.images.isNotEmpty()) {
+                if (state.failure?.canRetryAnalysis == true && state.images.isNotEmpty()) {
                     CompactPrimaryButton(
                         text = s.imageImportRetryAnalysis,
                         compact = true,
@@ -455,6 +460,19 @@ private fun SourceContent(
         }
     }
 }
+
+private val ImageImportFailure.canRetryAnalysis: Boolean
+    get() =
+        retryable &&
+            code !in
+            setOf(
+                ImageImportFailureCode.NO_IMAGES,
+                ImageImportFailureCode.IMAGE_SOURCE,
+                ImageImportFailureCode.IMAGE_SOURCE_READ_FAILURE,
+                ImageImportFailureCode.IMAGE_SOURCE_TOO_LARGE,
+                ImageImportFailureCode.IMAGE_SOURCE_UNSUPPORTED_FORMAT,
+                ImageImportFailureCode.IMAGE_SOURCE_PERMISSION_DENIED,
+            )
 
 @Composable
 private fun SourcePicker(
@@ -486,17 +504,10 @@ private fun SourcePicker(
                 modifier =
                     Modifier
                         .fillMaxWidth()
-                        .padding(vertical = 20.dp),
+                        .padding(vertical = 12.dp),
                 horizontalAlignment = Alignment.Start,
-                verticalArrangement = Arrangement.spacedBy(5.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
-                Icon(
-                    Icons.Default.Image,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(24.dp),
-                )
-                Text(s.imageImportNoSourcesTitle, style = MaterialTheme.typography.titleSmall)
                 Text(
                     s.imageImportNoSourcesBody,
                     style = MaterialTheme.typography.bodySmall,
@@ -627,11 +638,6 @@ private fun ProviderChoice(
                     )
                 }
             }
-            Text(
-                s.imageImportProviderHint,
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
         }
     }
 }
@@ -648,15 +654,6 @@ private fun PrivacyConsent(
         shape = RoundedCornerShape(8.dp),
     ) {
         Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Row(horizontalArrangement = Arrangement.spacedBy(7.dp), verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Default.Lock, contentDescription = null, modifier = Modifier.size(16.dp))
-                Text(s.imageImportPrivacyTitle, style = MaterialTheme.typography.titleSmall)
-            }
-            Text(
-                s.imageImportPrivacyBody,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
             Row(
                 modifier = Modifier.fillMaxWidth().clickable { onCheckedChange(!checked) },
                 horizontalArrangement = Arrangement.spacedBy(5.dp),
@@ -669,6 +666,11 @@ private fun PrivacyConsent(
                 )
                 Text(s.imageImportPrivacyConsent, style = MaterialTheme.typography.labelMedium)
             }
+            Text(
+                s.imageImportPrivacyBody,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
     }
 }
@@ -727,8 +729,8 @@ private fun PreviewContent(
     onUpdateCandidate: (String, TransactionCandidateEdit) -> Unit,
     onAddCandidate: (TransactionCandidateEdit) -> Unit,
     onDeleteCandidate: (String) -> Unit,
-    onApplyCategory: (String) -> Unit,
-    onApplyPayment: (String) -> Unit,
+    onApplyCategory: (Set<String>, String) -> Unit,
+    onApplyPayment: (Set<String>, String) -> Unit,
     onConfirm: () -> Unit,
     onRetryAnalysis: () -> Unit,
     onCancel: () -> Unit,
@@ -767,13 +769,13 @@ private fun PreviewContent(
                 state = state,
                 categories = categories,
                 onSelectAll = onSelectAll,
-                onApplyCategory = {
+                onApplyCategory = { candidateIds, categoryId ->
                     expandedCandidateId = null
-                    onApplyCategory(it)
+                    onApplyCategory(candidateIds, categoryId)
                 },
-                onApplyPayment = {
+                onApplyPayment = { candidateIds, payment ->
                     expandedCandidateId = null
-                    onApplyPayment(it)
+                    onApplyPayment(candidateIds, payment)
                 },
                 onAddCandidate = {
                     onAddCandidate(blankCandidateEdit())
@@ -889,15 +891,16 @@ private fun ReviewToolbar(
     state: ImageImportState,
     categories: List<Category>,
     onSelectAll: (Boolean) -> Unit,
-    onApplyCategory: (String) -> Unit,
-    onApplyPayment: (String) -> Unit,
+    onApplyCategory: (Set<String>, String) -> Unit,
+    onApplyPayment: (Set<String>, String) -> Unit,
     onAddCandidate: () -> Unit,
 ) {
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        FlowRow(
+    var pendingBulkEdit by remember { mutableStateOf<PendingBulkEdit?>(null) }
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
-            verticalArrangement = Arrangement.spacedBy(4.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
                 tokenized(
@@ -905,42 +908,149 @@ private fun ReviewToolbar(
                     "selected" to state.selectedCandidates.size,
                     "total" to state.candidates.size,
                 ),
-                style = MaterialTheme.typography.labelMedium,
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.weight(1f),
             )
-            Row {
-                CompactPrimaryButton(
-                    text = if (state.selectedCandidates.size == state.candidates.size) s.imageImportSelectNone else s.imageImportSelectAll,
-                    compact = true,
-                    subtle = true,
-                    onClick = { onSelectAll(state.selectedCandidates.size != state.candidates.size) },
+            IconCompactButton(
+                modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp),
+                onClick = onAddCandidate,
+                icon = Icons.Default.Add,
+                contentDescription = s.imageImportAddRow,
+                compact = true,
+            )
+        }
+        CompactPrimaryButton(
+            text = if (state.selectedCandidates.size == state.candidates.size) s.imageImportSelectNone else s.imageImportSelectAll,
+            compact = true,
+            subtle = true,
+            onClick = { onSelectAll(state.selectedCandidates.size != state.candidates.size) },
+        )
+        if (state.selectedCandidates.isNotEmpty()) {
+            Text(
+                s.imageImportBulkEdit,
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            FlowRow(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                BulkActionPicker(
+                    s = s,
+                    label = s.imageImportApplyCategory,
+                    options = categories.map { it.id to it.name },
+                    onSelected = { value, label ->
+                        pendingBulkEdit =
+                            PendingBulkEdit(
+                                PendingBulkEditKind.CATEGORY,
+                                value,
+                                label,
+                                state.selectedCandidates.mapTo(linkedSetOf()) { it.candidate.id },
+                            )
+                    },
                 )
-                IconCompactButton(
-                    modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp),
-                    onClick = onAddCandidate,
-                    icon = Icons.Default.Add,
-                    contentDescription = s.imageImportAddRow,
-                    compact = true,
+                BulkActionPicker(
+                    s = s,
+                    label = s.imageImportApplyPayment,
+                    options = paymentMethodOptions(s),
+                    onSelected = { value, label ->
+                        pendingBulkEdit =
+                            PendingBulkEdit(
+                                PendingBulkEditKind.PAYMENT,
+                                value,
+                                label,
+                                state.selectedCandidates.mapTo(linkedSetOf()) { it.candidate.id },
+                            )
+                    },
                 )
             }
         }
-        if (state.selectedCandidates.isNotEmpty()) {
-            Row(
-                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+    }
+
+    pendingBulkEdit?.let { edit ->
+        AppDialog(
+            title = s.imageImportBulkConfirmTitle,
+            onClose = { pendingBulkEdit = null },
+            closeLabel = s.close,
+            onDismissRequest = { pendingBulkEdit = null },
+        ) {
+            Text(
+                tokenized(
+                    s.imageImportBulkConfirmBody,
+                    "count" to edit.candidateIds.size,
+                ),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Text(edit.label, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+            FlowRow(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End,
+                verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
-                OptionPicker(
-                    s = s,
-                    label = s.imageImportApplyCategory,
-                    currentLabel = s.imageImportApplyCategory,
-                    options = categories.map { it.id to it.name },
-                    onSelected = onApplyCategory,
+                CompactPrimaryButton(
+                    text = s.close,
+                    compact = true,
+                    subtle = true,
+                    onClick = { pendingBulkEdit = null },
                 )
-                OptionPicker(
-                    s = s,
-                    label = s.imageImportApplyPayment,
-                    currentLabel = s.imageImportApplyPayment,
-                    options = paymentMethodOptions(s),
-                    onSelected = onApplyPayment,
+                CompactPrimaryButton(
+                    text = s.imageImportBulkConfirmAction,
+                    compact = true,
+                    onClick = {
+                        when (edit.kind) {
+                            PendingBulkEditKind.CATEGORY -> onApplyCategory(edit.candidateIds, edit.value)
+                            PendingBulkEditKind.PAYMENT -> onApplyPayment(edit.candidateIds, edit.value)
+                        }
+                        pendingBulkEdit = null
+                    },
+                )
+            }
+        }
+    }
+}
+
+private enum class PendingBulkEditKind {
+    CATEGORY,
+    PAYMENT,
+}
+
+private data class PendingBulkEdit(
+    val kind: PendingBulkEditKind,
+    val value: String,
+    val label: String,
+    val candidateIds: Set<String>,
+)
+
+@Composable
+private fun BulkActionPicker(
+    s: AppStrings,
+    label: String,
+    options: List<Pair<String, String>>,
+    onSelected: (String, String) -> Unit,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    Box {
+        CompactPrimaryButton(
+            text = label,
+            compact = true,
+            subtle = true,
+            enabled = options.isNotEmpty(),
+            leadingContent = {
+                Icon(Icons.Default.ExpandMore, contentDescription = null, modifier = Modifier.size(16.dp))
+            },
+            onClick = { expanded = true },
+        )
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            options.forEach { (value, optionLabel) ->
+                DropdownMenuItem(
+                    text = { Text(optionLabel) },
+                    onClick = {
+                        expanded = false
+                        onSelected(value, optionLabel)
+                    },
                 )
             }
         }
@@ -1477,6 +1587,10 @@ internal fun imageImportFailureLabel(
         when (failure.code) {
             ImageImportFailureCode.NO_IMAGES -> s.imageImportFailureNoImages
             ImageImportFailureCode.IMAGE_SOURCE -> s.imageImportSourceUnavailable
+            ImageImportFailureCode.IMAGE_SOURCE_READ_FAILURE -> s.imageImportSourceReadFailure
+            ImageImportFailureCode.IMAGE_SOURCE_TOO_LARGE -> s.imageImportSourceTooLarge
+            ImageImportFailureCode.IMAGE_SOURCE_UNSUPPORTED_FORMAT -> s.imageImportSourceUnsupportedFormat
+            ImageImportFailureCode.IMAGE_SOURCE_PERMISSION_DENIED -> s.imageImportSourcePermissionDenied
             ImageImportFailureCode.PROVIDER_NOT_FOUND,
             ImageImportFailureCode.PROVIDER_NOT_CONFIGURED,
             ImageImportFailureCode.UNSUPPORTED_PROVIDER_CAPABILITY,
